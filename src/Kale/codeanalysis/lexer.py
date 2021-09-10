@@ -1,8 +1,8 @@
 import sys
 
-from Token import Token
-from TokenKind import TokenKind
-
+from codeanalysis.token import Token
+from codeanalysis.tokenkind import TokenKind
+from codeanalysis.exceptions import IllegalCharacterException
 
 class Lexer:
     def __init__(self, text):
@@ -55,7 +55,7 @@ class Lexer:
                 if (self.cur_char() == '\r' or
                         self.cur_char() == '\n' or self.cur_char() == '\t' or
                         self.cur_char() == '\\' or self.cur_char() == '%'):
-                    self.abort("Illegal character in string.")
+                    raise IllegalCharacterException('string')
                 self.advance()
 
             token_text = self.source[start_pos: self.position]
@@ -69,7 +69,7 @@ class Lexer:
                 self.advance()
 
                 if not self.peek().isdigit():
-                    self.abort("Illegal character in number.")
+                    raise IllegalCharacterException('number')
                 while self.peek().isdigit():
                     self.advance()
             token_text = self.source[start_pos: self.position + 1]
