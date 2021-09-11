@@ -23,6 +23,7 @@ class TokenKind(enum.Enum):
     IF              = 107
     ELSE            = 108
     WHILE           = 109
+    FOR             = 110
 
 
     # Punctuators
@@ -34,6 +35,7 @@ class TokenKind(enum.Enum):
     COLON           = 205
     COMMA           = 206
     SEMI            = 207
+    
     PLUS            = 208
     MINUS           = 209
     STAR            = 210
