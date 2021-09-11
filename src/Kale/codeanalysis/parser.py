@@ -88,9 +88,6 @@ class Parser:
         # self.emitter.add_header("#include <stdio.h>")
         # self.emitter.add_header("int main(void){")
 
-        # while self.check_token(TokenKind.NEWLINE):
-        #     self.advance()
-
         while not self.check_token(TokenKind.EOF):
             self.statement()
 
@@ -141,9 +138,18 @@ class Parser:
                     
                 2.  if (COMPARISON) 
                     {
-                        STATEMENT
+                        STATEMENTS
                     } else {
-                        STATEMENT            
+                        STATEMENTS        
+                    }
+                3.  if (COMPARISON)
+                    {
+                        STATEMENTS
+                    } else if (COMPARISON)
+                    {
+                        STATEMENTS
+                    } else {
+                        STATEMENTS
                     }
             """
             if self.dev:
@@ -170,21 +176,49 @@ class Parser:
             self.match(TokenKind.RBRACE)
             # ----
 
-            # Third optional part
+            # optional part
             # ----
-            if self.check_token(TokenKind.ELSE):
-                if self.dev:
-                    print("Else-Statement")
-
+            while self.check_token(TokenKind.ELSE):
+                """
+                1.  else if(CONDITION)
+                    {
+                        STATEMENTS
+                    }
+                2.  else
+                    {
+                        STATEMENTS
+                    }
+                """
                 self.advance()
-                self.match(TokenKind.LBRACE)
-                
-                while not self.check_token(TokenKind.RBRACE):
-                    self.statement()
+
+                if self.check_token(TokenKind.IF):
+                    if self.dev:
+                        print("Else-If-Statement")
                     
-            self.match(TokenKind.RBRACE)
-            # self.emitter.emit_line("}")
-            # ----
+                    self.advance()
+
+                    # ----
+                    self.match(TokenKind.LPAR)
+                    self.comparison()
+                    self.match(TokenKind.RPAR)
+                    # ----
+                    self.match(TokenKind.LBRACE)
+                    while not self.check_token(TokenKind.RBRACE):
+                        self.statement()
+                    self.match(TokenKind.RBRACE)
+
+                elif self.check_token(TokenKind.LBRACE):
+                    if self.dev:
+                        print("Else-Statement")
+                    
+                    self.advance()
+                    
+                    # ----
+                    while not self.check_token(TokenKind.RBRACE):
+                        self.statement()
+                    self.match(TokenKind.RBRACE)
+                    
+                    break
 
         elif self.check_token(TokenKind.WHILE):
             """
