@@ -4,11 +4,11 @@ from codeanalysis.tokenkind import TokenKind
 
 
 class Parser:
-    def __init__(self, token_list, emitter, dev=False):
+    def __init__(self, token_list, emitter, debug=False):
         self.token_list = token_list
         self.position = -1
         # self.emitter = emitter
-        self.dev = dev
+        self.debug = debug
 
         # Sets the current token to the first token taken from the input
         # ----
@@ -82,7 +82,7 @@ class Parser:
         """
         Program entry point
         """
-        if self.dev:
+        if self.debug:
             print("Program")
 
         # self.emitter.add_header("#include <stdio.h>")
@@ -111,7 +111,7 @@ class Parser:
                 1.  print(STRING)
                 2.  print(EXPRESSION)
             """
-            if self.dev:
+            if self.debug:
                 print("Print-Statement")
 
             self.advance()
@@ -152,7 +152,7 @@ class Parser:
                         STATEMENTS
                     }
             """
-            if self.dev:
+            if self.debug:
                 print("If-Statement")
 
             self.advance()
@@ -192,7 +192,7 @@ class Parser:
                 self.advance()
 
                 if self.check_token(TokenKind.IF):
-                    if self.dev:
+                    if self.debug:
                         print("Else-If-Statement")
                     
                     self.advance()
@@ -208,7 +208,7 @@ class Parser:
                     self.match(TokenKind.RBRACE)
 
                 elif self.check_token(TokenKind.LBRACE):
-                    if self.dev:
+                    if self.debug:
                         print("Else-Statement")
                     
                     self.advance()
@@ -230,7 +230,7 @@ class Parser:
                         STATEMENTS
                     }
             """
-            if self.dev:
+            if self.debug:
                 print("While-Statement")
             
             self.advance()
@@ -254,7 +254,42 @@ class Parser:
             self.match(TokenKind.RBRACE)
             # self.emitter.emit_line("}")
             # ----
+        
+        elif self.check_token(TokenKind.FOR):
+            """
+            For Statement
+
+            Syntax:
+                1.  for(INITIALIZATION; CONDITION; INCREMENT)
+                    {
+                        STATEMENTS
+                    }
+            """
+            if self.debug:
+                print("For-Statement")
             
+            self.advance()
+
+            # Initialization, Condition, Increment
+            # ----
+            self.match(TokenKind.LPAR)
+            self.statement()
+            self.match(TokenKind.SEMI)
+            self.comparison()
+            self.match(TokenKind.SEMI)
+            self.expression()
+            self.match(TokenKind.RPAR)
+            # ----
+
+            # Body
+            # ----
+            self.match(TokenKind.LBRACE)
+            while not self.check_token(TokenKind.RBRACE):
+                self.statement()
+            
+            self.match(TokenKind.RBRACE)
+            # ----
+
         elif self.check_token(TokenKind.LABEL):
             """
             Label Statement
@@ -262,7 +297,7 @@ class Parser:
             Syntax:
                 1.  label IDENTIFIER:
             """
-            if self.dev:
+            if self.debug:
                 print("Label-Statement")
 
             self.advance()
@@ -285,7 +320,7 @@ class Parser:
             Syntax:
                 1.  goto IDENTIFIER
             """
-            if self.dev:
+            if self.debug:
                 print("Goto-Statement")
     
             self.advance()
@@ -304,7 +339,7 @@ class Parser:
             Syntax:
                 1.  let IDENTIFIER = EXPRESSION
             """
-            if self.dev:
+            if self.debug:
                 print("Let-Statement")
             
             self.advance()
@@ -350,7 +385,7 @@ class Parser:
             Syntax:
                 1.  var IDENTIFIER = EXPRESSION
             """
-            if self.dev:
+            if self.debug:
                 print("Var-Statement")
             
             self.advance()
@@ -394,7 +429,7 @@ class Parser:
             Syntax:
                 1.  input IDENTIFIER
             """
-            if self.dev:
+            if self.debug:
                 print("Input-Statement")
             self.advance()
 
@@ -418,7 +453,7 @@ class Parser:
             Syntax:
                 1.  IDENTIFIER = EXPRESSION
             """
-            if self.dev:
+            if self.debug:
                 print("Assignment-Statement")
 
             self.advance()
@@ -462,7 +497,7 @@ class Parser:
             2.  EXPRESSION COMPARISON EXPRESSION
             3.  EXPRESSION COMPARISON EXPRESSION...
         """
-        if self.dev:
+        if self.debug:
             print("Comparison")
         
         self.expression()
@@ -502,7 +537,7 @@ class Parser:
             2.  FACTOR * FACTOR
             3.  FACTOR / FACTOR
         """
-        if self.dev:
+        if self.debug:
             print("Term")
         
         self.unary()
@@ -525,15 +560,17 @@ class Parser:
             6.  MINUSMINUS FACTOR
             7.  FACTOR
         """
-        if (
-            self.check_token(TokenKind.PLUS) or self.check_token(TokenKind.MINUS) or 
+        if (self.check_token(TokenKind.PLUS) or self.check_token(TokenKind.MINUS) or 
             self.check_token(TokenKind.BANG) or self.check_token(TokenKind.TILDE) or 
-            self.check_token(TokenKind.PLUSPLUS) or self.check_token(TokenKind.MINUSMINUS)
-        ):
+            self.check_token(TokenKind.PLUSPLUS) or self.check_token(TokenKind.MINUSMINUS)):
             print(f"Unary ({self.cur_token.value})")
             # self.emitter.emit(self.cur_token.value)
             self.advance()
         self.primary()
+        if (self.check_token(TokenKind.PLUSPLUS) or self.check_token(TokenKind.MINUSMINUS)):
+            print(f"Unary ({self.cur_token.value})")
+            # self.emitter.emit(self.cur_token.value)
+            self.advance()
 
     def primary(self):
         """
@@ -558,14 +595,3 @@ class Parser:
             self.advance()
         else:
             self.abort(f"Unexpected token at {self.cur_token.value}")
-
-    # def skip_new_lines(self):
-    #     while self.check_token(TokenKind.NEWLINE):
-    #         self.advance()
-
-    # def new_line(self):
-    #     # print("NEWLINE")
-    #     print("...")
-    #     self.match(TokenKind.NEWLINE)
-    #     while self.check_token(TokenKind.NEWLINE):
-    #         self.advance()

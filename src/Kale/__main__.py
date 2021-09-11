@@ -20,7 +20,7 @@ lexer   = Lexer(source)
 token_list = lexer.lex()
 print("--------")
 emitter = Emitter(filename)
-parser  = Parser(token_list, emitter, dev=True)
+parser  = Parser(token_list, emitter, debug=True)
 
 
 # ------------

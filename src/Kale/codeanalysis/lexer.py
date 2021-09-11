@@ -119,95 +119,95 @@ class Lexer:
         # ----------------------------------------------------------------
 
         elif self.cur_char() == ':':
-            token = Token(TokenKind.COLON)
+            token = Token(TokenKind.COLON, self.cur_char())
         
         elif self.cur_char() == '+':
             if self.peek() == '=':
                 last_char = self.cur_char()
                 self.advance()
-                token = Token(TokenKind.PLUSEQUAL)
+                token = Token(TokenKind.PLUSEQUAL, last_char + self.cur_char())
             elif self.peek() == '+':
                 last_char = self.cur_char()
                 self.advance()
-                token = Token(TokenKind.PLUSPLUS)
+                token = Token(TokenKind.PLUSPLUS, last_char + self.cur_char())
             else:
-                token = Token(TokenKind.PLUS)
+                token = Token(TokenKind.PLUS, self.cur_char())
         
         elif self.cur_char() == '-':
             if self.peek() == '=':
                 last_char = self.cur_char()
                 self.advance()
-                token = Token(TokenKind.MINEQUAL)
+                token = Token(TokenKind.MINEQUAL, last_char + self.cur_char())
             elif self.peek() == '=':
                 last_char = self.cur_char()
                 self.advance()
-                token = Token(TokenKind.MINUSMINUS)
+                token = Token(TokenKind.MINUSMINUS, last_char + self.cur_char())
             else:
-                token = Token(TokenKind.MINUS)
+                token = Token(TokenKind.MINUS, self.cur_char())
         
         elif self.cur_char() == '*':
             if self.peek() == '*':
                 last_char = self.cur_char()
                 self.advance()
-                token = Token(TokenKind.DOUBLESTAR)
+                token = Token(TokenKind.DOUBLESTAR, last_char + self.cur_char())
             elif self.peek() == '=':
                 last_char = self.cur_char()
                 self.advance()
-                token = Token(TokenKind.STAREQUAL)
+                token = Token(TokenKind.STAREQUAL, last_char + self.cur_char())
             else:
-                token = Token(TokenKind.STAR)
+                token = Token(TokenKind.STAR, self.cur_char())
         
         elif self.cur_char() == '/':
             if self.peek() == '=':
                 last_char = self.cur_char()
                 self.advance()
-                token = Token(TokenKind.SLASHEQUAL)
+                token = Token(TokenKind.SLASHEQUAL, last_char + self.cur_char())
             # comments
             elif self.peek() == '/':
                 while self.cur_char() != '\n':
                     self.advance()
             else:
-                token = Token(TokenKind.SLASH)
+                token = Token(TokenKind.SLASH, self.cur_char())
         
         elif self.cur_char() == '|':
-            token = Token(TokenKind.VBAR)
+            token = Token(TokenKind.VBAR, self.cur_char())
         
         
         elif self.cur_char() == '&':
-            token = Token(TokenKind.AMPER)
+            token = Token(TokenKind.AMPER, self.cur_char())
         
         
         elif self.cur_char() == '<':
             if self.peek() == '=':
                 last_char = self.cur_char()
                 self.advance()
-                token = Token(TokenKind.LESSEQUAL)
+                token = Token(TokenKind.LESSEQUAL, last_char + self.cur_char())
             elif self.peek() == '<':
                 last_char = self.cur_char()
                 self.advance()
-                token = Token(TokenKind.LEFTSHIFT)
+                token = Token(TokenKind.LEFTSHIFT, last_char + self.cur_char())
             else:
-                token = Token(TokenKind.LESS)
+                token = Token(TokenKind.LESS, self.cur_char())
         
         elif self.cur_char() == '>':
             if self.peek() == '=':
                 last_char = self.cur_char()
                 self.advance()
-                token = Token(TokenKind.GREATEREQUAL)
+                token = Token(TokenKind.GREATEREQUAL, last_char + self.cur_char())
             elif self.peek() == '>':
                 last_char = self.cur_char()
                 self.advance()
-                token = Token(TokenKind.RIGHTSHIFT)
+                token = Token(TokenKind.RIGHTSHIFT, last_char + self.cur_char())
             else:
-                token = Token(TokenKind.GREATER)
+                token = Token(TokenKind.GREATER, self.cur_char())
         
         elif self.cur_char() == '=':
             if self.peek() == '=':
                 last_char = self.cur_char()
                 self.advance()
-                token = Token(TokenKind.EQEQUAL)
+                token = Token(TokenKind.EQEQUAL, last_char + self.cur_char())
             else:
-                token = Token(TokenKind.EQUAL)
+                token = Token(TokenKind.EQUAL, self.cur_char())
         
         elif self.cur_char() == '.':
             token = Token(TokenKind.DOT)
@@ -216,27 +216,27 @@ class Lexer:
             if self.peek() == '=':
                 last_char = self.cur_char()
                 self.advance()
-                token = Token(TokenKind.PERCENTEQUAL)
+                token = Token(TokenKind.PERCENTEQUAL, last_char + self.cur_char())
             else:
-                token = Token(TokenKind.PERCENT)
+                token = Token(TokenKind.PERCENT, self.cur_char())
         
         elif self.cur_char() == '!':
             if self.peek() == '=':
                 last_char = self.cur_char()
                 self.advance()
-                token = Token(TokenKind.BANGEQUAL)
+                token = Token(TokenKind.BANGEQUAL, last_char + self.cur_char())
             else:
-                token = Token(TokenKind.BANG)
+                token = Token(TokenKind.BANG, self.cur_char())
         
         elif self.cur_char() == '~':
-            token = Token(TokenKind.TILDE)
+            token = Token(TokenKind.TILDE, self.cur_char())
         
         elif self.cur_char() == '^':
-            token = Token(TokenKind.CIRCUMFLEX)
+            token = Token(TokenKind.CIRCUMFLEX, self.cur_char())
         
         # token not recognized
         else:
-            token = Token(TokenKind.BADTOKEN)
+            token = Token(TokenKind.BADTOKEN, self.cur_char())
         
         self.advance()
         return token
