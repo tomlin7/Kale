@@ -1,5 +1,5 @@
 import sys
-from codeanalysis.tokenkind import TokenKind
+from codeanalysis.Syntax.tokenkind import TokenKind
 # from termcolor import cprint
 
 

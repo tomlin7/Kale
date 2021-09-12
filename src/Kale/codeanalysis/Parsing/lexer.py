@@ -1,14 +1,15 @@
 import sys
 
-from codeanalysis.token import Token
-from codeanalysis.tokenkind import TokenKind
-from codeanalysis.exceptions import IllegalCharacterException
+from codeanalysis.Syntax.token import Token
+from codeanalysis.Syntax.tokenkind import TokenKind
+
+from codeanalysis.Exceptions.illegalcharacter import IllegalCharacterException
+from codeanalysis.Exceptions.invalidtoken import InvalidTokenException
 
 class Lexer:
     def __init__(self, text):
         self.source = text
         self.position = 0
-
 
     def cur_char(self):
         if self.position >= len(self.source):
@@ -44,9 +45,6 @@ class Lexer:
         elif self.cur_char() == '\n':
             token = Token(TokenKind.NEWLINE)
         
-        elif self.cur_char() == '\0':
-            token = Token(TokenKind.EOF)
-        
         elif self.cur_char() == '\"':
             self.advance()
             start_pos = self.position
@@ -55,7 +53,7 @@ class Lexer:
                 if (self.cur_char() == '\r' or
                         self.cur_char() == '\n' or self.cur_char() == '\t' or
                         self.cur_char() == '\\' or self.cur_char() == '%'):
-                    raise IllegalCharacterException('string')
+                    raise IllegalCharacterException(f'at {self.cur_char()}')
                 self.advance()
 
             token_text = self.source[start_pos: self.position]
@@ -69,7 +67,7 @@ class Lexer:
                 self.advance()
 
                 if not self.peek().isdigit():
-                    raise IllegalCharacterException('number')
+                    raise IllegalCharacterException(f'at {self.cur_char()}')
                 while self.peek().isdigit():
                     self.advance()
             token_text = self.source[start_pos: self.position + 1]
@@ -234,7 +232,7 @@ class Lexer:
         elif self.cur_char() == '^':
             token = Token(TokenKind.CIRCUMFLEX, self.cur_char())
         
-        # token not recognized
+        # illegal token
         else:
             token = Token(TokenKind.BADTOKEN, self.cur_char())
         
@@ -249,7 +247,7 @@ class Lexer:
                 token_list.append(token)
                 break
             if token.kind == TokenKind.BADTOKEN:
-                self.abort("Error: Invalid Token")
+                raise InvalidTokenException(token.value)
             if token.kind not in [TokenKind.NEWLINE, TokenKind.WHITESPACE]:
                 token_list.append(token)
 

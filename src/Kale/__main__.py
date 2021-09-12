@@ -1,9 +1,9 @@
 import sys
 import time
 
-from codeanalysis.lexer import Lexer
-from codeanalysis.parser import Parser
-from codeanalysis.emitter import Emitter
+from codeanalysis.Parsing.lexer import Lexer
+from codeanalysis.Parsing.parser import Parser
+from codeanalysis.Emitting.emitter import Emitter
 
 
 print("Kale")

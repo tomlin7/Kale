@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from codeanalysis.tokenkind import TokenKind
+from codeanalysis.Syntax.tokenkind import TokenKind
 
 @dataclass
 class Token:

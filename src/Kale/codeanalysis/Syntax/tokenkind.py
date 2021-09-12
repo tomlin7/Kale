@@ -24,6 +24,8 @@ class TokenKind(enum.Enum):
     ELSE            = 108
     WHILE           = 109
     FOR             = 110
+    FOREACH         = 111
+    IN              = 112
 
 
     # Punctuators
@@ -32,9 +34,10 @@ class TokenKind(enum.Enum):
     RPAR            = 202
     LSQB            = 203
     RSQB            = 204
-    COLON           = 205
     COMMA           = 206
     SEMI            = 207
+    LBRACE          = 220
+    RBRACE          = 221
     
     PLUS            = 208
     MINUS           = 209
@@ -46,10 +49,9 @@ class TokenKind(enum.Enum):
     LESS            = 215
     GREATER         = 216
     EQUAL           = 217
+    COLON           = 205
     DOT             = 218
     PERCENT         = 219
-    LBRACE          = 220
-    RBRACE          = 221
     EQEQUAL         = 222
     BANGEQUAL       = 223
     LESSEQUAL       = 224
