@@ -9,8 +9,10 @@ class TokenKind(enum.Enum):
     NEWLINE         = 0
     WHITESPACE      = 1
     NUMBER          = 2
-    IDENT           = 3
     STRING          = 4
+
+    # Identifiers
+    IDENTIFIER      = 100
 
     # Keywords
     # ----
@@ -27,50 +29,49 @@ class TokenKind(enum.Enum):
     FOREACH         = 111
     IN              = 112
 
-
     # Punctuators
     # ----
-    LPAR            = 201
-    RPAR            = 202
-    LSQB            = 203
-    RSQB            = 204
-    COMMA           = 206
-    SEMI            = 207
-    LBRACE          = 220
-    RBRACE          = 221
+    LPAR            = 301
+    RPAR            = 302
+    LSQB            = 303
+    RSQB            = 304
+    COMMA           = 305
+    SEMI            = 306
+    LBRACE          = 307
+    RBRACE          = 308
     
-    PLUS            = 208
-    MINUS           = 209
-    STAR            = 210
-    SLASH           = 211
-    VBAR            = 212
-    AMPER           = 213
-    BANG            = 214
-    LESS            = 215
-    GREATER         = 216
-    EQUAL           = 217
-    COLON           = 205
-    DOT             = 218
-    PERCENT         = 219
-    EQEQUAL         = 222
-    BANGEQUAL       = 223
-    LESSEQUAL       = 224
-    GREATEREQUAL    = 225
-    TILDE           = 226
-    CIRCUMFLEX      = 227
-    LEFTSHIFT       = 228
-    RIGHTSHIFT      = 228
-    DOUBLESTAR      = 229
-    PLUSEQUAL       = 230
-    MINEQUAL        = 231
-    PLUSPLUS        = 232
-    MINUSMINUS      = 233
-    STAREQUAL       = 234
-    SLASHEQUAL      = 235
-    PERCENTEQUAL    = 236
-    AMPEREQUAL      = 237
-    VBAREQUAL       = 238
-    CIRCUMFLEXEQUAL = 239
-    LEFTSHIFTEQUAL  = 240
-    RIGHTSHIFTEQUAL = 241
-    DOUBLESTAREQUAL = 242
+    PLUS            = 309
+    MINUS           = 310
+    STAR            = 311
+    SLASH           = 312
+    VBAR            = 313
+    AMPER           = 314
+    BANG            = 315
+    LESS            = 316
+    GREATER         = 317
+    EQUAL           = 318
+    COLON           = 319
+    DOT             = 320
+    PERCENT         = 321
+    EQEQUAL         = 322
+    BANGEQUAL       = 323
+    LESSEQUAL       = 324
+    GREATEREQUAL    = 325
+    TILDE           = 326
+    CIRCUMFLEX      = 327
+    LEFTSHIFT       = 328
+    RIGHTSHIFT      = 329
+    DOUBLESTAR      = 330
+    PLUSEQUAL       = 331
+    MINEQUAL        = 332
+    PLUSPLUS        = 333
+    MINUSMINUS      = 334
+    STAREQUAL       = 335
+    SLASHEQUAL      = 336
+    PERCENTEQUAL    = 337
+    AMPEREQUAL      = 338
+    VBAREQUAL       = 339
+    CIRCUMFLEXEQUAL = 341
+    LEFTSHIFTEQUAL  = 342
+    RIGHTSHIFTEQUAL = 343
+    DOUBLESTAREQUAL = 344
