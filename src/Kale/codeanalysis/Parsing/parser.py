@@ -331,6 +331,26 @@ class Parser:
             self.match(TokenKind.IDENT)
             # self.emitter.emit_line(f"goto {self.cur_token.value};")
             # ----
+        
+        elif self.check_token(TokenKind.INT):
+            """
+            Integer Declaration
+
+            Syntax:
+                1.  int IDENTIFIER = EXPRESSION
+            """
+            if self.debug:
+                print("Int-Statement")
+            
+            self.advance()
+
+            if self.cur_token.value not in self.symbols:
+                self.symbols.add(self.cur_token.value)
+            
+            # ----
+            self.match(TokenKind.IDENT)
+            self.match(TokenKind.EQUAL)
+            self.expression()
 
         elif self.check_token(TokenKind.LET):
             """
@@ -484,7 +504,7 @@ class Parser:
                         self.abort("Expected string, number or an identifier")
             else:
                 self.expression()
-            # self.emitter.emit_line(";")       
+            # self.emitter.emit_line(";")
         else:
             self.abort(f"Invalid statement at {self.cur_token.kind.name} {self.cur_token.value if self.cur_token.value is not None else ''}")
 

@@ -12,7 +12,7 @@ class TokenKind(enum.Enum):
     STRING          = 4
 
     # Identifiers
-    IDENTIFIER      = 100
+    IDENT      = 100
 
     # Keywords
     # ----
@@ -28,6 +28,13 @@ class TokenKind(enum.Enum):
     FOR             = 110
     FOREACH         = 111
     IN              = 112
+
+    # Type keywords
+    INT             = 150
+    FLOAT           = 151
+    CHAR            = 152
+    # STRING          = 153
+
 
     # Punctuators
     # ----
