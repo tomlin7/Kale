@@ -602,7 +602,7 @@ class Parser:
             3.  IDENTIFIER
             4.  (EXPRESSION)
         """
-        if self.check_token(TokenKind.NUMBER):
+        if self.check_token(TokenKind.NUMBER) or self.check_token(TokenKind.STRING):
             print(f"Primary ({self.cur_token.value})")
             # self.emitter.emit(self.cur_token.value)
             self.advance()
@@ -613,5 +613,11 @@ class Parser:
             print(f"Primary ({self.cur_token.value})")
             # self.emitter.emit(self.cur_token.value)
             self.advance()
+        elif self.check_token(TokenKind.LPAREN):
+            print("Primary (")
+            self.advance()
+            self.expression()
+            self.match(TokenKind.RPAREN)
+            print(")")
         else:
             self.abort(f"Unexpected token at {self.cur_token.value}")
