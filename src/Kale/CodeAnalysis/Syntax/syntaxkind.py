@@ -31,8 +31,10 @@ class SyntaxKind(enum.Enum):
     LabelKeyword            = 118
     LetKeyword              = 119
     PrintKeyword            = 120
-    VarKeyword              = 121
-    WhileKeyword            = 122
+    TrueKeyword             = 121
+    FalseKeyword            = 122
+    VarKeyword              = 123
+    WhileKeyword            = 124
 
     # Keywords: Types
     # ----

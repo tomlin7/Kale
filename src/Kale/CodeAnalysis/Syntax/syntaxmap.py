@@ -4,6 +4,7 @@ keyword_map = {
     'bool'      : SyntaxKind.BoolKeyword,
     'char'      : SyntaxKind.CharKeyword,
     'else'      : SyntaxKind.ElseKeyword,
+    'false'     : SyntaxKind.FalseKeyword,
     'float'     : SyntaxKind.FloatKeyword,
     'for'       : SyntaxKind.ForKeyword,
     'foreach'   : SyntaxKind.ForeachKeyword,
@@ -16,6 +17,7 @@ keyword_map = {
     'let'       : SyntaxKind.LetKeyword,
     'print'     : SyntaxKind.PrintKeyword,
     'string'    : SyntaxKind.StringKeyword,
+    'true'      : SyntaxKind.TrueKeyword,
     'var'       : SyntaxKind.VarKeyword,
     'while'     : SyntaxKind.WhileKeyword,
 }
