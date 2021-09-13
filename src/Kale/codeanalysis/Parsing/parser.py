@@ -1,6 +1,8 @@
 import sys
 from codeanalysis.Syntax.syntaxkind import SyntaxKind
 
+import colorama, termcolor
+colorama.init()
 
 class Parser:
     def __init__(self, token_list, emitter, debug=False):
@@ -71,10 +73,8 @@ class Parser:
         """
         Aborts the program with the passed message.
         """
-
-        # cprint("Error: " + message, 'red')
-        # sys.exit(0)
-        sys.exit("Error: " + message)
+        print(termcolor.colored(f"Error: {message}", "red"))
+        sys.exit()
 
     # Production rules.
     def program(self):
@@ -619,4 +619,4 @@ class Parser:
             self.match(SyntaxKind.CloseParenthesisToken)
             print(")")
         else:
-            self.abort(f"Unexpected token at {self.cur_token.value}")
+            self.abort(f"Unexpected token {self.cur_token.kind} at {self.cur_token.value}")

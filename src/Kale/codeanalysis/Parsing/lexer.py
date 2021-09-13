@@ -1,10 +1,9 @@
-import sys
-
 from codeanalysis.Syntax.syntaxtoken import SyntaxToken
 from codeanalysis.Syntax.syntaxkind import SyntaxKind
 
 from codeanalysis.Exceptions.illegalcharacter import IllegalCharacterException
 from codeanalysis.Exceptions.invalidtoken import InvalidTokenException
+
 
 class Lexer:
     def __init__(self, text):
@@ -33,7 +32,7 @@ class Lexer:
 
         if self.position >= len(self.source):
             token = SyntaxToken(SyntaxKind.EndOfFileToken)
-        
+
         elif self.cur_char() in white_space:
             start = self.position
             while self.cur_char() in white_space:
@@ -41,10 +40,10 @@ class Lexer:
             length = self.position - start
             text = self.source[start:length + start]
             return SyntaxToken(SyntaxKind.WhiteSpaceToken, text)
-            
+
         elif self.cur_char() == '\n':
             token = SyntaxToken(SyntaxKind.NewLineToken)
-        
+
         elif self.cur_char() == '\"':
             self.advance()
             start_pos = self.position
@@ -56,7 +55,7 @@ class Lexer:
 
             token_text = self.source[start_pos: self.position]
             token = SyntaxToken(SyntaxKind.StringToken, token_text)
-        
+
         elif self.cur_char().isdigit():
             start_pos = self.position
             while self.peek().isdigit():
@@ -70,7 +69,7 @@ class Lexer:
                     self.advance()
             token_text = self.source[start_pos: self.position + 1]
             token = SyntaxToken(SyntaxKind.NumberToken, token_text)
-        
+
         elif self.cur_char().isalpha():
             start_pos = self.position
             while self.peek().isalnum():
@@ -89,34 +88,34 @@ class Lexer:
 
         elif self.cur_char() == '(':
             token = SyntaxToken(SyntaxKind.OpenParenthesisToken)
-        
+
         elif self.cur_char() == ')':
             token = SyntaxToken(SyntaxKind.CloseParenthesisToken)
-        
+
         elif self.cur_char() == '[':
             token = SyntaxToken(SyntaxKind.OpenBracketsToken)
-        
+
         elif self.cur_char() == ']':
             token = SyntaxToken(SyntaxKind.CloseBracketsToken)
-        
+
         elif self.cur_char() == '{':
             token = SyntaxToken(SyntaxKind.OpenBraceToken)
-        
+
         elif self.cur_char() == '}':
             token = SyntaxToken(SyntaxKind.CloseBraceToken)
-        
+
         elif self.cur_char() == ',':
             token = SyntaxToken(SyntaxKind.CommaToken)
-        
+
         elif self.cur_char() == ';':
-            token = SyntaxToken(SyntaxKind.SemiToken)
+            token = SyntaxToken(SyntaxKind.SemicolonToken)
 
         # Operators
         # ----------------------------------------------------------------
 
         elif self.cur_char() == ':':
             token = SyntaxToken(SyntaxKind.ColonToken, self.cur_char())
-        
+
         elif self.cur_char() == '+':
             if self.peek() == '=':
                 last_char = self.cur_char()
@@ -128,7 +127,7 @@ class Lexer:
                 token = SyntaxToken(SyntaxKind.PlusPlusToken, last_char + self.cur_char())
             else:
                 token = SyntaxToken(SyntaxKind.PlusToken, self.cur_char())
-        
+
         elif self.cur_char() == '-':
             if self.peek() == '=':
                 last_char = self.cur_char()
@@ -140,7 +139,7 @@ class Lexer:
                 token = SyntaxToken(SyntaxKind.MinusMinusToken, last_char + self.cur_char())
             else:
                 token = SyntaxToken(SyntaxKind.MinusToken, self.cur_char())
-        
+
         elif self.cur_char() == '*':
             if self.peek() == '*':
                 last_char = self.cur_char()
@@ -152,7 +151,7 @@ class Lexer:
                 token = SyntaxToken(SyntaxKind.StarEqualsToken, last_char + self.cur_char())
             else:
                 token = SyntaxToken(SyntaxKind.StartToken, self.cur_char())
-        
+
         elif self.cur_char() == '/':
             if self.peek() == '=':
                 last_char = self.cur_char()
@@ -164,15 +163,13 @@ class Lexer:
                     self.advance()
             else:
                 token = SyntaxToken(SyntaxKind.SlashToken, self.cur_char())
-        
+
         elif self.cur_char() == '|':
             token = SyntaxToken(SyntaxKind.PipeToken, self.cur_char())
-        
-        
+
         elif self.cur_char() == '&':
             token = SyntaxToken(SyntaxKind.AmpersandToken, self.cur_char())
-        
-        
+
         elif self.cur_char() == '<':
             if self.peek() == '=':
                 last_char = self.cur_char()
@@ -184,7 +181,7 @@ class Lexer:
                 token = SyntaxToken(SyntaxKind.LeftShiftToken, last_char + self.cur_char())
             else:
                 token = SyntaxToken(SyntaxKind.LessToken, self.cur_char())
-        
+
         elif self.cur_char() == '>':
             if self.peek() == '=':
                 last_char = self.cur_char()
@@ -196,7 +193,7 @@ class Lexer:
                 token = SyntaxToken(SyntaxKind.RightShiftToken, last_char + self.cur_char())
             else:
                 token = SyntaxToken(SyntaxKind.GreaterToken, self.cur_char())
-        
+
         elif self.cur_char() == '=':
             if self.peek() == '=':
                 last_char = self.cur_char()
@@ -204,10 +201,10 @@ class Lexer:
                 token = SyntaxToken(SyntaxKind.EqualsEqualsToken, last_char + self.cur_char())
             else:
                 token = SyntaxToken(SyntaxKind.EqualsToken, self.cur_char())
-        
+
         elif self.cur_char() == '.':
             token = SyntaxToken(SyntaxKind.DotToken)
-        
+
         elif self.cur_char() == '%':
             if self.peek() == '=':
                 last_char = self.cur_char()
@@ -215,7 +212,7 @@ class Lexer:
                 token = SyntaxToken(SyntaxKind.PercentEqualsToken, last_char + self.cur_char())
             else:
                 token = SyntaxToken(SyntaxKind.PercentToken, self.cur_char())
-        
+
         elif self.cur_char() == '!':
             if self.peek() == '=':
                 last_char = self.cur_char()
@@ -223,17 +220,17 @@ class Lexer:
                 token = SyntaxToken(SyntaxKind.BangEqualsToken, last_char + self.cur_char())
             else:
                 token = SyntaxToken(SyntaxKind.BangToken, self.cur_char())
-        
+
         elif self.cur_char() == '~':
             token = SyntaxToken(SyntaxKind.TildeToken, self.cur_char())
-        
+
         elif self.cur_char() == '^':
             token = SyntaxToken(SyntaxKind.HatToken, self.cur_char())
-        
+
         # illegal token
         else:
             token = SyntaxToken(SyntaxKind.BadToken, self.cur_char())
-        
+
         self.advance()
         return token
 
