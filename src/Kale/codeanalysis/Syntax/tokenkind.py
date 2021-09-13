@@ -40,28 +40,28 @@ class TokenKind(enum.Enum):
 
     # Punctuators
     # ----
-    LPAR            = 301
-    RPAR            = 302
-    LSQB            = 303
-    RSQB            = 304
-    COMMA           = 305
-    SEMI            = 306
-    LBRACE          = 307
-    RBRACE          = 308
+    OpenParenthesisToken            = 301
+    CloseParenthesisToken            = 302
+    OpenBracketsToken            = 303
+    CloseBracketsToken            = 304
+    CommaToken           = 305
+    SemiToken            = 306
+    OpenBraceToken          = 307
+    CloseBraceToken          = 308
 
-    PLUS            = 309
-    MINUS           = 310
-    STAR            = 311
-    SLASH           = 312
-    VBAR            = 313
-    AMPER           = 314
-    BANG            = 315
-    LESS            = 316
-    GREATER         = 317
-    EQUAL           = 318
-    COLON           = 319
-    DOT             = 320
-    PERCENT         = 321
+    PlusToken            = 309
+    MinusToken           = 310
+    StartToken            = 311
+    SlashToken           = 312
+    PipeToken            = 313
+    AmpersandToken           = 314
+    BangToken            = 315
+    LessToken            = 316
+    GreaterToken         = 317
+    EqualsToken           = 318
+    ColonToken           = 319
+    DotToken             = 320
+    PercentToken         = 321
     EQEQUAL         = 322
     BANGEQUAL       = 323
     LESSEQUAL       = 324

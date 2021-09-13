@@ -63,9 +63,9 @@ class Parser:
         """
 
         return (
-            self.check_token(TokenKind.GREATER) or self.check_token(TokenKind.GREATEREQUAL) or
-            self.check_token(TokenKind.LESS) or self.check_token(TokenKind.LESSEQUAL) or
-            self.check_token(TokenKind.EQEQUAL) or self.check_token(TokenKind.BANGEQUAL)
+                self.check_token(TokenKind.GreaterToken) or self.check_token(TokenKind.GREATEREQUAL) or
+                self.check_token(TokenKind.LessToken) or self.check_token(TokenKind.LESSEQUAL) or
+                self.check_token(TokenKind.EQEQUAL) or self.check_token(TokenKind.BANGEQUAL)
         )
 
     def abort(self, message):
@@ -115,7 +115,7 @@ class Parser:
                 print("Print-Statement")
 
             self.advance()
-            self.match(TokenKind.LPAR)
+            self.match(TokenKind.OpenParenthesisToken)
 
             if self.check_token(TokenKind.StringToken):
                 # self.emitter.emit_line("printf(\"{self.cur_token.value}\\n\");")
@@ -124,7 +124,7 @@ class Parser:
                 # self.emitter.emit_line("printf(\"%" + ".2f\\n\", (float)(")
                 self.expression()
                 # self.emitter.emit_line("));")
-            self.match(TokenKind.RPAR)
+            self.match(TokenKind.CloseParenthesisToken)
         
         elif self.check_token(TokenKind.IfKeyword):
             """
@@ -159,21 +159,21 @@ class Parser:
 
             # First part
             # ----
-            self.match(TokenKind.LPAR)
+            self.match(TokenKind.OpenParenthesisToken)
             # self.emitter.emit("if(")
 
             self.comparison()
-            self.match(TokenKind.RPAR)
+            self.match(TokenKind.CloseParenthesisToken)
             # ----
             
             # Second part
             # ----
-            self.match(TokenKind.LBRACE)
+            self.match(TokenKind.OpenBraceToken)
             # self.emitter.emit_line("){")
-            while not self.check_token(TokenKind.RBRACE):
+            while not self.check_token(TokenKind.CloseBraceToken):
                 self.statement()
 
-            self.match(TokenKind.RBRACE)
+            self.match(TokenKind.CloseBraceToken)
             # ----
 
             # optional part
@@ -198,25 +198,25 @@ class Parser:
                     self.advance()
 
                     # ----
-                    self.match(TokenKind.LPAR)
+                    self.match(TokenKind.OpenParenthesisToken)
                     self.comparison()
-                    self.match(TokenKind.RPAR)
+                    self.match(TokenKind.CloseParenthesisToken)
                     # ----
-                    self.match(TokenKind.LBRACE)
-                    while not self.check_token(TokenKind.RBRACE):
+                    self.match(TokenKind.OpenBraceToken)
+                    while not self.check_token(TokenKind.CloseBraceToken):
                         self.statement()
-                    self.match(TokenKind.RBRACE)
+                    self.match(TokenKind.CloseBraceToken)
 
-                elif self.check_token(TokenKind.LBRACE):
+                elif self.check_token(TokenKind.OpenBraceToken):
                     if self.debug:
                         print("Else-Statement")
                     
                     self.advance()
                     
                     # ----
-                    while not self.check_token(TokenKind.RBRACE):
+                    while not self.check_token(TokenKind.CloseBraceToken):
                         self.statement()
-                    self.match(TokenKind.RBRACE)
+                    self.match(TokenKind.CloseBraceToken)
                     
                     break
 
@@ -237,21 +237,21 @@ class Parser:
 
             # First part
             # ----
-            self.match(TokenKind.LPAR)
+            self.match(TokenKind.OpenParenthesisToken)
             # self.emitter.emit("while(")
             self.comparison()
-            self.match(TokenKind.RPAR)
+            self.match(TokenKind.CloseParenthesisToken)
             # ----
 
             # Second part
             # ----
-            self.match(TokenKind.LBRACE)
+            self.match(TokenKind.OpenBraceToken)
             
             # self.emitter.emit_line("){")
-            while not self.check_token(TokenKind.RBRACE):
+            while not self.check_token(TokenKind.CloseBraceToken):
                 self.statement()
             
-            self.match(TokenKind.RBRACE)
+            self.match(TokenKind.CloseBraceToken)
             # self.emitter.emit_line("}")
             # ----
         
@@ -272,22 +272,22 @@ class Parser:
 
             # Initialization, Condition, Increment
             # ----
-            self.match(TokenKind.LPAR)
+            self.match(TokenKind.OpenParenthesisToken)
             self.statement()
-            self.match(TokenKind.SEMI)
+            self.match(TokenKind.SemiToken)
             self.comparison()
-            self.match(TokenKind.SEMI)
+            self.match(TokenKind.SemiToken)
             self.expression()
-            self.match(TokenKind.RPAR)
+            self.match(TokenKind.CloseParenthesisToken)
             # ----
 
             # Body
             # ----
-            self.match(TokenKind.LBRACE)
-            while not self.check_token(TokenKind.RBRACE):
+            self.match(TokenKind.OpenBraceToken)
+            while not self.check_token(TokenKind.CloseBraceToken):
                 self.statement()
             
-            self.match(TokenKind.RBRACE)
+            self.match(TokenKind.CloseBraceToken)
             # ----
 
         elif self.check_token(TokenKind.LabelKeyword):
@@ -310,7 +310,7 @@ class Parser:
             # self.emitter.emit_line(self.cur_token.value + ":")
 
             self.match(TokenKind.IdentifierToken)
-            self.match(TokenKind.COLON)
+            self.match(TokenKind.ColonToken)
             # ----
 
         elif self.check_token(TokenKind.GotoKeyword):
@@ -349,7 +349,7 @@ class Parser:
             
             # ----
             self.match(TokenKind.IdentifierToken)
-            self.match(TokenKind.EQUAL)
+            self.match(TokenKind.EqualsToken)
             self.expression()
 
         elif self.check_token(TokenKind.LetKeyword):
@@ -373,12 +373,12 @@ class Parser:
 
             # self.emitter.emit(self.cur_token.value + " = ")
             self.match(TokenKind.IdentifierToken)
-            self.match(TokenKind.EQUAL)
+            self.match(TokenKind.EqualsToken)
 
             if self.check_token(TokenKind.StringToken):
                 # self.emitter.emit_line(f"\"{self.cur_token.value}\"")
                 self.advance()
-                while self.check_token(TokenKind.PLUS):
+                while self.check_token(TokenKind.PlusToken):
                     # self.emitter.emit_line(" + ")
 
                     self.advance()
@@ -417,12 +417,12 @@ class Parser:
 
             # self.emitter.emit(f"{self.cur_token.value} = ")
             self.match(TokenKind.IdentifierToken)
-            self.match(TokenKind.EQUAL)
+            self.match(TokenKind.EqualsToken)
 
             if self.check_token(TokenKind.StringToken):
                 # self.emitter.emit_line(f"\"{self.cur_token.value}\"")
                 self.advance()
-                while self.check_token(TokenKind.PLUS):
+                while self.check_token(TokenKind.PlusToken):
                     # self.emitter.emit_line(" + ")
 
                     self.advance()
@@ -482,12 +482,12 @@ class Parser:
                 self.abort(f"The name '{self.cur_token.value}' does not exist in the current convalue")
             
             # self.emitter.emit(self.cur_token.value + " = ")
-            self.match(TokenKind.EQUAL)
+            self.match(TokenKind.EqualsToken)
 
             if self.check_token(TokenKind.StringToken):
                 # self.emitter.emit_line(f"\"{self.cur_token.value}\"")
                 self.advance()
-                while self.check_token(TokenKind.PLUS):
+                while self.check_token(TokenKind.PlusToken):
                     # self.emitter.emit_line(" + ")
 
                     self.advance()
@@ -543,7 +543,7 @@ class Parser:
         """
         print("Expression")
         self.term()
-        while self.check_token(TokenKind.PLUS) or self.check_token(TokenKind.MINUS):
+        while self.check_token(TokenKind.PlusToken) or self.check_token(TokenKind.MinusToken):
             # self.emitter.emit(self.cur_token.value)
             self.advance()
             self.term()
@@ -562,7 +562,7 @@ class Parser:
         
         self.unary()
 
-        while self.check_token(TokenKind.STAR) or self.check_token(TokenKind.SLASH):
+        while self.check_token(TokenKind.StartToken) or self.check_token(TokenKind.SlashToken):
             # self.emitter.emit(self.cur_token.value)
             self.advance()
             self.unary()
@@ -572,16 +572,16 @@ class Parser:
         Unary
 
         Syntax:
-            1.  PLUS FACTOR
-            2.  MINUS FACTOR
+            1.  PlusToken FACTOR
+            2.  MinusToken FACTOR
             3.  NOT FACTOR
             4.  TILDE FACTOR
             5.  PLUSPLUS FACTOR
             6.  MINUSMINUS FACTOR
             7.  FACTOR
         """
-        if (self.check_token(TokenKind.PLUS) or self.check_token(TokenKind.MINUS) or 
-            self.check_token(TokenKind.BANG) or self.check_token(TokenKind.TILDE) or 
+        if (self.check_token(TokenKind.PlusToken) or self.check_token(TokenKind.MinusToken) or
+            self.check_token(TokenKind.BangToken) or self.check_token(TokenKind.TILDE) or
             self.check_token(TokenKind.PLUSPLUS) or self.check_token(TokenKind.MINUSMINUS)):
             print(f"Unary ({self.cur_token.value})")
             # self.emitter.emit(self.cur_token.value)
