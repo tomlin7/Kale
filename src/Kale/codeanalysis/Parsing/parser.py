@@ -1,6 +1,5 @@
 import sys
 from codeanalysis.Syntax.syntaxkind import SyntaxKind
-# from termcolor import cprint
 
 
 class Parser:
@@ -613,11 +612,11 @@ class Parser:
             print(f"Primary ({self.cur_token.value})")
             # self.emitter.emit(self.cur_token.value)
             self.advance()
-        elif self.check_token(SyntaxKind.LPAREN):
+        elif self.check_token(SyntaxKind.OpenParenthesisToken):
             print("Primary (")
             self.advance()
             self.expression()
-            self.match(SyntaxKind.RPAREN)
+            self.match(SyntaxKind.CloseParenthesisToken)
             print(")")
         else:
             self.abort(f"Unexpected token at {self.cur_token.value}")
