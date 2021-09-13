@@ -1,2 +1,2 @@
 // float declaration syntax
-float a = 10.0
+string a = "1234"

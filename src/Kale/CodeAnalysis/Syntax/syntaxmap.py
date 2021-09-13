@@ -14,7 +14,7 @@ keyword_map = {
     'label'     : SyntaxKind.LabelKeyword,
     'let'       : SyntaxKind.LetKeyword,
     'print'     : SyntaxKind.PrintKeyword,
-    'string'    : SyntaxKind.StringToken,
+    'string'    : SyntaxKind.StringKeyword,
     'var'       : SyntaxKind.VarKeyword,
     'while'     : SyntaxKind.WhileKeyword,
 }
