@@ -448,7 +448,7 @@ class Parser:
             Input Statement
 
             Syntax:
-                1.  input IDENTIFIER
+                1.  input(IDENTIFIER)
             """
             if self.debug:
                 print("Input-Statement")
@@ -457,9 +457,13 @@ class Parser:
 
             # Body
             # ----
+            self.match(SyntaxKind.OpenParenthesisToken)
+
             if self.cur_token.value not in self.symbols:
                 self.symbols.add(self.cur_token.value)
+            
             self.match(SyntaxKind.IdentifierToken)
+            self.match(SyntaxKind.CloseParenthesisToken)
 
         elif self.check_token(SyntaxKind.IdentifierToken):
             """
