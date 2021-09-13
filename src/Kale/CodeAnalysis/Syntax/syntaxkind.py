@@ -36,10 +36,11 @@ class SyntaxKind(enum.Enum):
 
     # Keywords: Types
     # ----
-    IntKeyword              = 200
-    FloatKeyword            = 201
+    BoolKeyword             = 201
     CharKeyword             = 202
-    StringKeyword           = 203
+    FloatKeyword            = 203
+    IntKeyword              = 204
+    StringKeyword           = 205
 
     # Punctuators
     # ----
