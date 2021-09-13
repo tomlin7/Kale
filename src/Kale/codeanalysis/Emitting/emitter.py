@@ -25,7 +25,8 @@ class Emitter:
         with open(self.path, 'w') as output_file:
             output_file.write(self.header + self.code)
 
-    def build(self, file="out"):
+    @staticmethod
+    def build(file="out"):
         # while True:
         #     if os.path.isfile(f"{file}.c"):
         if platform.system() == 'Windows':
@@ -33,9 +34,19 @@ class Emitter:
                 subprocess.call(["gcc", f"-o{file}.exe", f"{file}.c"])
             except:
                 subprocess.call(["cl", f"-o{file}.exe", f"{file}.c"])
-        # elif platform.system() == 'Linux':
-        #     subprocess.call(["gcc", f"{file}.c -o {file}.o"])
-        # elif platform.system() == 'Darwin':
-        #     subprocess.call(["gcc", f"{file}.c -o {file}.o"])
         else:
             subprocess.call(["gcc", f"{file}.c -o {file}.o"])
+
+    @staticmethod
+    def run(file="out"):
+        if platform.system() == 'Windows':
+            subprocess.call([f"{file}.exe"])
+        else:
+            subprocess.call([f"{file}.o"])
+    
+    @staticmethod
+    def clean(file="out"):
+        if platform.system() == 'Windows':
+            subprocess.call(["del", f"{file}.exe"])
+        else:
+            subprocess.call(["rm", f"{file}.o"])
