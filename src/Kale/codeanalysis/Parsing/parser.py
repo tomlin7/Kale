@@ -88,7 +88,7 @@ class Parser:
         # self.emitter.add_header("#include <stdio.h>")
         # self.emitter.add_header("int main(void){")
 
-        while not self.check_token(TokenKind.EOF):
+        while not self.check_token(TokenKind.EndOfFileToken):
             self.statement()
 
         # self.emitter.emit_line("return 0;")
@@ -103,12 +103,12 @@ class Parser:
         Statements Parser
         """
 
-        if self.check_token(TokenKind.PRINT):
+        if self.check_token(TokenKind.PrintKeyword):
             """
             Print Statement
             
             Syntax: 
-                1.  print(STRING)
+                1.  print(StringKeyword)
                 2.  print(EXPRESSION)
             """
             if self.debug:
@@ -117,7 +117,7 @@ class Parser:
             self.advance()
             self.match(TokenKind.LPAR)
 
-            if self.check_token(TokenKind.STRING):
+            if self.check_token(TokenKind.StringToken):
                 # self.emitter.emit_line("printf(\"{self.cur_token.value}\\n\");")
                 self.advance()
             else:
@@ -126,7 +126,7 @@ class Parser:
                 # self.emitter.emit_line("));")
             self.match(TokenKind.RPAR)
         
-        elif self.check_token(TokenKind.IF):
+        elif self.check_token(TokenKind.IfKeyword):
             """
             If/If-else Statement
             
@@ -178,7 +178,7 @@ class Parser:
 
             # optional part
             # ----
-            while self.check_token(TokenKind.ELSE):
+            while self.check_token(TokenKind.ElseKeyword):
                 """
                 1.  else if(CONDITION)
                     {
@@ -191,7 +191,7 @@ class Parser:
                 """
                 self.advance()
 
-                if self.check_token(TokenKind.IF):
+                if self.check_token(TokenKind.IfKeyword):
                     if self.debug:
                         print("Else-If-Statement")
                     
@@ -220,7 +220,7 @@ class Parser:
                     
                     break
 
-        elif self.check_token(TokenKind.WHILE):
+        elif self.check_token(TokenKind.WhileKeyword):
             """
             While Statement
 
@@ -255,7 +255,7 @@ class Parser:
             # self.emitter.emit_line("}")
             # ----
         
-        elif self.check_token(TokenKind.FOR):
+        elif self.check_token(TokenKind.ForKeyword):
             """
             For Statement
 
@@ -290,7 +290,7 @@ class Parser:
             self.match(TokenKind.RBRACE)
             # ----
 
-        elif self.check_token(TokenKind.LABEL):
+        elif self.check_token(TokenKind.LabelKeyword):
             """
             Label Statement
 
@@ -309,11 +309,11 @@ class Parser:
 
             # self.emitter.emit_line(self.cur_token.value + ":")
 
-            self.match(TokenKind.IDENT)
+            self.match(TokenKind.IdentifierToken)
             self.match(TokenKind.COLON)
             # ----
 
-        elif self.check_token(TokenKind.GOTO):
+        elif self.check_token(TokenKind.GotoKeyword):
             """
             Goto Statement
 
@@ -328,11 +328,11 @@ class Parser:
             # ----
             self.labels_gotoed.add(self.cur_token.value)
             
-            self.match(TokenKind.IDENT)
+            self.match(TokenKind.IdentifierToken)
             # self.emitter.emit_line(f"goto {self.cur_token.value};")
             # ----
         
-        elif self.check_token(TokenKind.INT):
+        elif self.check_token(TokenKind.IntKeyword):
             """
             Integer Declaration
 
@@ -348,11 +348,11 @@ class Parser:
                 self.symbols.add(self.cur_token.value)
             
             # ----
-            self.match(TokenKind.IDENT)
+            self.match(TokenKind.IdentifierToken)
             self.match(TokenKind.EQUAL)
             self.expression()
 
-        elif self.check_token(TokenKind.LET):
+        elif self.check_token(TokenKind.LetKeyword):
             """
             Let Statement
 
@@ -372,23 +372,23 @@ class Parser:
                 self.abort(f"A local variable named '{self.cur_token.value}' is already defined in this scope")
 
             # self.emitter.emit(self.cur_token.value + " = ")
-            self.match(TokenKind.IDENT)
+            self.match(TokenKind.IdentifierToken)
             self.match(TokenKind.EQUAL)
 
-            if self.check_token(TokenKind.STRING):
+            if self.check_token(TokenKind.StringToken):
                 # self.emitter.emit_line(f"\"{self.cur_token.value}\"")
                 self.advance()
                 while self.check_token(TokenKind.PLUS):
                     # self.emitter.emit_line(" + ")
 
                     self.advance()
-                    if self.check_token(TokenKind.STRING):
+                    if self.check_token(TokenKind.StringToken):
                         # self.emitter.emit_line(f"\"{self.cur_token.value}\"")
                         self.advance()
-                    elif self.check_token(TokenKind.IDENT):
+                    elif self.check_token(TokenKind.IdentifierToken):
                         # self.emitter.emit(self.cur_token.value)
                         self.advance()
-                    elif self.check_token(TokenKind.NUMBER):
+                    elif self.check_token(TokenKind.NumberToken):
                         # self.emitter.emit(self.cur_token.value)
                         self.advance()
                     else:
@@ -398,7 +398,7 @@ class Parser:
             # self.emitter.emit_line(";")
             # ----
         
-        elif self.check_token(TokenKind.VAR):
+        elif self.check_token(TokenKind.VarKeyword):
             """
             Variable Declaration
 
@@ -416,23 +416,23 @@ class Parser:
                 # self.emitter.add_header(f"auto {self.cur_token.value};")
 
             # self.emitter.emit(f"{self.cur_token.value} = ")
-            self.match(TokenKind.IDENT)
+            self.match(TokenKind.IdentifierToken)
             self.match(TokenKind.EQUAL)
 
-            if self.check_token(TokenKind.STRING):
+            if self.check_token(TokenKind.StringToken):
                 # self.emitter.emit_line(f"\"{self.cur_token.value}\"")
                 self.advance()
                 while self.check_token(TokenKind.PLUS):
                     # self.emitter.emit_line(" + ")
 
                     self.advance()
-                    if self.check_token(TokenKind.STRING):
+                    if self.check_token(TokenKind.StringToken):
                         # self.emitter.emit_line(f"\"{self.cur_token.value}\"")
                         self.advance()
-                    elif self.check_token(TokenKind.IDENT):
+                    elif self.check_token(TokenKind.IdentifierToken):
                         # self.emitter.emit(self.cur_token.value)
                         self.advance()
-                    elif self.check_token(TokenKind.NUMBER):
+                    elif self.check_token(TokenKind.NumberToken):
                         # self.emitter.emit(self.cur_token.value)
                         self.advance()
                     else:
@@ -442,7 +442,7 @@ class Parser:
             # self.emitter.emit_line(";")
             # ----
 
-        elif self.check_token(TokenKind.INPUT):
+        elif self.check_token(TokenKind.InputKeyword):
             """
             Input Statement
 
@@ -463,10 +463,10 @@ class Parser:
             # self.emitter.emit("scanf_s(\"%")
             # self.emitter.emit_line("*s\");")
             # self.emitter.emit_line("}")
-            self.match(TokenKind.IDENT)
+            self.match(TokenKind.IdentifierToken)
             # ----
 
-        elif self.check_token(TokenKind.IDENT):
+        elif self.check_token(TokenKind.IdentifierToken):
             """
             Assignment Statement
 
@@ -484,20 +484,20 @@ class Parser:
             # self.emitter.emit(self.cur_token.value + " = ")
             self.match(TokenKind.EQUAL)
 
-            if self.check_token(TokenKind.STRING):
+            if self.check_token(TokenKind.StringToken):
                 # self.emitter.emit_line(f"\"{self.cur_token.value}\"")
                 self.advance()
                 while self.check_token(TokenKind.PLUS):
                     # self.emitter.emit_line(" + ")
 
                     self.advance()
-                    if self.check_token(TokenKind.STRING):
+                    if self.check_token(TokenKind.StringToken):
                         # self.emitter.emit_line(f"\"{self.cur_token.value}\"")
                         self.advance()
-                    elif self.check_token(TokenKind.IDENT):
+                    elif self.check_token(TokenKind.IdentifierToken):
                         # self.emitter.emit(self.cur_token.value)
                         self.advance()
-                    elif self.check_token(TokenKind.NUMBER):
+                    elif self.check_token(TokenKind.NumberToken):
                         # self.emitter.emit(self.cur_token.value)
                         self.advance()
                     else:
@@ -598,15 +598,15 @@ class Parser:
 
         Syntax:
             1.  NUMBER
-            2.  STRING
+            2.  StringKeyword
             3.  IDENTIFIER
             4.  (EXPRESSION)
         """
-        if self.check_token(TokenKind.NUMBER) or self.check_token(TokenKind.STRING):
+        if self.check_token(TokenKind.NumberToken) or self.check_token(TokenKind.StringToken):
             print(f"Primary ({self.cur_token.value})")
             # self.emitter.emit(self.cur_token.value)
             self.advance()
-        elif self.check_token(TokenKind.IDENT):
+        elif self.check_token(TokenKind.IdentifierToken):
             if self.cur_token.value not in self.symbols:
                 self.abort(f"Referencing variable before assignment: {self.cur_token.value}")
             

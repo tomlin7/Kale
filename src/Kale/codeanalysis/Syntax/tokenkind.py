@@ -2,39 +2,41 @@ import enum
 
 
 class TokenKind(enum.Enum):
+    # Meta
+    # ----
+    BadToken = -2
+    EndOfFileToken = -1
+
     # Literals
     # ----
-    BADTOKEN        = -2
-    EOF             = -1
-    NEWLINE         = 0
-    WHITESPACE      = 1
-    NUMBER          = 2
-    STRING          = 4
+    NewLineToken        = 0
+    WhiteSpaceToken     = 1
+    NumberToken       = 2
+    StringToken       = 4
 
     # Identifiers
-    IDENT      = 100
+    IdentifierToken     = 100
 
     # Keywords
     # ----
-    LABEL           = 101
-    GOTO            = 102
-    PRINT           = 103
-    INPUT           = 104
-    LET             = 105
-    VAR             = 106
-    IF              = 107
-    ELSE            = 108
-    WHILE           = 109
-    FOR             = 110
-    FOREACH         = 111
-    IN              = 112
+    ElseKeyword        = 117
+    ForKeyword         = 118
+    ForeachKeyword     = 119
+    GotoKeyword        = 120
+    IfKeyword          = 121
+    InKeyword          = 122
+    InputKeyword       = 123
+    LabelKeyword       = 124
+    LetKeyword         = 125
+    PrintKeyword       = 126
+    VarKeyword         = 127
+    WhileKeyword       = 128
 
     # Type keywords
-    INT             = 150
-    FLOAT           = 151
-    CHAR            = 152
-    # STRING          = 153
-
+    IntKeyword             = 200
+    FloatKeyword           = 201
+    CharKeyword            = 202
+    StringKeyword          = 203
 
     # Punctuators
     # ----
@@ -46,7 +48,7 @@ class TokenKind(enum.Enum):
     SEMI            = 306
     LBRACE          = 307
     RBRACE          = 308
-    
+
     PLUS            = 309
     MINUS           = 310
     STAR            = 311
