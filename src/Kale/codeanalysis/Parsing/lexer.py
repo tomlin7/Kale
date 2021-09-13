@@ -1,7 +1,7 @@
 import sys
 
-from codeanalysis.Syntax.token import Token
-from codeanalysis.Syntax.tokenkind import TokenKind
+from codeanalysis.Syntax.syntaxtoken import SyntaxToken
+from codeanalysis.Syntax.syntaxkind import SyntaxKind
 
 from codeanalysis.Exceptions.illegalcharacter import IllegalCharacterException
 from codeanalysis.Exceptions.invalidtoken import InvalidTokenException
@@ -32,7 +32,7 @@ class Lexer:
         # ----------------------------------------------------------------
 
         if self.position >= len(self.source):
-            token = Token(TokenKind.EndOfFileToken)
+            token = SyntaxToken(SyntaxKind.EndOfFileToken)
         
         elif self.cur_char() in white_space:
             start = self.position
@@ -40,24 +40,22 @@ class Lexer:
                 self.advance()
             length = self.position - start
             text = self.source[start:length + start]
-            return Token(TokenKind.WhiteSpaceToken, text)
+            return SyntaxToken(SyntaxKind.WhiteSpaceToken, text)
             
         elif self.cur_char() == '\n':
-            token = Token(TokenKind.NewLineToken)
+            token = SyntaxToken(SyntaxKind.NewLineToken)
         
         elif self.cur_char() == '\"':
             self.advance()
             start_pos = self.position
 
             while self.cur_char() != '\"':
-                if (self.cur_char() == '\r' or
-                        self.cur_char() == '\n' or self.cur_char() == '\t' or
-                        self.cur_char() == '\\' or self.cur_char() == '%'):
+                if self.cur_char() in ['\r', '\n', '\t', '\\', '%']:
                     raise IllegalCharacterException(f'at {self.cur_char()}')
                 self.advance()
 
             token_text = self.source[start_pos: self.position]
-            token = Token(TokenKind.StringToken, token_text)
+            token = SyntaxToken(SyntaxKind.StringToken, token_text)
         
         elif self.cur_char().isdigit():
             start_pos = self.position
@@ -71,7 +69,7 @@ class Lexer:
                 while self.peek().isdigit():
                     self.advance()
             token_text = self.source[start_pos: self.position + 1]
-            token = Token(TokenKind.NumberToken, token_text)
+            token = SyntaxToken(SyntaxKind.NumberToken, token_text)
         
         elif self.cur_char().isalpha():
             start_pos = self.position
@@ -79,162 +77,162 @@ class Lexer:
                 self.advance()
 
             token_text = self.source[start_pos: self.position + 1]
-            keyword = Token().check_keyword(token_text)
+            keyword = SyntaxToken().check_keyword(token_text)
             if keyword is None:
-                token = Token(TokenKind.IdentifierToken, token_text)
+                token = SyntaxToken(SyntaxKind.IdentifierToken, token_text)
             # Keywords
             else:
-                token = Token(keyword)
+                token = SyntaxToken(keyword)
 
         # Punctuators
         # ----------------------------------------------------------------
 
         elif self.cur_char() == '(':
-            token = Token(TokenKind.OpenParenthesisToken)
+            token = SyntaxToken(SyntaxKind.OpenParenthesisToken)
         
         elif self.cur_char() == ')':
-            token = Token(TokenKind.CloseParenthesisToken)
+            token = SyntaxToken(SyntaxKind.CloseParenthesisToken)
         
         elif self.cur_char() == '[':
-            token = Token(TokenKind.OpenBracketsToken)
+            token = SyntaxToken(SyntaxKind.OpenBracketsToken)
         
         elif self.cur_char() == ']':
-            token = Token(TokenKind.CloseBracketsToken)
+            token = SyntaxToken(SyntaxKind.CloseBracketsToken)
         
         elif self.cur_char() == '{':
-            token = Token(TokenKind.OpenBraceToken)
+            token = SyntaxToken(SyntaxKind.OpenBraceToken)
         
         elif self.cur_char() == '}':
-            token = Token(TokenKind.CloseBraceToken)
+            token = SyntaxToken(SyntaxKind.CloseBraceToken)
         
         elif self.cur_char() == ',':
-            token = Token(TokenKind.CommaToken)
+            token = SyntaxToken(SyntaxKind.CommaToken)
         
         elif self.cur_char() == ';':
-            token = Token(TokenKind.SemiToken)
+            token = SyntaxToken(SyntaxKind.SemiToken)
 
         # Operators
         # ----------------------------------------------------------------
 
         elif self.cur_char() == ':':
-            token = Token(TokenKind.ColonToken, self.cur_char())
+            token = SyntaxToken(SyntaxKind.ColonToken, self.cur_char())
         
         elif self.cur_char() == '+':
             if self.peek() == '=':
                 last_char = self.cur_char()
                 self.advance()
-                token = Token(TokenKind.PlusEqualsToken, last_char + self.cur_char())
+                token = SyntaxToken(SyntaxKind.PlusEqualsToken, last_char + self.cur_char())
             elif self.peek() == '+':
                 last_char = self.cur_char()
                 self.advance()
-                token = Token(TokenKind.PlusPlusToken, last_char + self.cur_char())
+                token = SyntaxToken(SyntaxKind.PlusPlusToken, last_char + self.cur_char())
             else:
-                token = Token(TokenKind.PlusToken, self.cur_char())
+                token = SyntaxToken(SyntaxKind.PlusToken, self.cur_char())
         
         elif self.cur_char() == '-':
             if self.peek() == '=':
                 last_char = self.cur_char()
                 self.advance()
-                token = Token(TokenKind.MinusEqualsToken, last_char + self.cur_char())
+                token = SyntaxToken(SyntaxKind.MinusEqualsToken, last_char + self.cur_char())
             elif self.peek() == '=':
                 last_char = self.cur_char()
                 self.advance()
-                token = Token(TokenKind.MinusMinusToken, last_char + self.cur_char())
+                token = SyntaxToken(SyntaxKind.MinusMinusToken, last_char + self.cur_char())
             else:
-                token = Token(TokenKind.MinusToken, self.cur_char())
+                token = SyntaxToken(SyntaxKind.MinusToken, self.cur_char())
         
         elif self.cur_char() == '*':
             if self.peek() == '*':
                 last_char = self.cur_char()
                 self.advance()
-                token = Token(TokenKind.DoubleStarToken, last_char + self.cur_char())
+                token = SyntaxToken(SyntaxKind.DoubleStarToken, last_char + self.cur_char())
             elif self.peek() == '=':
                 last_char = self.cur_char()
                 self.advance()
-                token = Token(TokenKind.StarEqualsToken, last_char + self.cur_char())
+                token = SyntaxToken(SyntaxKind.StarEqualsToken, last_char + self.cur_char())
             else:
-                token = Token(TokenKind.StartToken, self.cur_char())
+                token = SyntaxToken(SyntaxKind.StartToken, self.cur_char())
         
         elif self.cur_char() == '/':
             if self.peek() == '=':
                 last_char = self.cur_char()
                 self.advance()
-                token = Token(TokenKind.SlashEqualsToken, last_char + self.cur_char())
+                token = SyntaxToken(SyntaxKind.SlashEqualsToken, last_char + self.cur_char())
             # comments
             elif self.peek() == '/':
                 while self.cur_char() != '\n':
                     self.advance()
             else:
-                token = Token(TokenKind.SlashToken, self.cur_char())
+                token = SyntaxToken(SyntaxKind.SlashToken, self.cur_char())
         
         elif self.cur_char() == '|':
-            token = Token(TokenKind.PipeToken, self.cur_char())
+            token = SyntaxToken(SyntaxKind.PipeToken, self.cur_char())
         
         
         elif self.cur_char() == '&':
-            token = Token(TokenKind.AmpersandToken, self.cur_char())
+            token = SyntaxToken(SyntaxKind.AmpersandToken, self.cur_char())
         
         
         elif self.cur_char() == '<':
             if self.peek() == '=':
                 last_char = self.cur_char()
                 self.advance()
-                token = Token(TokenKind.LessOrEqualsToken, last_char + self.cur_char())
+                token = SyntaxToken(SyntaxKind.LessOrEqualsToken, last_char + self.cur_char())
             elif self.peek() == '<':
                 last_char = self.cur_char()
                 self.advance()
-                token = Token(TokenKind.LeftShiftToken, last_char + self.cur_char())
+                token = SyntaxToken(SyntaxKind.LeftShiftToken, last_char + self.cur_char())
             else:
-                token = Token(TokenKind.LessToken, self.cur_char())
+                token = SyntaxToken(SyntaxKind.LessToken, self.cur_char())
         
         elif self.cur_char() == '>':
             if self.peek() == '=':
                 last_char = self.cur_char()
                 self.advance()
-                token = Token(TokenKind.GreaterOrEqualsToken, last_char + self.cur_char())
+                token = SyntaxToken(SyntaxKind.GreaterOrEqualsToken, last_char + self.cur_char())
             elif self.peek() == '>':
                 last_char = self.cur_char()
                 self.advance()
-                token = Token(TokenKind.RightShiftToken, last_char + self.cur_char())
+                token = SyntaxToken(SyntaxKind.RightShiftToken, last_char + self.cur_char())
             else:
-                token = Token(TokenKind.GreaterToken, self.cur_char())
+                token = SyntaxToken(SyntaxKind.GreaterToken, self.cur_char())
         
         elif self.cur_char() == '=':
             if self.peek() == '=':
                 last_char = self.cur_char()
                 self.advance()
-                token = Token(TokenKind.EqualsEqualsToken, last_char + self.cur_char())
+                token = SyntaxToken(SyntaxKind.EqualsEqualsToken, last_char + self.cur_char())
             else:
-                token = Token(TokenKind.EqualsToken, self.cur_char())
+                token = SyntaxToken(SyntaxKind.EqualsToken, self.cur_char())
         
         elif self.cur_char() == '.':
-            token = Token(TokenKind.DotToken)
+            token = SyntaxToken(SyntaxKind.DotToken)
         
         elif self.cur_char() == '%':
             if self.peek() == '=':
                 last_char = self.cur_char()
                 self.advance()
-                token = Token(TokenKind.PercentEqualsToken, last_char + self.cur_char())
+                token = SyntaxToken(SyntaxKind.PercentEqualsToken, last_char + self.cur_char())
             else:
-                token = Token(TokenKind.PercentToken, self.cur_char())
+                token = SyntaxToken(SyntaxKind.PercentToken, self.cur_char())
         
         elif self.cur_char() == '!':
             if self.peek() == '=':
                 last_char = self.cur_char()
                 self.advance()
-                token = Token(TokenKind.BangEqualsToken, last_char + self.cur_char())
+                token = SyntaxToken(SyntaxKind.BangEqualsToken, last_char + self.cur_char())
             else:
-                token = Token(TokenKind.BangToken, self.cur_char())
+                token = SyntaxToken(SyntaxKind.BangToken, self.cur_char())
         
         elif self.cur_char() == '~':
-            token = Token(TokenKind.TildeToken, self.cur_char())
+            token = SyntaxToken(SyntaxKind.TildeToken, self.cur_char())
         
         elif self.cur_char() == '^':
-            token = Token(TokenKind.HatToken, self.cur_char())
+            token = SyntaxToken(SyntaxKind.HatToken, self.cur_char())
         
         # illegal token
         else:
-            token = Token(TokenKind.BadToken, self.cur_char())
+            token = SyntaxToken(SyntaxKind.BadToken, self.cur_char())
         
         self.advance()
         return token
@@ -243,12 +241,12 @@ class Lexer:
         token_list = []
         while True:
             token = self.next_token()
-            if token.kind == TokenKind.EndOfFileToken:
+            if token.kind == SyntaxKind.EndOfFileToken:
                 token_list.append(token)
                 break
-            if token.kind == TokenKind.BadToken:
+            if token.kind == SyntaxKind.BadToken:
                 raise InvalidTokenException(token.value)
-            if token.kind not in [TokenKind.NewLineToken, TokenKind.WhiteSpaceToken]:
+            if token.kind not in [SyntaxKind.NewLineToken, SyntaxKind.WhiteSpaceToken]:
                 token_list.append(token)
 
         for x in token_list:
