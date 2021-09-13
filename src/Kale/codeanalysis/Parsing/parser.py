@@ -63,9 +63,9 @@ class Parser:
         """
 
         return (
-                self.check_token(TokenKind.GreaterToken) or self.check_token(TokenKind.GREATEREQUAL) or
-                self.check_token(TokenKind.LessToken) or self.check_token(TokenKind.LESSEQUAL) or
-                self.check_token(TokenKind.EQEQUAL) or self.check_token(TokenKind.BANGEQUAL)
+                self.check_token(TokenKind.GreaterToken) or self.check_token(TokenKind.GreaterOrEqualsToken) or
+                self.check_token(TokenKind.LessToken) or self.check_token(TokenKind.LessOrEqualsToken) or
+                self.check_token(TokenKind.EqualsEqualsToken) or self.check_token(TokenKind.BangEqualsToken)
         )
 
     def abort(self, message):
@@ -575,19 +575,19 @@ class Parser:
             1.  PlusToken FACTOR
             2.  MinusToken FACTOR
             3.  NOT FACTOR
-            4.  TILDE FACTOR
-            5.  PLUSPLUS FACTOR
-            6.  MINUSMINUS FACTOR
+            4.  TildeToken FACTOR
+            5.  PlusPlusToken FACTOR
+            6.  MinusMinusToken FACTOR
             7.  FACTOR
         """
         if (self.check_token(TokenKind.PlusToken) or self.check_token(TokenKind.MinusToken) or
-            self.check_token(TokenKind.BangToken) or self.check_token(TokenKind.TILDE) or
-            self.check_token(TokenKind.PLUSPLUS) or self.check_token(TokenKind.MINUSMINUS)):
+            self.check_token(TokenKind.BangToken) or self.check_token(TokenKind.TildeToken) or
+            self.check_token(TokenKind.PlusPlusToken) or self.check_token(TokenKind.MinusMinusToken)):
             print(f"Unary ({self.cur_token.value})")
             # self.emitter.emit(self.cur_token.value)
             self.advance()
         self.primary()
-        if (self.check_token(TokenKind.PLUSPLUS) or self.check_token(TokenKind.MINUSMINUS)):
+        if (self.check_token(TokenKind.PlusPlusToken) or self.check_token(TokenKind.MinusMinusToken)):
             print(f"Unary ({self.cur_token.value})")
             # self.emitter.emit(self.cur_token.value)
             self.advance()
