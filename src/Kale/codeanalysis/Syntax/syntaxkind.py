@@ -1,8 +1,8 @@
 import enum
 
 
-class TokenKind(enum.Enum):
-    # Meta
+class SyntaxKind(enum.Enum):
+    # Meta kinds
     # ----
     BadToken                = -2
     EndOfFileToken          = -1
@@ -15,24 +15,26 @@ class TokenKind(enum.Enum):
     StringToken             = 4
 
     # Identifiers
+    # ----
     IdentifierToken         = 100
 
-    # Keywords
+    # Keywords: Keywords
     # ----
-    ElseKeyword             = 117
-    ForKeyword              = 118
-    ForeachKeyword          = 119
-    GotoKeyword             = 120
-    IfKeyword               = 121
-    InKeyword               = 122
-    InputKeyword            = 123
-    LabelKeyword            = 124
-    LetKeyword              = 125
-    PrintKeyword            = 126
-    VarKeyword              = 127
-    WhileKeyword            = 128
+    ElseKeyword             = 111
+    ForKeyword              = 112
+    ForeachKeyword          = 113
+    GotoKeyword             = 114
+    IfKeyword               = 115
+    InKeyword               = 116
+    InputKeyword            = 117
+    LabelKeyword            = 118
+    LetKeyword              = 119
+    PrintKeyword            = 120
+    VarKeyword              = 121
+    WhileKeyword            = 122
 
-    # Type keywords
+    # Keywords: Types
+    # ----
     IntKeyword              = 200
     FloatKeyword            = 201
     CharKeyword             = 202
@@ -49,38 +51,44 @@ class TokenKind(enum.Enum):
     OpenBraceToken          = 307
     CloseBraceToken         = 308
 
-    PlusToken               = 309
-    MinusToken              = 310
-    StartToken              = 311
-    SlashToken              = 312
-    PipeToken               = 313
-    AmpersandToken          = 314
-    BangToken               = 315
-    LessToken               = 316
-    GreaterToken            = 317
-    EqualsToken             = 318
-    ColonToken              = 319
-    DotToken                = 320
-    PercentToken            = 321
-    EqualsEqualsToken       = 322
-    BangEqualsToken         = 323
-    LessOrEqualsToken       = 324
-    GreaterOrEqualsToken    = 325
-    TildeToken              = 326
-    HatToken                = 327
-    LeftShiftToken          = 328
-    RightShiftToken         = 329
-    DoubleStarToken         = 330
-    PlusEqualsToken         = 331
-    MinusEqualsToken        = 332
-    PlusPlusToken           = 333
-    MinusMinusToken         = 334
-    StarEqualsToken         = 335
-    SlashEqualsToken        = 336
-    PercentEqualsToken      = 337
-    AmpereToken             = 338
-    PipeEqualsToken         = 339
-    HatEqualsToken          = 341
-    LeftShiftEqualsToken    = 342
-    RightShiftEqualsToken   = 343
-    DoubleStarEqualsToken   = 344
+    # Operators: Single character
+    # ----    
+    PlusToken               = 351
+    MinusToken              = 352
+    StartToken              = 353
+    SlashToken              = 353
+    PipeToken               = 355
+    AmpersandToken          = 356
+    BangToken               = 357
+    LessToken               = 358
+    GreaterToken            = 359
+    EqualsToken             = 360
+    ColonToken              = 361
+    DotToken                = 362
+    PercentToken            = 363
+    TildeToken              = 364
+    HatToken                = 365
+    
+    # Operators: Two characters
+    EqualsEqualsToken       = 401
+    BangEqualsToken         = 402
+    LessOrEqualsToken       = 403
+    GreaterOrEqualsToken    = 404
+    LeftShiftToken          = 405
+    RightShiftToken         = 406
+    DoubleStarToken         = 407
+    PlusEqualsToken         = 408
+    MinusEqualsToken        = 409
+    PlusPlusToken           = 410
+    MinusMinusToken         = 411
+    StarEqualsToken         = 412
+    SlashEqualsToken        = 413
+    PercentEqualsToken      = 414
+    AmpersandEqualsToken    = 415
+    PipeEqualsToken         = 416
+    HatEqualsToken          = 417
+
+    # Operators: Three characters
+    LeftShiftEqualsToken    = 451
+    RightShiftEqualsToken   = 452
+    DoubleStarEqualsToken   = 453
