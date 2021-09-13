@@ -1,4 +1,2 @@
-// test comments
-
-
-// test comments
+// float declaration syntax
+float a = 10.0
