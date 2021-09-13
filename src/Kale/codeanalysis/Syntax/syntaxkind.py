@@ -47,7 +47,7 @@ class SyntaxKind(enum.Enum):
     OpenBracketsToken       = 303
     CloseBracketsToken      = 304
     CommaToken              = 305
-    SemiToken               = 306
+    SemicolonToken          = 306
     OpenBraceToken          = 307
     CloseBraceToken         = 308
 
