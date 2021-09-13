@@ -1,2 +1,3 @@
-// float declaration syntax
-string a = "1234"
+// fix assignment statement
+int a = 1
+a = 2
