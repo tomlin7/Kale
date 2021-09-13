@@ -1,6 +1,6 @@
 from dataclasses import dataclass
-from codeanalysis.Syntax.syntaxkind import SyntaxKind
-from codeanalysis.Syntax.syntaxmap import keyword_map
+from CodeAnalysis.Syntax.syntaxkind import SyntaxKind
+from CodeAnalysis.Syntax.syntaxmap import keyword_map
 
 
 @dataclass

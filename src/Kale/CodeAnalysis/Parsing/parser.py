@@ -1,5 +1,5 @@
 import sys
-from codeanalysis.Syntax.syntaxkind import SyntaxKind
+from CodeAnalysis.Syntax.syntaxkind import SyntaxKind
 
 import colorama, termcolor
 colorama.init()

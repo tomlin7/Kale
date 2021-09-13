@@ -1,8 +1,8 @@
-from codeanalysis.Syntax.syntaxtoken import SyntaxToken
-from codeanalysis.Syntax.syntaxkind import SyntaxKind
+from CodeAnalysis.Syntax.syntaxtoken import SyntaxToken
+from CodeAnalysis.Syntax.syntaxkind import SyntaxKind
 
-from codeanalysis.Exceptions.illegalcharacter import IllegalCharacterException
-from codeanalysis.Exceptions.invalidtoken import InvalidTokenException
+from CodeAnalysis.Exceptions.illegalcharacter import IllegalCharacterException
+from CodeAnalysis.Exceptions.invalidtoken import InvalidTokenException
 
 
 class Lexer:
