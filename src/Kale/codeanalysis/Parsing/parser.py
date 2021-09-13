@@ -351,6 +351,26 @@ class Parser:
             self.match(SyntaxKind.EqualsToken)
             self.expression()
 
+        elif self.check_token(SyntaxKind.FloatKeyword):
+            """
+            Float Declaration
+
+            Syntax:
+                1.  float IDENTIFIER = EXPRESSION
+            """
+            if self.debug:
+                print("Float-Statement")
+            
+            self.advance()
+
+            if self.cur_token.value not in self.symbols:
+                self.symbols.add(self.cur_token.value)
+            
+            # ----
+            self.match(SyntaxKind.IdentifierToken)
+            self.match(SyntaxKind.EqualsToken)
+            self.expression()
+
         elif self.check_token(SyntaxKind.LetKeyword):
             """
             Let Statement
