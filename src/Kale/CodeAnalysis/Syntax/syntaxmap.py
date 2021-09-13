@@ -1,6 +1,7 @@
 from CodeAnalysis.Syntax.syntaxkind import SyntaxKind
 
 keyword_map = {
+    'bool'      : SyntaxKind.BoolKeyword,
     'char'      : SyntaxKind.CharKeyword,
     'else'      : SyntaxKind.ElseKeyword,
     'float'     : SyntaxKind.FloatKeyword,
