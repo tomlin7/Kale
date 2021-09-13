@@ -1,2 +1,3 @@
 // test boolean
-bool foo = 1
+bool foo = true
+bool foo = false

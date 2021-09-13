@@ -372,7 +372,9 @@ class Parser:
             Boolean Declaration
 
             Syntax:
-                1.  bool IDENTIFIER = EXPRESSION
+                1.  bool IDENTIFIER = true
+                2.  bool IDENTIFIER = false
+                3.  bool IDENTIFIER = EXPRESSION
             """
             if self.debug:
                 print("Bool-Statement")
@@ -386,8 +388,14 @@ class Parser:
             # Body
             # ----
             self.match(SyntaxKind.IdentifierToken)
+            
             self.match(SyntaxKind.EqualsToken)
-            self.expression()
+            if self.check_token(SyntaxKind.TrueKeyword):
+                self.match(SyntaxKind.TrueKeyword)
+            elif self.check_token(SyntaxKind.FalseKeyword):
+                self.match(SyntaxKind.FalseKeyword)
+            else:
+                self.expression()
 
         elif self.check_token(SyntaxKind.LetKeyword):
             """
