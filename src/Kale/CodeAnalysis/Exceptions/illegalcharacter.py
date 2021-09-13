@@ -1,4 +1,4 @@
-from codeanalysis.Exceptions.error import Error
+from CodeAnalysis.Exceptions.error import Error
 
 class IllegalCharacterException(Error):
     def __init__(self, char):

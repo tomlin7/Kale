@@ -1,4 +1,4 @@
-from codeanalysis.Syntax.syntaxkind import SyntaxKind
+from CodeAnalysis.Syntax.syntaxkind import SyntaxKind
 
 keyword_map = {
     'char'      : SyntaxKind.CharKeyword,
