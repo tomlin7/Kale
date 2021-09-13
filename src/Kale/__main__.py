@@ -3,7 +3,7 @@ import time
 
 from CodeAnalysis.Parsing.lexer import Lexer
 from CodeAnalysis.Parsing.parser import Parser
-from CodeAnalysis.Emitting.emitter import Emitter
+# from CodeAnalysis.Emitting.emitter import Emitter
 
 
 print("Kale")
@@ -18,8 +18,8 @@ filename = sys.argv[1].split(".")[0]
 
 lexer   = Lexer(source)
 token_list = lexer.lex()
-emitter = Emitter(filename)
-parser  = Parser(token_list, emitter, debug=True)
+# emitter = Emitter(filename)
+parser  = Parser(token_list, debug=True)
 
 
 # ------------
