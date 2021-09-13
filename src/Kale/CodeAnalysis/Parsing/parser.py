@@ -366,6 +366,28 @@ class Parser:
             self.match(SyntaxKind.IdentifierToken)
             self.match(SyntaxKind.EqualsToken)
             self.expression()
+        
+        elif self.check_token(SyntaxKind.BoolKeyword):
+            """
+            Boolean Declaration
+
+            Syntax:
+                1.  bool IDENTIFIER = EXPRESSION
+            """
+            if self.debug:
+                print("Bool-Statement")
+            
+            self.advance()
+
+            # ----
+            if self.cur_token.value not in self.symbols:
+                self.symbols.add(self.cur_token.value)
+            
+            # Body
+            # ----
+            self.match(SyntaxKind.IdentifierToken)
+            self.match(SyntaxKind.EqualsToken)
+            self.expression()
 
         elif self.check_token(SyntaxKind.LetKeyword):
             """
