@@ -159,8 +159,12 @@ class Lexer:
                 token = SyntaxToken(SyntaxKind.SlashEqualsToken, last_char + self.cur_char())
             # comments
             elif self.peek() == '/':
-                while self.cur_char() != '\n':
+                start = self.position
+                while self.cur_char() not in ['\n', '\0']:
                     self.advance()
+                length = self.position - start
+                text = self.source[start:length + start]
+                token = SyntaxToken(SyntaxKind.Comments, text)
             else:
                 token = SyntaxToken(SyntaxKind.SlashToken, self.cur_char())
 
@@ -243,7 +247,7 @@ class Lexer:
                 break
             if token.kind == SyntaxKind.BadToken:
                 raise InvalidTokenException(token.value)
-            if token.kind not in [SyntaxKind.NewLineToken, SyntaxKind.WhiteSpaceToken]:
+            if token.kind not in [SyntaxKind.NewLineToken, SyntaxKind.WhiteSpaceToken, SyntaxKind.Comments]:
                 token_list.append(token)
 
         for x in token_list:
