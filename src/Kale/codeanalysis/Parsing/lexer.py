@@ -32,7 +32,7 @@ class Lexer:
         # ----------------------------------------------------------------
 
         if self.position >= len(self.source):
-            token = Token(TokenKind.EOF)
+            token = Token(TokenKind.EndOfFileToken)
         
         elif self.cur_char() in white_space:
             start = self.position
@@ -40,10 +40,10 @@ class Lexer:
                 self.advance()
             length = self.position - start
             text = self.source[start:length + start]
-            return Token(TokenKind.WHITESPACE, text)
+            return Token(TokenKind.WhiteSpaceToken, text)
             
         elif self.cur_char() == '\n':
-            token = Token(TokenKind.NEWLINE)
+            token = Token(TokenKind.NewLineToken)
         
         elif self.cur_char() == '\"':
             self.advance()
@@ -57,7 +57,7 @@ class Lexer:
                 self.advance()
 
             token_text = self.source[start_pos: self.position]
-            token = Token(TokenKind.STRING, token_text)
+            token = Token(TokenKind.StringToken, token_text)
         
         elif self.cur_char().isdigit():
             start_pos = self.position
@@ -71,7 +71,7 @@ class Lexer:
                 while self.peek().isdigit():
                     self.advance()
             token_text = self.source[start_pos: self.position + 1]
-            token = Token(TokenKind.NUMBER, token_text)
+            token = Token(TokenKind.NumberToken, token_text)
         
         elif self.cur_char().isalpha():
             start_pos = self.position
@@ -79,9 +79,9 @@ class Lexer:
                 self.advance()
 
             token_text = self.source[start_pos: self.position + 1]
-            keyword = Token.check_keyword(token_text.upper())
+            keyword = Token().check_keyword(token_text)
             if keyword is None:
-                token = Token(TokenKind.IDENT, token_text)
+                token = Token(TokenKind.IdentifierToken, token_text)
             # Keywords
             else:
                 token = Token(keyword)
@@ -234,7 +234,7 @@ class Lexer:
         
         # illegal token
         else:
-            token = Token(TokenKind.BADTOKEN, self.cur_char())
+            token = Token(TokenKind.BadToken, self.cur_char())
         
         self.advance()
         return token
@@ -243,12 +243,12 @@ class Lexer:
         token_list = []
         while True:
             token = self.next_token()
-            if token.kind == TokenKind.EOF:
+            if token.kind == TokenKind.EndOfFileToken:
                 token_list.append(token)
                 break
-            if token.kind == TokenKind.BADTOKEN:
+            if token.kind == TokenKind.BadToken:
                 raise InvalidTokenException(token.value)
-            if token.kind not in [TokenKind.NEWLINE, TokenKind.WHITESPACE]:
+            if token.kind not in [TokenKind.NewLineToken, TokenKind.WhiteSpaceToken]:
                 token_list.append(token)
 
         for x in token_list:

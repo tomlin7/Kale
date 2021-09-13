@@ -1,20 +1,20 @@
 from codeanalysis.Syntax.tokenkind import TokenKind
 
-keywords = {
-    TokenKind.CharKeyword: 'char',
-    TokenKind.ElseKeyword: 'else',
-    TokenKind.FloatKeyword: 'float',
-    TokenKind.ForKeyword: 'for',
-    TokenKind.ForeachKeyword: 'foreach',
-    TokenKind.GotoKeyword: 'goto',
-    TokenKind.IfKeyword: 'if',
-    TokenKind.InKeyword: 'in',
-    TokenKind.InputKeyword: 'input',
-    TokenKind.IntKeyword: 'int',
-    TokenKind.LabelKeyword: 'label',
-    TokenKind.LetKeyword: 'let',
-    TokenKind.PrintKeyword: 'print',
-    TokenKind.StringToken: 'string',
-    TokenKind.VarKeyword: 'var',
-    TokenKind.WhileKeyword: 'while'
+keyword_map = {
+    'char'      : TokenKind.CharKeyword,
+    'else'      : TokenKind.ElseKeyword,
+    'float'     : TokenKind.FloatKeyword,
+    'for'       : TokenKind.ForKeyword,
+    'foreach'   : TokenKind.ForeachKeyword,
+    'goto'      : TokenKind.GotoKeyword,
+    'if'        : TokenKind.IfKeyword,
+    'in'        : TokenKind.InKeyword,
+    'input'     : TokenKind.InputKeyword,
+    'int'       : TokenKind.IntKeyword,
+    'label'     : TokenKind.LabelKeyword,
+    'let'       : TokenKind.LetKeyword,
+    'print'     : TokenKind.PrintKeyword,
+    'string'    : TokenKind.StringToken,
+    'var'       : TokenKind.VarKeyword,
+    'while'     : TokenKind.WhileKeyword,
 }

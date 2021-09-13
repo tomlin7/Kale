@@ -18,7 +18,6 @@ filename = sys.argv[1].split(".")[0]
 
 lexer   = Lexer(source)
 token_list = lexer.lex()
-print("--------")
 emitter = Emitter(filename)
 parser  = Parser(token_list, emitter, debug=True)
 
