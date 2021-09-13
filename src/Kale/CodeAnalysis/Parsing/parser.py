@@ -515,35 +515,14 @@ class Parser:
             if self.debug:
                 print("Assignment-Statement")
 
-            self.advance()
-
             if self.cur_token.value not in self.symbols:
                 self.abort(f"The name '{self.cur_token.value}' does not exist in the current convalue")
             
-            # self.emitter.emit(self.cur_token.value + " = ")
+            self.match(SyntaxKind.IdentifierToken)
             self.match(SyntaxKind.EqualsToken)
 
-            if self.check_token(SyntaxKind.StringToken):
-                # self.emitter.emit_line(f"\"{self.cur_token.value}\"")
-                self.advance()
-                while self.check_token(SyntaxKind.PlusToken):
-                    # self.emitter.emit_line(" + ")
-
-                    self.advance()
-                    if self.check_token(SyntaxKind.StringToken):
-                        # self.emitter.emit_line(f"\"{self.cur_token.value}\"")
-                        self.advance()
-                    elif self.check_token(SyntaxKind.IdentifierToken):
-                        # self.emitter.emit(self.cur_token.value)
-                        self.advance()
-                    elif self.check_token(SyntaxKind.NumberToken):
-                        # self.emitter.emit(self.cur_token.value)
-                        self.advance()
-                    else:
-                        self.abort("Expected string, number or an identifier")
-            else:
-                self.expression()
-            # self.emitter.emit_line(";")
+            self.expression()
+            
         else:
             self.abort(f"Invalid statement at {self.cur_token.kind.name} {self.cur_token.value if self.cur_token.value is not None else ''}")
 
