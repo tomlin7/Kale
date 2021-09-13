@@ -4,6 +4,7 @@ import enum
 class SyntaxKind(enum.Enum):
     # Meta kinds
     # ----
+    Comments                = -3
     BadToken                = -2
     EndOfFileToken          = -1
 
