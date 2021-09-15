@@ -323,6 +323,28 @@ class Parser:
             self.match(SyntaxKind.EqualsToken)
             self.expression()
 
+        elif self.check_token(SyntaxKind.CharKeyword):
+            """
+            Char Declaration
+
+            Syntax:
+                1.  char IDENTIFIER = EXPRESSION
+            """
+            if self.debug:
+                print("Char-Statement")
+            
+            self.advance()
+
+            # ----
+            if self.cur_token.value not in self.symbols:
+                self.symbols.add(self.cur_token.value)
+            
+            # Body
+            # ----
+            self.match(SyntaxKind.IdentifierToken)
+            self.match(SyntaxKind.EqualsToken)
+            self.expression()
+
         elif self.check_token(SyntaxKind.FloatKeyword):
             """
             Float Declaration
@@ -345,27 +367,7 @@ class Parser:
             self.match(SyntaxKind.EqualsToken)
             self.expression()
         
-        elif self.check_token(SyntaxKind.StringKeyword):
-            """
-            String Declaration
-
-            Syntax:
-                1.  string IDENTIFIER = EXPRESSION
-            """
-            if self.debug:
-                print("String-Statement")
-            
-            self.advance()
-
-            # ----
-            if self.cur_token.value not in self.symbols:
-                self.symbols.add(self.cur_token.value)
-            
-            # Body
-            # ----
-            self.match(SyntaxKind.IdentifierToken)
-            self.match(SyntaxKind.EqualsToken)
-            self.expression()
+        
         
         elif self.check_token(SyntaxKind.BoolKeyword):
             """
