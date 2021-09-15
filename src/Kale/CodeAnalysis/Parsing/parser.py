@@ -316,6 +316,8 @@ class Parser:
             # ----
             if self.cur_token.value not in self.symbols:
                 self.symbols.add(self.cur_token.value)
+            else:
+                self.abort(f"A local variable named '{self.cur_token.value}' is already defined in this scope")
             
             # Body
             # ----
@@ -341,6 +343,8 @@ class Parser:
             # ----
             if self.cur_token.value not in self.symbols:
                 self.symbols.add(self.cur_token.value)
+            else:
+                self.abort(f"A local variable named '{self.cur_token.value}' is already defined in this scope")
             
             # Body
             # ----
@@ -366,6 +370,8 @@ class Parser:
             # ----
             if self.cur_token.value not in self.symbols:
                 self.symbols.add(self.cur_token.value)
+            else:
+                self.abort(f"A local variable named '{self.cur_token.value}' is already defined in this scope")
             
             # Body
             # ----
@@ -391,6 +397,8 @@ class Parser:
             # ----
             if self.cur_token.value not in self.symbols:
                 self.symbols.add(self.cur_token.value)
+            else:
+                self.abort(f"A local variable named '{self.cur_token.value}' is already defined in this scope")
             
             # Body
             # ----
@@ -419,6 +427,8 @@ class Parser:
             # ----
             if self.cur_token.value not in self.symbols:
                 self.symbols.add(self.cur_token.value)
+            else:
+                self.abort(f"A local variable named '{self.cur_token.value}' is already defined in this scope")
             
             # Body
             # ----
