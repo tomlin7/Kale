@@ -1,3 +1,5 @@
+from loguru import logger
+
 from CodeAnalysis.Syntax.syntaxtoken import SyntaxToken
 from CodeAnalysis.Syntax.syntaxkind import SyntaxKind
 
@@ -48,9 +50,27 @@ class Lexer:
             self.advance()
             start_pos = self.position
 
-            while self.cur_char() != '\"':
+            while self.cur_char() not in ['\"', '\0']:
                 if self.cur_char() in ['\r', '\n', '\t', '\\', '%']:
+                    # logger.error(f'Illegal character {self.cur_char()}')
+                    # exit(1)
                     raise IllegalCharacterException(f'at {self.cur_char()}')
+
+                self.advance()
+
+            token_text = self.source[start_pos: self.position]
+            token = SyntaxToken(SyntaxKind.StringToken, token_text)
+        
+        elif self.cur_char() == '\'':
+            self.advance()
+            start_pos = self.position
+
+            while self.cur_char() not in ['\'', '\0']:
+                if self.cur_char() in ['\r', '\n', '\t', '\\', '%']:
+                    # logger.error(f'Illegal character {self.cur_char()}')
+                    # exit(1)
+                    raise IllegalCharacterException(f'at {self.cur_char()}')
+
                 self.advance()
 
             token_text = self.source[start_pos: self.position]
@@ -64,7 +84,10 @@ class Lexer:
                 self.advance()
 
                 if not self.peek().isdigit():
+                    # logger.error(f'Invalid number {self.source[start_pos: self.position + 1]}')
+                    # exit(0)
                     raise IllegalCharacterException(f'at {self.cur_char()}')
+                
                 while self.peek().isdigit():
                     self.advance()
             token_text = self.source[start_pos: self.position + 1]
