@@ -1,4 +1,2 @@
-int a
-char a
-float a
-string a
+double me
+double you = 10000000
