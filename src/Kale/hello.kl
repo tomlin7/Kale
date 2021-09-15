@@ -1,3 +1,1 @@
-// test boolean
-bool foo = true
-bool foo = false
+char hello = 'H'
