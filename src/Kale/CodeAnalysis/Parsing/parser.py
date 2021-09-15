@@ -309,7 +309,7 @@ class Parser:
                 1.  int IDENTIFIER = EXPRESSION
             """
             if self.debug:
-                print("Int-Statement")
+                print("Int-Declaration")
             
             self.advance()
 
@@ -336,7 +336,7 @@ class Parser:
                 1.  char IDENTIFIER = EXPRESSION
             """
             if self.debug:
-                print("Char-Statement")
+                print("Char-Declaration")
             
             self.advance()
 
@@ -363,7 +363,7 @@ class Parser:
                 1.  float IDENTIFIER = EXPRESSION
             """
             if self.debug:
-                print("Float-Statement")
+                print("Float-Declaration")
             
             self.advance()
 
@@ -390,7 +390,7 @@ class Parser:
                 1.  string IDENTIFIER = EXPRESSION
             """
             if self.debug:
-                print("String-Statement")
+                print("String-Declaration")
             
             self.advance()
 
@@ -420,7 +420,7 @@ class Parser:
                 3.  bool IDENTIFIER = EXPRESSION
             """
             if self.debug:
-                print("Bool-Statement")
+                print("Bool-Declaration")
             
             self.advance()
 
@@ -443,6 +443,33 @@ class Parser:
                     self.match(SyntaxKind.FalseKeyword)
                 else:
                     self.expression()
+
+        elif self.check_token(SyntaxKind.DoubleKeyword):
+            """
+            Double Declaration
+
+            Syntax:
+                1.  double IDENTIFIER = EXPRESSION
+            """
+            if self.debug:
+                print("Double-Declaration")
+            
+            self.advance()
+
+            # ----
+            if self.cur_token.value not in self.symbols:
+                self.symbols.add(self.cur_token.value)
+            else:
+                self.abort(f"A local variable named '{self.cur_token.value}' is already defined in this scope")
+            
+            # Body
+            # ----
+            self.match(SyntaxKind.IdentifierToken)
+
+            # Optional
+            if self.check_token(SyntaxKind.EqualsToken):
+                self.match(SyntaxKind.EqualsToken)
+                self.expression()            
 
         elif self.check_token(SyntaxKind.LetKeyword):
             """

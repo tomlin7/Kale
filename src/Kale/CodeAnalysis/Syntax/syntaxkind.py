@@ -40,9 +40,10 @@ class SyntaxKind(enum.Enum):
     # ----
     BoolKeyword             = 201
     CharKeyword             = 202
-    FloatKeyword            = 203
-    IntKeyword              = 204
-    StringKeyword           = 205
+    DoubleKeyword           = 203
+    FloatKeyword            = 204
+    IntKeyword              = 205
+    StringKeyword           = 206
 
     # Punctuators
     # ----
