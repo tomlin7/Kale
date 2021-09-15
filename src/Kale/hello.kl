@@ -1,1 +1,1 @@
-char hello = 'H'
+int a = input("Hello")

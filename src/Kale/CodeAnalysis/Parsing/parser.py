@@ -445,27 +445,27 @@ class Parser:
             self.match(SyntaxKind.EqualsToken)
             self.expression()
 
-        elif self.check_token(SyntaxKind.InputKeyword):
-            """
-            Input Statement
+        # elif self.check_token(SyntaxKind.InputKeyword):
+        #     """
+        #     Input Statement
 
-            Syntax:
-                1.  input(IDENTIFIER)
-            """
-            if self.debug:
-                print("Input-Statement")
+        #     Syntax:
+        #         1.  input(IDENTIFIER)
+        #     """
+        #     if self.debug:
+        #         print("Input-Statement")
             
-            self.advance()
+        #     self.advance()
 
-            # Body
-            # ----
-            self.match(SyntaxKind.OpenParenthesisToken)
+        #     # Body
+        #     # ----
+        #     self.match(SyntaxKind.OpenParenthesisToken)
 
-            if self.cur_token.value not in self.symbols:
-                self.symbols.add(self.cur_token.value)
+        #     if self.cur_token.value not in self.symbols:
+        #         self.symbols.add(self.cur_token.value)
             
-            self.match(SyntaxKind.IdentifierToken)
-            self.match(SyntaxKind.CloseParenthesisToken)
+        #     self.match(SyntaxKind.IdentifierToken)
+        #     self.match(SyntaxKind.CloseParenthesisToken)
 
         elif self.check_token(SyntaxKind.IdentifierToken):
             """
@@ -599,6 +599,12 @@ class Parser:
             self.expression()
             self.match(SyntaxKind.CloseParenthesisToken)
             print(")")
-        
+        elif self.check_token(SyntaxKind.InputKeyword):
+            print("Input")
+            self.advance()
+            self.match(SyntaxKind.OpenParenthesisToken)
+            if not self.check_token(SyntaxKind.CloseParenthesisToken):
+                self.expression()
+            self.match(SyntaxKind.CloseParenthesisToken)
         else:
             self.abort(f"Unexpected token {self.cur_token.kind} {f'at {self.cur_token.value}' if self.cur_token.value is not None else ''}")
