@@ -320,8 +320,11 @@ class Parser:
             # Body
             # ----
             self.match(SyntaxKind.IdentifierToken)
-            self.match(SyntaxKind.EqualsToken)
-            self.expression()
+
+            # Optional
+            if self.check_token(SyntaxKind.EqualsToken):
+                self.match(SyntaxKind.EqualsToken)
+                self.expression()
 
         elif self.check_token(SyntaxKind.CharKeyword):
             """
@@ -342,8 +345,11 @@ class Parser:
             # Body
             # ----
             self.match(SyntaxKind.IdentifierToken)
-            self.match(SyntaxKind.EqualsToken)
-            self.expression()
+
+            # Optional
+            if self.check_token(SyntaxKind.EqualsToken):
+                self.match(SyntaxKind.EqualsToken)
+                self.expression()
 
         elif self.check_token(SyntaxKind.FloatKeyword):
             """
@@ -364,8 +370,11 @@ class Parser:
             # Body
             # ----
             self.match(SyntaxKind.IdentifierToken)
-            self.match(SyntaxKind.EqualsToken)
-            self.expression()
+
+            # Optional
+            if self.check_token(SyntaxKind.EqualsToken):
+                self.match(SyntaxKind.EqualsToken)
+                self.expression()
         
         
         
@@ -390,14 +399,16 @@ class Parser:
             # Body
             # ----
             self.match(SyntaxKind.IdentifierToken)
-            
-            self.match(SyntaxKind.EqualsToken)
-            if self.check_token(SyntaxKind.TrueKeyword):
-                self.match(SyntaxKind.TrueKeyword)
-            elif self.check_token(SyntaxKind.FalseKeyword):
-                self.match(SyntaxKind.FalseKeyword)
-            else:
-                self.expression()
+
+            # Optional
+            if self.check_token(SyntaxKind.EqualsToken):
+                self.match(SyntaxKind.EqualsToken)
+                if self.check_token(SyntaxKind.TrueKeyword):
+                    self.match(SyntaxKind.TrueKeyword)
+                elif self.check_token(SyntaxKind.FalseKeyword):
+                    self.match(SyntaxKind.FalseKeyword)
+                else:
+                    self.expression()
 
         elif self.check_token(SyntaxKind.LetKeyword):
             """
