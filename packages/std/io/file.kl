@@ -1,0 +1,45 @@
+// packages/std/io/file.kl
+// Standard File I/O bindings for Kale
+
+extern void* fopen(string filename, string mode);
+extern int fclose(void* stream);
+extern int fputs(string str, void* stream);
+extern void* fgets(void* buffer, int size, void* stream);
+extern int feof(void* stream);
+extern int fflush(void* stream);
+
+struct File {
+    void* handle;
+    bool is_open;
+}
+
+File open(string filename, string mode) {
+    File f;
+    f.handle = fopen(filename, mode);
+    f.is_open = (f.handle != (void*)0);
+    return f;
+}
+
+int write(File* f, string content) {
+    if (!f->is_open) {
+        return -1;
+    }
+    return fputs(content, f->handle);
+}
+
+int close(File* f) {
+    if (!f->is_open) {
+        return 0;
+    }
+    int res = fclose(f->handle);
+    f->is_open = false;
+    f->handle = (void*)0;
+    return res;
+}
+
+int flush(File* f) {
+    if (!f->is_open) {
+        return -1;
+    }
+    return fflush(f->handle);
+}

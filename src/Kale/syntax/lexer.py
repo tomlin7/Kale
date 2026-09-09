@@ -95,13 +95,16 @@ class Lexer:
             return self._lex_string(start, quote_char=c)
 
         # Multi-character and single-character operators
-        # 3-character operators: <<=, >>=
+        # 3-character operators / punctuators: <<=, >>=, ...
         if c == '<' and self._peek(1) == '<' and self._peek(2) == '=':
             self._advance(3)
             return SyntaxToken(SyntaxKind.LeftShiftEqualsToken, TextSpan(start, 3), None, "<<=")
         if c == '>' and self._peek(1) == '>' and self._peek(2) == '=':
             self._advance(3)
             return SyntaxToken(SyntaxKind.RightShiftEqualsToken, TextSpan(start, 3), None, ">>=")
+        if c == '.' and self._peek(1) == '.' and self._peek(2) == '.':
+            self._advance(3)
+            return SyntaxToken(SyntaxKind.DotDotDotToken, TextSpan(start, 3), None, "...")
 
         # 2-character operators
         two_char = c + self._peek(1)

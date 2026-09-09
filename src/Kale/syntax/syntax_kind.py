@@ -27,6 +27,8 @@ class SyntaxKind(enum.Enum):
     ConstKeyword = enum.auto()
     StructKeyword = enum.auto()
     EnumKeyword = enum.auto()
+    ExternKeyword = enum.auto()
+    FnKeyword = enum.auto()
     ImportKeyword = enum.auto()
     FromKeyword = enum.auto()
     AsKeyword = enum.auto()
@@ -71,6 +73,7 @@ class SyntaxKind(enum.Enum):
     SemicolonToken = enum.auto()          # ;
     ColonToken = enum.auto()              # :
     DotToken = enum.auto()                # .
+    DotDotDotToken = enum.auto()          # ...
     ArrowToken = enum.auto()              # ->
     CaretToken = enum.auto()              # ^ (postfix dereference)
 

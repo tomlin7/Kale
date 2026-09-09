@@ -7,6 +7,8 @@ KEYWORDS: dict[str, SyntaxKind] = {
     "const": SyntaxKind.ConstKeyword,
     "struct": SyntaxKind.StructKeyword,
     "enum": SyntaxKind.EnumKeyword,
+    "extern": SyntaxKind.ExternKeyword,
+    "fn": SyntaxKind.FnKeyword,
     "import": SyntaxKind.ImportKeyword,
     "from": SyntaxKind.FromKeyword,
     "as": SyntaxKind.AsKeyword,

@@ -151,17 +151,22 @@ class LLVMEmitter:
             field_types = [to_llvm_type(ftype, self._struct_types) for _, ftype in st_decl.struct_type.fields]
             llvm_struct.set_body(*field_types)
 
-        # Pass 1: Declare all user functions
+        # Pass 1: Declare all user and extern functions
         for fn_decl in program.functions:
             fn_key = fn_decl.symbol.mangled_name or fn_decl.symbol.name
+            if fn_key in self._functions:
+                continue
             param_types = [to_llvm_type(p.type, self._struct_types) for p in fn_decl.symbol.parameters]
             ret_type = to_llvm_type(fn_decl.symbol.return_type or TypeVoid, self._struct_types)
-            func_type = ir.FunctionType(ret_type, param_types)
+            is_vararg = getattr(fn_decl.symbol, "is_var_args", False)
+            func_type = ir.FunctionType(ret_type, param_types, var_arg=is_vararg)
             llvm_func = ir.Function(self.module, func_type, name=fn_key)
             self._functions[fn_key] = llvm_func
 
-        # Pass 2: Emit user function bodies
+        # Pass 2: Emit user function bodies (skip extern functions)
         for fn_decl in program.functions:
+            if fn_decl.symbol.is_extern or fn_decl.body is None:
+                continue
             fn_key = fn_decl.symbol.mangled_name or fn_decl.symbol.name
             llvm_func = self._functions[fn_key]
             self._current_func = llvm_func

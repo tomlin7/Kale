@@ -273,7 +273,7 @@ class BoundExpressionStatement(BoundStatement):
 @dataclass(frozen=True)
 class BoundFunctionDeclaration(BoundStatement):
     symbol: FunctionSymbol
-    body: BoundBlockStatement
+    body: BoundBlockStatement | None = None
 
 @dataclass(frozen=True)
 class BoundImportStatement(BoundStatement):

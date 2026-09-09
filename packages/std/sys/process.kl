@@ -1,0 +1,18 @@
+// packages/std/sys/process.kl
+// Standard Process & System bindings for Kale
+
+extern int system(string command);
+extern void exit(int status);
+extern string getenv(string name);
+
+int execute(string command) {
+    return system(command);
+}
+
+string env(string name) {
+    return getenv(name);
+}
+
+void terminate(int status) {
+    exit(status);
+}

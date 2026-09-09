@@ -9,6 +9,7 @@ from ..ast.nodes import (
     BlockStatement,
     ParameterNode,
     FunctionDeclarationStatement,
+    ExternFunctionDeclarationStatement,
     VariableDeclarationStatement,
     ExpressionStatement,
     IfStatement,
@@ -166,10 +167,12 @@ class Binder:
         return looked_up if looked_up is not None else TypeUnknown
 
     def bind_program(self, compilation_unit: CompilationUnit) -> BoundProgram:
-        # Pass 0: Discover and register all struct and enum declarations
+        # Pass 0: Discover and register all struct, enum, and extern declarations
         struct_decls: list[StructDeclarationStatement] = []
         enum_decls: list[EnumDeclarationStatement] = []
+        extern_decls: list[ExternFunctionDeclarationStatement] = []
         function_decls: list[FunctionDeclarationStatement] = []
+        import_stmts: list[Statement] = []
         top_level_stmts: list[Statement] = []
 
         for stmt in compilation_unit.statements:
@@ -183,10 +186,21 @@ class Binder:
                     self._struct_types[s_name] = StructTypeSymbol(name=s_name, fields=())
             elif isinstance(stmt, EnumDeclarationStatement):
                 enum_decls.append(stmt)
+            elif isinstance(stmt, ExternFunctionDeclarationStatement):
+                extern_decls.append(stmt)
             elif isinstance(stmt, FunctionDeclarationStatement):
                 function_decls.append(stmt)
+            elif isinstance(stmt, (ImportStatement, FromImportStatement)):
+                import_stmts.append(stmt)
             else:
                 top_level_stmts.append(stmt)
+
+        # Pass 0.5: Bind all imports first so types, functions, and module symbols are known
+        bound_import_statements: list[BoundStatement] = []
+        for imp_stmt in import_stmts:
+            bound_imp = self.bind_statement(imp_stmt)
+            if bound_imp is not None:
+                bound_import_statements.append(bound_imp)
 
         # Populate enum members
         bound_enums: list[BoundEnumDeclaration] = []
@@ -237,7 +251,28 @@ class Binder:
             self._struct_types[s_name] = st_sym
             bound_structs.append(BoundStructDeclaration(st_sym))
 
-        # Pass 1: Discover all function declarations and register signatures
+        # Pass 1: Discover all function declarations (including externs) and register signatures
+        for stmt in extern_decls:
+            fn_name = stmt.identifier_token.text
+            ret_type = self._resolve_type(stmt.return_type_token.text)
+            if ret_type == TypeUnknown and stmt.return_type_token.text != "void":
+                self.diagnostics.report(stmt.return_type_token.span, f"Unknown return type '{stmt.return_type_token.text}'.")
+            params: list[VariableSymbol] = []
+            for p in stmt.parameters:
+                pt = self._resolve_type(p.type_token.text)
+                if pt == TypeUnknown:
+                    self.diagnostics.report(p.type_token.span, f"Unknown parameter type '{p.type_token.text}'.")
+                params.append(VariableSymbol(name=p.identifier_token.text, type=pt))
+            fn_sym = FunctionSymbol(
+                name=fn_name,
+                parameters=tuple(params),
+                return_type=ret_type,
+                is_extern=True,
+                is_var_args=stmt.is_var_args,
+            )
+            if not self._current_scope.try_declare(fn_sym):
+                self.diagnostics.report(stmt.identifier_token.span, f"Function '{fn_name}' is already declared in this scope.")
+
         for stmt in function_decls:
             fn_name = stmt.identifier_token.text
             ret_type = self._resolve_type(stmt.return_type_token.text)
@@ -255,6 +290,11 @@ class Binder:
 
         # Pass 2a: Bind function bodies
         bound_functions: list[BoundFunctionDeclaration] = []
+        for ext_stmt in extern_decls:
+            sym = self._current_scope.lookup(ext_stmt.identifier_token.text)
+            if isinstance(sym, FunctionSymbol):
+                bound_functions.append(BoundFunctionDeclaration(sym, body=None))
+
         for fn_stmt in function_decls:
             sym = self._current_scope.lookup(fn_stmt.identifier_token.text)
             if isinstance(sym, FunctionSymbol):
@@ -268,7 +308,7 @@ class Binder:
                 bound_functions.append(BoundFunctionDeclaration(sym, bound_body))
 
         # Pass 2b: Bind top-level statements
-        bound_statements: list[BoundStatement] = []
+        bound_statements: list[BoundStatement] = list(bound_import_statements)
         for statement in top_level_stmts:
             bound_stmt = self.bind_statement(statement)
             if bound_stmt is not None:
@@ -378,13 +418,18 @@ class Binder:
 
         for fn in sub_program.functions:
             fn_sym = fn.symbol
-            # Give imported functions a unique mangled name: kale_<mod>_<func>
-            mangled = f"kale_{mod_base_name}_{fn_sym.name}"
+            # Keep extern functions un-mangled so they resolve to their actual C symbols
+            if fn_sym.is_extern:
+                mangled = fn_sym.name
+            else:
+                mangled = f"kale_{mod_base_name}_{fn_sym.name}"
             mangled_fn_sym = FunctionSymbol(
                 name=fn_sym.name,
                 parameters=fn_sym.parameters,
                 return_type=fn_sym.return_type,
                 mangled_name=mangled,
+                is_extern=fn_sym.is_extern,
+                is_var_args=fn_sym.is_var_args,
             )
             symbols[fn_sym.name] = mangled_fn_sym
             mangled_fn_decl = BoundFunctionDeclaration(mangled_fn_sym, fn.body)
@@ -833,7 +878,13 @@ class Binder:
             self.diagnostics.report(expression.span, "Invalid function call target.")
             return BoundLiteralExpression(None, TypeUnknown)
 
-        if len(expression.arguments) != len(symbol.parameters):
+        if symbol.is_var_args:
+            if len(expression.arguments) < len(symbol.parameters):
+                self.diagnostics.report(
+                    expression.span,
+                    f"Function '{func_name}' expects at least {len(symbol.parameters)} arguments, but got {len(expression.arguments)}."
+                )
+        elif len(expression.arguments) != len(symbol.parameters):
             self.diagnostics.report(
                 expression.span,
                 f"Function '{func_name}' expects {len(symbol.parameters)} arguments, but got {len(expression.arguments)}."

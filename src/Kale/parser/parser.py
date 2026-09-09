@@ -37,6 +37,7 @@ from ..ast.nodes import (
     EnumMemberNode,
     EnumDeclarationStatement,
     FunctionDeclarationStatement,
+    ExternFunctionDeclarationStatement,
     VariableDeclarationStatement,
     ExpressionStatement,
     IfStatement,
@@ -134,6 +135,8 @@ class Parser:
                 return self.parse_struct_declaration()
             if self._check(SyntaxKind.EnumKeyword):
                 return self.parse_enum_declaration()
+            if self._check(SyntaxKind.ExternKeyword):
+                return self.parse_extern_function_declaration()
             if self._check(SyntaxKind.OpenBraceToken):
                 return self.parse_block_statement()
             if self._is_function_declaration_start():
@@ -373,6 +376,55 @@ class Parser:
             parameters,
             close_paren,
             body,
+        )
+
+    def parse_extern_function_declaration(self) -> ExternFunctionDeclarationStatement:
+        extern_kw = self._match(SyntaxKind.ExternKeyword)
+        # Optional string ABI (e.g. extern "C" ...)
+        if self._check(SyntaxKind.StringToken):
+            self._advance()
+        # Optional 'fn' keyword (e.g. extern fn puts(...) or extern int puts(...))
+        if self._check(SyntaxKind.FnKeyword):
+            self._advance()
+
+        ret_type = self.parse_type_token()
+        name_tok = self._match(SyntaxKind.IdentifierToken)
+        open_paren = self._match(SyntaxKind.OpenParenthesisToken)
+
+        parameters: list[ParameterNode] = []
+        is_var_args = False
+        if not self._check(SyntaxKind.CloseParenthesisToken):
+            if self._check(SyntaxKind.DotDotDotToken):
+                self._advance()
+                is_var_args = True
+            else:
+                param_type = self.parse_type_token()
+                param_name = self._match(SyntaxKind.IdentifierToken)
+                parameters.append(ParameterNode(param_type, param_name))
+
+                while self._check(SyntaxKind.CommaToken):
+                    self._advance()
+                    if self._check(SyntaxKind.DotDotDotToken):
+                        self._advance()
+                        is_var_args = True
+                        break
+                    param_type = self.parse_type_token()
+                    param_name = self._match(SyntaxKind.IdentifierToken)
+                    parameters.append(ParameterNode(param_type, param_name))
+
+        close_paren = self._match(SyntaxKind.CloseParenthesisToken)
+        semi = None
+        if self._check(SyntaxKind.SemicolonToken):
+            semi = self._advance()
+        return ExternFunctionDeclarationStatement(
+            extern_kw,
+            ret_type,
+            name_tok,
+            open_paren,
+            parameters,
+            close_paren,
+            semi,
+            is_var_args,
         )
 
     def parse_block_statement(self) -> BlockStatement:

@@ -11,6 +11,19 @@ class ModuleLoader:
     def __init__(self, diagnostics: DiagnosticBag, search_paths: Optional[List[str]] = None):
         self.diagnostics = diagnostics
         self.search_paths: List[str] = [os.path.abspath(p) for p in (search_paths or [])]
+
+        # Auto-discover monorepo packages and libs paths relative to this package installation
+        repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # src/Kale/binding -> src/Kale -> src -> repo_root
+        repo_root = os.path.dirname(repo_root)
+        for auto_dir in [
+            os.path.join(repo_root, "packages", "std"),
+            os.path.join(repo_root, "packages"),
+            os.path.join(repo_root, "libs"),
+            repo_root,
+        ]:
+            if os.path.isdir(auto_dir) and os.path.abspath(auto_dir) not in self.search_paths:
+                self.search_paths.append(os.path.abspath(auto_dir))
+
         # Always include environment variable KALE_PATH if present
         if "KALE_PATH" in os.environ:
             for p in os.environ["KALE_PATH"].split(os.pathsep):

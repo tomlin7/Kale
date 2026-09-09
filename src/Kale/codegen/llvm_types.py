@@ -17,6 +17,8 @@ from ..binding.types import (
 def to_llvm_type(type_symbol: TypeSymbol, struct_map: dict[str, ir.Type] | None = None) -> ir.Type:
     """Converts a Kale TypeSymbol into a corresponding llvmlite.ir.Type."""
     if isinstance(type_symbol, PointerTypeSymbol):
+        if type_symbol.base_type == TypeVoid:
+            return ir.PointerType(ir.IntType(8))
         base_t = to_llvm_type(type_symbol.base_type, struct_map)
         return ir.PointerType(base_t)
     if isinstance(type_symbol, StructTypeSymbol):

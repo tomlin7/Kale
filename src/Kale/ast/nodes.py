@@ -399,6 +399,35 @@ class FunctionDeclarationStatement(Statement):
         ]
 
 @dataclass(frozen=True)
+class ExternFunctionDeclarationStatement(Statement):
+    extern_keyword: SyntaxToken
+    return_type_token: SyntaxToken
+    identifier_token: SyntaxToken
+    open_paren: SyntaxToken
+    parameters: list[ParameterNode]
+    close_paren: SyntaxToken
+    semicolon_token: SyntaxToken | None = None
+    is_var_args: bool = False
+
+    @property
+    def span(self) -> TextSpan:
+        end = self.semicolon_token.span.end if self.semicolon_token else self.close_paren.span.end
+        return TextSpan.from_bounds(self.extern_keyword.span.start, end)
+
+    def children(self) -> list[SyntaxNode | SyntaxToken]:
+        items: list[SyntaxNode | SyntaxToken] = [
+            self.extern_keyword,
+            self.return_type_token,
+            self.identifier_token,
+            self.open_paren,
+            *self.parameters,
+            self.close_paren,
+        ]
+        if self.semicolon_token:
+            items.append(self.semicolon_token)
+        return items
+
+@dataclass(frozen=True)
 class VariableDeclarationStatement(Statement):
     type_token: SyntaxToken
     identifier_token: SyntaxToken

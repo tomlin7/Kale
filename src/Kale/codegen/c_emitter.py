@@ -130,22 +130,29 @@ class CEmitter:
                 self._write_line("};")
                 self._write_line()
 
-        # Forward declarations of user functions
+        # Forward declarations of user and extern functions
         if program.functions:
-            self._write_line("// --- User Function Prototypes ---")
+            self._write_line("// --- Function Prototypes ---")
             for fn in program.functions:
                 fn_name = fn.symbol.mangled_name or fn.symbol.name
                 ret_t = self._map_type(fn.symbol.return_type)
-                params_str = ", ".join(f"{self._map_type(p.type)} {p.name}" for p in fn.symbol.parameters) or "void"
-                self._write_line(f"{ret_t} {fn_name}({params_str});")
+                param_parts = [f"{self._map_type(p.type)} {p.name}" for p in fn.symbol.parameters]
+                if getattr(fn.symbol, "is_var_args", False):
+                    param_parts.append("...")
+                params_str = ", ".join(param_parts) or "void"
+                prefix = "extern " if fn.symbol.is_extern else ""
+                self._write_line(f"{prefix}{ret_t} {fn_name}({params_str});")
             self._write_line()
 
             # User function definitions
             self._write_line("// --- User Functions ---")
             for fn in program.functions:
+                if fn.symbol.is_extern or fn.body is None:
+                    continue
                 fn_name = fn.symbol.mangled_name or fn.symbol.name
                 ret_t = self._map_type(fn.symbol.return_type)
-                params_str = ", ".join(f"{self._map_type(p.type)} {p.name}" for p in fn.symbol.parameters) or "void"
+                param_parts = [f"{self._map_type(p.type)} {p.name}" for p in fn.symbol.parameters]
+                params_str = ", ".join(param_parts) or "void"
                 self._write_line(f"{ret_t} {fn_name}({params_str}) {{")
                 self._indent_level += 1
                 for s in fn.body.statements:

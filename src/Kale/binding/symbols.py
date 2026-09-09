@@ -19,6 +19,8 @@ class FunctionSymbol(Symbol):
     parameters: tuple[VariableSymbol, ...] = ()
     return_type: TypeSymbol = None  # type: ignore
     mangled_name: str | None = None
+    is_extern: bool = False
+    is_var_args: bool = False
 
     def __init__(
         self,
@@ -27,6 +29,8 @@ class FunctionSymbol(Symbol):
         return_type: TypeSymbol | None = None,
         type: TypeSymbol | None = None,
         mangled_name: str | None = None,
+        is_extern: bool = False,
+        is_var_args: bool = False,
     ):
         actual_type = return_type if return_type is not None else type
         object.__setattr__(self, "name", name)
@@ -34,6 +38,8 @@ class FunctionSymbol(Symbol):
         object.__setattr__(self, "parameters", parameters)
         object.__setattr__(self, "return_type", actual_type)
         object.__setattr__(self, "mangled_name", mangled_name or name)
+        object.__setattr__(self, "is_extern", is_extern)
+        object.__setattr__(self, "is_var_args", is_var_args)
 
     @property
     def parameter_types(self) -> tuple[TypeSymbol, ...]:
