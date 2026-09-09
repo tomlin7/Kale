@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
-from .types import TypeSymbol, StructTypeSymbol, ModuleTypeSymbol
+from .types import TypeSymbol, StructTypeSymbol, EnumTypeSymbol, ModuleTypeSymbol
 from .symbols import Symbol, VariableSymbol, FunctionSymbol, ModuleSymbol
 from .scope import Scope
 
@@ -205,6 +205,10 @@ class BoundStructDeclaration(BoundStatement):
     struct_type: StructTypeSymbol
 
 @dataclass(frozen=True)
+class BoundEnumDeclaration(BoundStatement):
+    enum_type: EnumTypeSymbol
+
+@dataclass(frozen=True)
 class BoundBlockStatement(BoundStatement):
     statements: list[BoundStatement]
 
@@ -230,6 +234,17 @@ class BoundForStatement(BoundStatement):
     condition: BoundExpression | None
     increment: BoundExpression | None
     body: BoundStatement
+
+@dataclass(frozen=True)
+class BoundSwitchCase(BoundNode):
+    case_values: list[BoundExpression]
+    body: list[BoundStatement]
+
+@dataclass(frozen=True)
+class BoundSwitchStatement(BoundStatement):
+    condition: BoundExpression
+    cases: list[BoundSwitchCase]
+    default_body: list[BoundStatement] | None
 
 @dataclass(frozen=True)
 class BoundPrintStatement(BoundStatement):
@@ -272,6 +287,7 @@ class BoundProgram(BoundNode):
     root_scope: Scope
     functions: list[BoundFunctionDeclaration] = None # type: ignore
     structs: list[BoundStructDeclaration] = None # type: ignore
+    enums: list[BoundEnumDeclaration] = None # type: ignore
     module_symbols: dict[str, ModuleSymbol] = None # type: ignore
 
     def __post_init__(self):
@@ -279,6 +295,8 @@ class BoundProgram(BoundNode):
             object.__setattr__(self, "functions", [])
         if self.structs is None:
             object.__setattr__(self, "structs", [])
+        if self.enums is None:
+            object.__setattr__(self, "enums", [])
         if self.module_symbols is None:
             object.__setattr__(self, "module_symbols", {})
 

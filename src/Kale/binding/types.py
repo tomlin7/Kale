@@ -60,24 +60,50 @@ class StructTypeSymbol(TypeSymbol):
         return f"struct {self.name} {{{fields_str}}}"
 
 @dataclass(frozen=True)
+class EnumTypeSymbol(TypeSymbol):
+    members: tuple[tuple[str, int], ...] = ()
+
+    def __init__(self, name: str, members: tuple[tuple[str, int], ...] = ()):
+        object.__setattr__(self, "name", name)
+        object.__setattr__(self, "members", members)
+
+    def get_member_value(self, member_name: str) -> int | None:
+        for mname, mval in self.members:
+            if mname == member_name:
+                return mval
+        return None
+
+    def has_member(self, member_name: str) -> bool:
+        return self.get_member_value(member_name) is not None
+
+    def __repr__(self) -> str:
+        members_str = ", ".join(f"{name} = {val}" for name, val in self.members)
+        return f"enum {self.name} {{{members_str}}}"
+
+@dataclass(frozen=True)
 class ModuleTypeSymbol(TypeSymbol):
     module_name: str = ""
     file_path: str = ""
     symbols: dict[str, Any] = None # type: ignore
     structs: dict[str, Any] = None # type: ignore
+    enums: dict[str, Any] = None # type: ignore
 
-    def __init__(self, module_name: str, file_path: str, symbols: dict[str, Any] | None = None, structs: dict[str, Any] | None = None):
+    def __init__(self, module_name: str, file_path: str, symbols: dict[str, Any] | None = None, structs: dict[str, Any] | None = None, enums: dict[str, Any] | None = None):
         object.__setattr__(self, "name", f"module {module_name}")
         object.__setattr__(self, "module_name", module_name)
         object.__setattr__(self, "file_path", file_path)
         object.__setattr__(self, "symbols", symbols if symbols is not None else {})
         object.__setattr__(self, "structs", structs if structs is not None else {})
+        object.__setattr__(self, "enums", enums if enums is not None else {})
 
     def get_member_symbol(self, member_name: str) -> Any:
         return self.symbols.get(member_name)
 
     def get_struct_type(self, struct_name: str) -> Any:
         return self.structs.get(struct_name)
+
+    def get_enum_type(self, enum_name: str) -> Any:
+        return self.enums.get(enum_name)
 
     def __repr__(self) -> str:
         return f"module {self.module_name}"
@@ -147,6 +173,11 @@ def can_convert(from_type: TypeSymbol, to_type: TypeSymbol) -> bool:
         return True
     if from_type == TypeFloat and to_type == TypeDouble:
         return True
+    # Enum types implicitly convert to int and vice versa (or same enum)
+    if isinstance(from_type, EnumTypeSymbol) and to_type == TypeInt:
+        return True
+    if from_type == TypeInt and isinstance(to_type, EnumTypeSymbol):
+        return True
     return False
 
 def can_explicit_cast(from_type: TypeSymbol, to_type: TypeSymbol) -> bool:
@@ -157,6 +188,9 @@ def can_explicit_cast(from_type: TypeSymbol, to_type: TypeSymbol) -> bool:
         return True
     # If implicit conversion is allowed, explicit cast is definitely allowed
     if can_convert(from_type, to_type):
+        return True
+    # Enum <-> any numeric
+    if (isinstance(from_type, EnumTypeSymbol) or isinstance(to_type, EnumTypeSymbol)):
         return True
     # Numeric <-> Numeric (int, float, double, bool, char)
     scalar_types = (TypeInt, TypeFloat, TypeDouble, TypeBool, TypeChar)

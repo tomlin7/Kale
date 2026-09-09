@@ -39,6 +39,11 @@ from ..ast.nodes import (
     FreeStatement,
     StructDeclarationStatement,
     StructFieldNode,
+    EnumMemberNode,
+    EnumDeclarationStatement,
+    SwitchCaseClause,
+    SwitchDefaultClause,
+    SwitchStatement,
     ImportStatement,
     FromImportStatement,
 )
@@ -55,6 +60,7 @@ from .types import (
     ArrayTypeSymbol,
     PointerTypeSymbol,
     StructTypeSymbol,
+    EnumTypeSymbol,
     ModuleTypeSymbol,
     lookup_type,
     is_numeric,
@@ -71,10 +77,13 @@ from .bound_nodes import (
     BoundVariableDeclaration,
     BoundFunctionDeclaration,
     BoundStructDeclaration,
+    BoundEnumDeclaration,
     BoundExpressionStatement,
     BoundIfStatement,
     BoundWhileStatement,
     BoundForStatement,
+    BoundSwitchCase,
+    BoundSwitchStatement,
     BoundPrintStatement,
     BoundFreeStatement,
     BoundReturnStatement,
@@ -111,12 +120,14 @@ class Binder:
         self._current_scope = Scope()
         self._current_function: FunctionSymbol | None = None
         self._struct_types: dict[str, StructTypeSymbol] = {}
+        self._enum_types: dict[str, EnumTypeSymbol] = {}
         self._module_symbols: dict[str, ModuleSymbol] = {}
         self._imported_functions: list[BoundFunctionDeclaration] = []
         self._imported_structs: list[BoundStructDeclaration] = []
+        self._imported_enums: list[BoundEnumDeclaration] = []
 
     def _resolve_type(self, type_name: str) -> TypeSymbol:
-        # Check qualified module types: e.g. geo.Point or math.Vec3
+        # Check qualified module types: e.g. geo.Point or math.Vec3 or math.Color
         if "." in type_name and not type_name.endswith("*") and not type_name.endswith("]"):
             parts = type_name.split(".", 1)
             mod_sym = self._current_scope.lookup(parts[0])
@@ -124,17 +135,23 @@ class Binder:
                 st = mod_sym.type.get_struct_type(parts[1])
                 if st is not None:
                     return st
+                et = mod_sym.type.get_enum_type(parts[1])
+                if et is not None:
+                    return et
 
         # Check custom structs
         if type_name in self._struct_types:
             return self._struct_types[type_name]
+        # Check custom enums
+        if type_name in self._enum_types:
+            return self._enum_types[type_name]
         # Check pointer types (e.g. Point*, int*, Point**)
         if type_name.endswith("*"):
             base_name = type_name[:-1].strip()
             base_t = self._resolve_type(base_name)
             if base_t is not TypeUnknown:
                 return PointerTypeSymbol(base_t)
-        # Check array of struct (e.g. Point[] or Point[10])
+        # Check array of struct/enum (e.g. Point[] or Point[10])
         if type_name.endswith("]"):
             bracket_start = type_name.find("[")
             if bracket_start != -1:
@@ -149,8 +166,9 @@ class Binder:
         return looked_up if looked_up is not None else TypeUnknown
 
     def bind_program(self, compilation_unit: CompilationUnit) -> BoundProgram:
-        # Pass 0: Discover and register all struct declarations
+        # Pass 0: Discover and register all struct and enum declarations
         struct_decls: list[StructDeclarationStatement] = []
+        enum_decls: list[EnumDeclarationStatement] = []
         function_decls: list[FunctionDeclarationStatement] = []
         top_level_stmts: list[Statement] = []
 
@@ -163,10 +181,41 @@ class Binder:
                 else:
                     # Temporary empty struct symbol to allow self-referencing pointers if needed later
                     self._struct_types[s_name] = StructTypeSymbol(name=s_name, fields=())
+            elif isinstance(stmt, EnumDeclarationStatement):
+                enum_decls.append(stmt)
             elif isinstance(stmt, FunctionDeclarationStatement):
                 function_decls.append(stmt)
             else:
                 top_level_stmts.append(stmt)
+
+        # Populate enum members
+        bound_enums: list[BoundEnumDeclaration] = []
+        for e_stmt in enum_decls:
+            e_name = e_stmt.identifier_token.text
+            if e_name in self._enum_types:
+                self.diagnostics.report(e_stmt.identifier_token.span, f"Enum '{e_name}' is already defined.")
+                continue
+            member_list: list[tuple[str, int]] = []
+            seen_members: set[str] = set()
+            next_val = 0
+            for m in e_stmt.members:
+                m_name = m.identifier_token.text
+                if m_name in seen_members:
+                    self.diagnostics.report(m.identifier_token.span, f"Duplicate member '{m_name}' in enum '{e_name}'.")
+                seen_members.add(m_name)
+                if m.value_expression is not None:
+                    bound_val = self.bind_expression(m.value_expression)
+                    if isinstance(bound_val, BoundLiteralExpression) and isinstance(bound_val.value, int):
+                        next_val = bound_val.value
+                    else:
+                        self.diagnostics.report(m.value_expression.span, f"Enum member value for '{m_name}' must be an integer literal.")
+                m_val = next_val
+                next_val += 1
+                member_list.append((m_name, m_val))
+
+            enum_sym = EnumTypeSymbol(name=e_name, members=tuple(member_list))
+            self._enum_types[e_name] = enum_sym
+            bound_enums.append(BoundEnumDeclaration(enum_sym))
 
         # Populate struct fields
         bound_structs: list[BoundStructDeclaration] = []
@@ -231,6 +280,12 @@ class Binder:
             if not any(s.struct_type.name == st.struct_type.name for s in all_structs):
                 all_structs.append(st)
 
+        # Combine local enums and imported enums
+        all_enums = list(self._imported_enums)
+        for en in bound_enums:
+            if not any(e.enum_type.name == en.enum_type.name for e in all_enums):
+                all_enums.append(en)
+
         # Combine local functions and imported functions
         all_functions = list(self._imported_functions)
         for fn in bound_functions:
@@ -242,6 +297,7 @@ class Binder:
             root_scope=self._current_scope,
             functions=all_functions,
             structs=all_structs,
+            enums=all_enums,
             module_symbols=self._module_symbols,
         )
 
@@ -256,6 +312,8 @@ class Binder:
             return self._bind_variable_declaration(statement)
         if isinstance(statement, IfStatement):
             return self._bind_if_statement(statement)
+        if isinstance(statement, SwitchStatement):
+            return self._bind_switch_statement(statement)
         if isinstance(statement, WhileStatement):
             return self._bind_while_statement(statement)
         if isinstance(statement, ForStatement):
@@ -306,6 +364,12 @@ class Binder:
         mod_base_name = os.path.splitext(os.path.basename(norm_path))[0]
         symbols: dict[str, Any] = {}
         structs: dict[str, Any] = {}
+        enums: dict[str, Any] = {}
+
+        for en in sub_program.enums:
+            enums[en.enum_type.name] = en.enum_type
+            if not any(e.enum_type.name == en.enum_type.name for e in self._imported_enums):
+                self._imported_enums.append(en)
 
         for st in sub_program.structs:
             structs[st.struct_type.name] = st.struct_type
@@ -327,7 +391,7 @@ class Binder:
             if not any(f.symbol.mangled_name == mangled for f in self._imported_functions):
                 self._imported_functions.append(mangled_fn_decl)
 
-        mod_type = ModuleTypeSymbol(module_name=mod_base_name, file_path=norm_path, symbols=symbols, structs=structs)
+        mod_type = ModuleTypeSymbol(module_name=mod_base_name, file_path=norm_path, symbols=symbols, structs=structs, enums=enums)
         self._module_loader._bound_modules[norm_path] = (mod_base_name, mod_type)
         return mod_base_name, mod_type
 
@@ -359,14 +423,17 @@ class Binder:
             sym_name = sym_token.text
             fn_sym = mod_type.get_member_symbol(sym_name)
             st_sym = mod_type.get_struct_type(sym_name)
+            en_sym = mod_type.get_enum_type(sym_name)
 
             if fn_sym is not None:
                 if not self._current_scope.try_declare(fn_sym):
                     self.diagnostics.report(sym_token.span, f"Symbol '{sym_name}' is already declared in this scope.")
             elif st_sym is not None:
                 self._struct_types[sym_name] = st_sym
+            elif en_sym is not None:
+                self._enum_types[sym_name] = en_sym
             else:
-                self.diagnostics.report(sym_token.span, f"Module '{mod_base_name}' has no member or struct named '{sym_name}'.")
+                self.diagnostics.report(sym_token.span, f"Module '{mod_base_name}' has no member, struct, or enum named '{sym_name}'.")
 
         return None
 
@@ -422,6 +489,33 @@ class Binder:
         if statement.else_clause is not None:
             else_stmt = self.bind_statement(statement.else_clause.statement)
         return BoundIfStatement(cond, then_stmt, else_stmt)
+
+    def _bind_switch_statement(self, statement: SwitchStatement) -> BoundSwitchStatement:
+        cond = self.bind_expression(statement.condition)
+        if not (cond.type == TypeInt or isinstance(cond.type, EnumTypeSymbol)):
+            self.diagnostics.report(statement.condition.span, f"Switch condition must be integer or enum type, got '{cond.type}'.")
+
+        bound_cases: list[BoundSwitchCase] = []
+        for case_clause in statement.cases:
+            case_val = self.bind_expression(case_clause.value_expression)
+            if not can_convert(case_val.type, cond.type):
+                self.diagnostics.report_cannot_convert(case_clause.value_expression.span, str(case_val.type), str(cond.type))
+            case_stmts: list[BoundStatement] = []
+            for s in case_clause.statements:
+                b = self.bind_statement(s)
+                if b is not None:
+                    case_stmts.append(b)
+            bound_cases.append(BoundSwitchCase([case_val], case_stmts))
+
+        default_stmts: list[BoundStatement] | None = None
+        if statement.default_clause is not None:
+            default_stmts = []
+            for s in statement.default_clause.statements:
+                b = self.bind_statement(s)
+                if b is not None:
+                    default_stmts.append(b)
+
+        return BoundSwitchStatement(cond, bound_cases, default_stmts)
 
     def _bind_while_statement(self, statement: WhileStatement) -> BoundWhileStatement:
         cond = self.bind_expression(statement.condition)
@@ -523,19 +617,44 @@ class Binder:
         return BoundCastExpression(bound_inner, target_type)
 
     def _bind_member_access_expression(self, expression: MemberAccessExpression) -> BoundExpression:
+        # Check if target is a simple variable expression that names an enum type: Color.Red
+        if isinstance(expression.target, VariableExpression):
+            target_name = expression.target.identifier_token.text
+            if target_name in self._enum_types:
+                enum_t = self._enum_types[target_name]
+                m_name = expression.member_token.text
+                val = enum_t.get_member_value(m_name)
+                if val is None:
+                    self.diagnostics.report(expression.member_token.span, f"Enum '{enum_t.name}' has no member named '{m_name}'.")
+                    return BoundLiteralExpression(None, TypeUnknown)
+                return BoundLiteralExpression(val, enum_t)
+
         target = self.bind_expression(expression.target)
         if isinstance(target.type, ModuleTypeSymbol):
             m_name = expression.member_token.text
+            # Module enum access: module.Enum (not member access yet) or module function/variable
             sym = target.type.get_member_symbol(m_name)
-            if sym is None:
-                self.diagnostics.report(expression.member_token.span, f"Module '{target.type.module_name}' has no member named '{m_name}'.")
-                return BoundLiteralExpression(None, TypeUnknown)
-            if isinstance(sym, VariableSymbol):
-                return BoundVariableExpression(sym)
-            if isinstance(sym, FunctionSymbol):
-                # Wrapped in a dummy variable or expression for binding
-                return BoundVariableExpression(VariableSymbol(name=sym.mangled_name or sym.name, type=sym.type))
+            if sym is not None:
+                if isinstance(sym, VariableSymbol):
+                    return BoundVariableExpression(sym)
+                if isinstance(sym, FunctionSymbol):
+                    return BoundVariableExpression(VariableSymbol(name=sym.mangled_name or sym.name, type=sym.type))
+            enum_t = target.type.get_enum_type(m_name)
+            if enum_t is not None:
+                # Return a pseudo-variable expression typed with EnumTypeSymbol so chained member access module.Enum.Member works!
+                dummy_var = VariableSymbol(name=f"{target.type.module_name}.{m_name}", type=enum_t)
+                return BoundVariableExpression(dummy_var)
+            self.diagnostics.report(expression.member_token.span, f"Module '{target.type.module_name}' has no member named '{m_name}'.")
             return BoundLiteralExpression(None, TypeUnknown)
+
+        # Chained member access on EnumTypeSymbol: e.g. (module.Enum).Member or var.Member where var: Enum
+        if isinstance(target.type, EnumTypeSymbol):
+            m_name = expression.member_token.text
+            val = target.type.get_member_value(m_name)
+            if val is None:
+                self.diagnostics.report(expression.member_token.span, f"Enum '{target.type.name}' has no member named '{m_name}'.")
+                return BoundLiteralExpression(None, TypeUnknown)
+            return BoundLiteralExpression(val, target.type)
 
         if not isinstance(target.type, StructTypeSymbol):
             self.diagnostics.report(expression.target.span, f"Cannot access member of non-struct type '{target.type}'.")

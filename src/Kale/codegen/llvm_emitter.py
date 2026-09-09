@@ -8,6 +8,7 @@ from ..binding.bound_nodes import (
     BoundBlockStatement,
     BoundVariableDeclaration,
     BoundIfStatement,
+    BoundSwitchStatement,
     BoundWhileStatement,
     BoundForStatement,
     BoundPrintStatement,
@@ -47,6 +48,7 @@ from ..binding.types import (
     ArrayTypeSymbol,
     PointerTypeSymbol,
     StructTypeSymbol,
+    EnumTypeSymbol,
 )
 from .llvm_types import to_llvm_type
 
@@ -257,6 +259,49 @@ class LLVMEmitter:
 
             self._builder.position_at_end(merge_block)
 
+        elif isinstance(statement, BoundSwitchStatement):
+            cond_val = self._emit_expression(statement.condition)
+            if cond_val.type != ir.IntType(64):
+                cond_val = self._builder.sext(cond_val, ir.IntType(64))
+
+            end_block = self._current_func.append_basic_block("switch.end")
+            default_block = self._current_func.append_basic_block("switch.default") if statement.default_body is not None else end_block
+
+            # Create switch instruction
+            switch_inst = self._builder.switch(cond_val, default=default_block)
+
+            self._break_blocks.append(end_block)
+
+            # Emit each case
+            for idx, case in enumerate(statement.cases):
+                case_block = self._current_func.append_basic_block(f"switch.case_{idx}")
+                for val_expr in case.case_values:
+                    c_val = self._emit_expression(val_expr)
+                    if c_val.type != ir.IntType(64):
+                        if isinstance(c_val, ir.Constant):
+                            c_val = ir.Constant(ir.IntType(64), c_val.constant)
+                        else:
+                            # Note: case expressions in C/LLVM must be constants
+                            pass
+                    switch_inst.add_case(c_val, case_block)
+
+                self._builder.position_at_end(case_block)
+                for s in case.body:
+                    self._emit_statement(s)
+                if not self._is_block_terminated():
+                    self._builder.branch(end_block)
+
+            # Emit default block if present
+            if statement.default_body is not None:
+                self._builder.position_at_end(default_block)
+                for s in statement.default_body:
+                    self._emit_statement(s)
+                if not self._is_block_terminated():
+                    self._builder.branch(end_block)
+
+            self._break_blocks.pop()
+            self._builder.position_at_end(end_block)
+
         elif isinstance(statement, BoundWhileStatement):
             cond_block = self._current_func.append_basic_block("while.cond")
             body_block = self._current_func.append_basic_block("while.body")
@@ -354,7 +399,7 @@ class LLVMEmitter:
         elif isinstance(statement, BoundPrintStatement):
             for i, arg in enumerate(statement.arguments):
                 val = self._emit_expression(arg)
-                if arg.type == TypeInt:
+                if arg.type == TypeInt or isinstance(arg.type, EnumTypeSymbol):
                     fmt = self._get_string_constant("%lld")
                     self._builder.call(self._printf, [fmt, val])
                 elif arg.type in (TypeFloat, TypeDouble):

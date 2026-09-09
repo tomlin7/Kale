@@ -11,6 +11,7 @@ from ..binding.types import (
     ArrayTypeSymbol,
     PointerTypeSymbol,
     StructTypeSymbol,
+    EnumTypeSymbol,
 )
 
 def to_llvm_type(type_symbol: TypeSymbol, struct_map: dict[str, ir.Type] | None = None) -> ir.Type:
@@ -27,7 +28,7 @@ def to_llvm_type(type_symbol: TypeSymbol, struct_map: dict[str, ir.Type] | None 
     if isinstance(type_symbol, ArrayTypeSymbol):
         elem_t = to_llvm_type(type_symbol.element_type, struct_map)
         return ir.PointerType(elem_t)
-    if type_symbol == TypeInt:
+    if type_symbol == TypeInt or isinstance(type_symbol, EnumTypeSymbol):
         return ir.IntType(64)
     if type_symbol in (TypeFloat, TypeDouble):
         return ir.DoubleType()

@@ -31,6 +31,8 @@ from ..binding.bound_nodes import (
     BoundCastExpression,
     BoundFreeStatement,
     BoundStructDeclaration,
+    BoundEnumDeclaration,
+    BoundSwitchStatement,
 )
 from ..binding.types import (
     TypeInt,
@@ -43,6 +45,7 @@ from ..binding.types import (
     ArrayTypeSymbol,
     PointerTypeSymbol,
     StructTypeSymbol,
+    EnumTypeSymbol,
 )
 
 class CEmitter:
@@ -65,6 +68,8 @@ class CEmitter:
             return f"{self._map_type(t.base_type)}*"
         if isinstance(t, StructTypeSymbol):
             return f"struct {t.name}"
+        if isinstance(t, EnumTypeSymbol):
+            return t.name
         if isinstance(t, ArrayTypeSymbol):
             return f"{self._map_type(t.element_type)}*"
         if t == TypeInt:
@@ -99,6 +104,19 @@ class CEmitter:
         self._write_line("static inline void _kale_print_str(const char* x) { printf(\"%s\", x); }")
         self._write_line("static inline void _kale_println(void) { printf(\"\\n\"); }")
         self._write_line()
+
+        # Enum definitions
+        if program.enums:
+            self._write_line("// --- User Enums ---")
+            for en in program.enums:
+                self._write_line(f"typedef enum {{")
+                self._indent_level += 1
+                for idx, (mname, mval) in enumerate(en.enum_type.members):
+                    comma = "," if idx < len(en.enum_type.members) - 1 else ""
+                    self._write_line(f"{en.enum_type.name}_{mname} = {mval}{comma}")
+                self._indent_level -= 1
+                self._write_line(f"}} {en.enum_type.name};")
+                self._write_line()
 
         # Struct definitions
         if program.structs:
@@ -177,6 +195,25 @@ class CEmitter:
                 self._emit_statement(statement.else_statement)
                 self._indent_level -= 1
             self._write_line("}")
+        elif isinstance(statement, BoundSwitchStatement):
+            cond_str = self._emit_expression(statement.condition)
+            self._write_line(f"switch ({cond_str}) {{")
+            self._indent_level += 1
+            for case in statement.cases:
+                for v in case.case_values:
+                    self._write_line(f"case {self._emit_expression(v)}:")
+                self._indent_level += 1
+                for s in case.body:
+                    self._emit_statement(s)
+                self._indent_level -= 1
+            if statement.default_body is not None:
+                self._write_line("default:")
+                self._indent_level += 1
+                for s in statement.default_body:
+                    self._emit_statement(s)
+                self._indent_level -= 1
+            self._indent_level -= 1
+            self._write_line("}")
         elif isinstance(statement, BoundWhileStatement):
             cond_str = self._emit_expression(statement.condition)
             self._write_line(f"while ({cond_str}) {{")
@@ -210,7 +247,7 @@ class CEmitter:
         elif isinstance(statement, BoundPrintStatement):
             for i, arg in enumerate(statement.arguments):
                 arg_expr = self._emit_expression(arg)
-                if arg.type == TypeInt:
+                if arg.type == TypeInt or isinstance(arg.type, EnumTypeSymbol):
                     self._write_line(f"_kale_print_int({arg_expr});")
                 elif arg.type in (TypeFloat, TypeDouble):
                     self._write_line(f"_kale_print_double({arg_expr});")

@@ -342,6 +342,40 @@ class StructDeclarationStatement(Statement):
         return [self.struct_keyword, self.identifier_token, self.open_brace, *self.fields, self.close_brace]
 
 @dataclass(frozen=True)
+class EnumMemberNode(SyntaxNode):
+    identifier_token: SyntaxToken
+    equals_token: SyntaxToken | None = None
+    value_expression: Expression | None = None
+
+    @property
+    def span(self) -> TextSpan:
+        end = self.value_expression.span.end if self.value_expression else self.identifier_token.span.end
+        return TextSpan.from_bounds(self.identifier_token.span.start, end)
+
+    def children(self) -> list[SyntaxNode | SyntaxToken]:
+        items: list[SyntaxNode | SyntaxToken] = [self.identifier_token]
+        if self.equals_token:
+            items.append(self.equals_token)
+        if self.value_expression:
+            items.append(self.value_expression)
+        return items
+
+@dataclass(frozen=True)
+class EnumDeclarationStatement(Statement):
+    enum_keyword: SyntaxToken
+    identifier_token: SyntaxToken
+    open_brace: SyntaxToken
+    members: list[EnumMemberNode]
+    close_brace: SyntaxToken
+
+    @property
+    def span(self) -> TextSpan:
+        return TextSpan.from_bounds(self.enum_keyword.span.start, self.close_brace.span.end)
+
+    def children(self) -> list[SyntaxNode | SyntaxToken]:
+        return [self.enum_keyword, self.identifier_token, self.open_brace, *self.members, self.close_brace]
+
+@dataclass(frozen=True)
 class FunctionDeclarationStatement(Statement):
     return_type_token: SyntaxToken
     identifier_token: SyntaxToken
@@ -479,6 +513,57 @@ class ForStatement(Statement):
         if self.increment:
             items.append(self.increment)
         items.extend([self.close_paren, self.body])
+        return items
+
+@dataclass(frozen=True)
+class SwitchCaseClause(SyntaxNode):
+    case_keyword: SyntaxToken
+    value_expression: Expression
+    colon_token: SyntaxToken
+    statements: list[Statement]
+
+    @property
+    def span(self) -> TextSpan:
+        end = self.statements[-1].span.end if self.statements else self.colon_token.span.end
+        return TextSpan.from_bounds(self.case_keyword.span.start, end)
+
+    def children(self) -> list[SyntaxNode | SyntaxToken]:
+        return [self.case_keyword, self.value_expression, self.colon_token, *self.statements]
+
+@dataclass(frozen=True)
+class SwitchDefaultClause(SyntaxNode):
+    default_keyword: SyntaxToken
+    colon_token: SyntaxToken
+    statements: list[Statement]
+
+    @property
+    def span(self) -> TextSpan:
+        end = self.statements[-1].span.end if self.statements else self.colon_token.span.end
+        return TextSpan.from_bounds(self.default_keyword.span.start, end)
+
+    def children(self) -> list[SyntaxNode | SyntaxToken]:
+        return [self.default_keyword, self.colon_token, *self.statements]
+
+@dataclass(frozen=True)
+class SwitchStatement(Statement):
+    switch_keyword: SyntaxToken
+    open_paren: SyntaxToken
+    condition: Expression
+    close_paren: SyntaxToken
+    open_brace: SyntaxToken
+    cases: list[SwitchCaseClause]
+    default_clause: SwitchDefaultClause | None
+    close_brace: SyntaxToken
+
+    @property
+    def span(self) -> TextSpan:
+        return TextSpan.from_bounds(self.switch_keyword.span.start, self.close_brace.span.end)
+
+    def children(self) -> list[SyntaxNode | SyntaxToken]:
+        items: list[SyntaxNode | SyntaxToken] = [self.switch_keyword, self.open_paren, self.condition, self.close_paren, self.open_brace, *self.cases]
+        if self.default_clause:
+            items.append(self.default_clause)
+        items.append(self.close_brace)
         return items
 
 @dataclass(frozen=True)

@@ -34,6 +34,8 @@ from ..ast.nodes import (
     ParameterNode,
     StructFieldNode,
     StructDeclarationStatement,
+    EnumMemberNode,
+    EnumDeclarationStatement,
     FunctionDeclarationStatement,
     VariableDeclarationStatement,
     ExpressionStatement,
@@ -41,6 +43,9 @@ from ..ast.nodes import (
     ElseClause,
     WhileStatement,
     ForStatement,
+    SwitchCaseClause,
+    SwitchDefaultClause,
+    SwitchStatement,
     PrintStatement,
     FreeStatement,
     ReturnStatement,
@@ -127,6 +132,8 @@ class Parser:
                 return self.parse_from_import_statement()
             if self._check(SyntaxKind.StructKeyword):
                 return self.parse_struct_declaration()
+            if self._check(SyntaxKind.EnumKeyword):
+                return self.parse_enum_declaration()
             if self._check(SyntaxKind.OpenBraceToken):
                 return self.parse_block_statement()
             if self._is_function_declaration_start():
@@ -135,6 +142,8 @@ class Parser:
                 return self.parse_variable_declaration()
             if self._check(SyntaxKind.IfKeyword):
                 return self.parse_if_statement()
+            if self._check(SyntaxKind.SwitchKeyword):
+                return self.parse_switch_statement()
             if self._check(SyntaxKind.WhileKeyword):
                 return self.parse_while_statement()
             if self._check(SyntaxKind.ForKeyword):
@@ -281,6 +290,28 @@ class Parser:
             self._advance()
         return StructDeclarationStatement(struct_kw, name_tok, open_brace, fields, close_brace)
 
+    def parse_enum_declaration(self) -> EnumDeclarationStatement:
+        enum_kw = self._match(SyntaxKind.EnumKeyword)
+        name_tok = self._match(SyntaxKind.IdentifierToken)
+        open_brace = self._match(SyntaxKind.OpenBraceToken)
+        members: list[EnumMemberNode] = []
+        while not self._check(SyntaxKind.CloseBraceToken) and not self._check(SyntaxKind.EndOfFileToken):
+            m_name = self._match(SyntaxKind.IdentifierToken)
+            eq_tok = None
+            val_expr = None
+            if self._check(SyntaxKind.EqualsToken):
+                eq_tok = self._advance()
+                val_expr = self.parse_expression()
+            members.append(EnumMemberNode(m_name, eq_tok, val_expr))
+            if self._check(SyntaxKind.CommaToken):
+                self._advance()
+            else:
+                break
+        close_brace = self._match(SyntaxKind.CloseBraceToken)
+        if self._check(SyntaxKind.SemicolonToken):
+            self._advance()
+        return EnumDeclarationStatement(enum_kw, name_tok, open_brace, members, close_brace)
+
     def parse_type_token(self) -> SyntaxToken:
         """Parses a type token, which may be a primitive (e.g. 'int'), pointer ('int*', 'Point**'), or array ('int[]', 'int[5]')."""
         base_type_token = self._advance()
@@ -383,6 +414,52 @@ class Parser:
             else_clause = ElseClause(else_kw, else_stmt)
 
         return IfStatement(if_kw, open_p, cond, close_p, then_stmt, else_clause)
+
+    def parse_switch_statement(self) -> SwitchStatement:
+        switch_kw = self._match(SyntaxKind.SwitchKeyword)
+        open_p = self._match(SyntaxKind.OpenParenthesisToken)
+        cond = self.parse_expression()
+        close_p = self._match(SyntaxKind.CloseParenthesisToken)
+        open_brace = self._match(SyntaxKind.OpenBraceToken)
+
+        cases: list[SwitchCaseClause] = []
+        default_clause: SwitchDefaultClause | None = None
+
+        while not self._check(SyntaxKind.CloseBraceToken) and not self._check(SyntaxKind.EndOfFileToken):
+            if self._check(SyntaxKind.CaseKeyword):
+                case_kw = self._advance()
+                case_val = self.parse_expression()
+                colon = self._match(SyntaxKind.ColonToken)
+                stmts: list[Statement] = []
+                while (
+                    not self._check(SyntaxKind.CaseKeyword)
+                    and not self._check(SyntaxKind.DefaultKeyword)
+                    and not self._check(SyntaxKind.CloseBraceToken)
+                    and not self._check(SyntaxKind.EndOfFileToken)
+                ):
+                    s = self.parse_statement()
+                    if s is not None:
+                        stmts.append(s)
+                cases.append(SwitchCaseClause(case_kw, case_val, colon, stmts))
+            elif self._check(SyntaxKind.DefaultKeyword):
+                def_kw = self._advance()
+                colon = self._match(SyntaxKind.ColonToken)
+                stmts = []
+                while (
+                    not self._check(SyntaxKind.CaseKeyword)
+                    and not self._check(SyntaxKind.DefaultKeyword)
+                    and not self._check(SyntaxKind.CloseBraceToken)
+                    and not self._check(SyntaxKind.EndOfFileToken)
+                ):
+                    s = self.parse_statement()
+                    if s is not None:
+                        stmts.append(s)
+                default_clause = SwitchDefaultClause(def_kw, colon, stmts)
+            else:
+                self._advance()
+
+        close_brace = self._match(SyntaxKind.CloseBraceToken)
+        return SwitchStatement(switch_kw, open_p, cond, close_p, open_brace, cases, default_clause, close_brace)
 
     def parse_while_statement(self) -> WhileStatement:
         while_kw = self._match(SyntaxKind.WhileKeyword)
