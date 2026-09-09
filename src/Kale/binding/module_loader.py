@@ -8,8 +8,15 @@ from ..ast.nodes import CompilationUnit, ImportStatement, FromImportStatement
 
 class ModuleLoader:
     """Manages file path resolution, cycle detection, and parsing across multiple Kale source modules."""
-    def __init__(self, diagnostics: DiagnosticBag):
+    def __init__(self, diagnostics: DiagnosticBag, search_paths: Optional[List[str]] = None):
         self.diagnostics = diagnostics
+        self.search_paths: List[str] = [os.path.abspath(p) for p in (search_paths or [])]
+        # Always include environment variable KALE_PATH if present
+        if "KALE_PATH" in os.environ:
+            for p in os.environ["KALE_PATH"].split(os.pathsep):
+                if p and os.path.isdir(p):
+                    self.search_paths.append(os.path.abspath(p))
+
         self._parsed_units: Dict[str, CompilationUnit] = {}
         self._source_texts: Dict[str, SourceText] = {}
         self._import_chain: List[str] = []
@@ -21,18 +28,32 @@ class ModuleLoader:
 
     def load_module(self, relative_path: str, importing_file: Optional[str] = None, span: Optional[TextSpan] = None) -> Tuple[Optional[str], Optional[CompilationUnit]]:
         """
-        Resolves relative_path relative to importing_file, parses it, checks for cycles,
-        and returns (normalized_path, compilation_unit).
+        Resolves relative_path relative to importing_file or configured search_paths,
+        parses it, checks for cycles, and returns (normalized_path, compilation_unit).
         """
-        # Resolve target path
+        target_path: Optional[str] = None
+
+        # 1. Resolve relative to importing file
         if importing_file:
             base_dir = os.path.dirname(os.path.abspath(importing_file))
-            target_path = os.path.normpath(os.path.join(base_dir, relative_path))
+            candidate = os.path.normpath(os.path.join(base_dir, relative_path))
+            if os.path.isfile(candidate):
+                target_path = candidate
         else:
-            target_path = os.path.normpath(os.path.abspath(relative_path))
+            candidate = os.path.normpath(os.path.abspath(relative_path))
+            if os.path.isfile(candidate):
+                target_path = candidate
+
+        # 2. If not found and path is not explicit relative (./ or ../), check search_paths
+        if target_path is None and not relative_path.startswith(("./", "../", ".\\", "..\\")):
+            for sp_dir in self.search_paths:
+                candidate = os.path.normpath(os.path.join(sp_dir, relative_path))
+                if os.path.isfile(candidate):
+                    target_path = candidate
+                    break
 
         # Check existence
-        if not os.path.isfile(target_path):
+        if target_path is None or not os.path.isfile(target_path):
             sp = span or TextSpan(0, 0)
             self.diagnostics.report(sp, f"Cannot find module file '{relative_path}'.")
             return None, None

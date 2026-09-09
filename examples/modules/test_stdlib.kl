@@ -1,0 +1,8 @@
+import "core/math.kl" as math;
+
+int a = -42;
+int b = math.abs(a);
+int c = math.clamp(150, 0, 100);
+
+print("Absolute value:", b);
+print("Clamped value:", c);

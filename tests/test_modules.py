@@ -155,6 +155,35 @@ return d;
             self.assertIn("kale_calc_sub", c_code)
             self.assertIn("main(", c_code)
 
+    def test_search_paths_import_resolution(self):
+        with tempfile.TemporaryDirectory() as lib_dir, tempfile.TemporaryDirectory() as app_dir:
+            util_file = os.path.join(lib_dir, "utils.kl")
+            with open(util_file, "w", encoding="utf-8") as f:
+                f.write("int double_it(int x) { return x * 2; }\n")
+
+            main_file = os.path.join(app_dir, "main.kl")
+            with open(main_file, "w", encoding="utf-8") as f:
+                f.write('import "utils.kl" as u;\nreturn u.double_it(21);\n')
+
+            with open(main_file, "r", encoding="utf-8") as f:
+                text = SourceText(f.read(), file_name=main_file)
+
+            diag = DiagnosticBag()
+            parser = Parser(text, diag)
+            unit = parser.parse_compilation_unit()
+
+            # Provide lib_dir in search_paths
+            loader = ModuleLoader(diag, search_paths=[lib_dir])
+            binder = Binder(diag, module_loader=loader, current_file=main_file)
+            program = binder.bind_program(unit)
+            self.assertFalse(diag.has_errors)
+
+            emitter = LLVMEmitter()
+            mod = emitter.emit_module(program)
+            jit = LLVMJIT()
+            ret = jit.run_ir(str(mod))
+            self.assertEqual(ret, 42)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,32 @@
+// Kale Standard Library: core/math.kl
+
+int abs(int n) {
+    if (n < 0) {
+        return -n;
+    }
+    return n;
+}
+
+int min(int a, int b) {
+    if (a < b) {
+        return a;
+    }
+    return b;
+}
+
+int max(int a, int b) {
+    if (a > b) {
+        return a;
+    }
+    return b;
+}
+
+int clamp(int val, int low, int high) {
+    if (val < low) {
+        return low;
+    }
+    if (val > high) {
+        return high;
+    }
+    return val;
+}

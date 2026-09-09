@@ -39,6 +39,22 @@ def _print_diagnostics(source_text: SourceText, diagnostics: DiagnosticBag):
     for diag in diagnostics:
         print(source_text.format_diagnostic(diag), file=sys.stderr)
 
+def _create_module_loader(diagnostics: DiagnosticBag, current_file: str | None = None) -> ModuleLoader:
+    search_paths: list[str] = []
+    # If in a repo, add packages/std, packages, and libs to search paths
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) # src/kale -> src -> root
+    repo_root = os.path.dirname(repo_root)
+    std_dir = os.path.join(repo_root, "packages", "std")
+    libs_dir = os.path.join(repo_root, "libs")
+    if os.path.isdir(std_dir):
+        search_paths.append(std_dir)
+    if os.path.isdir(libs_dir):
+        search_paths.append(libs_dir)
+    if os.path.isdir(repo_root):
+        search_paths.append(repo_root)
+
+    return ModuleLoader(diagnostics, search_paths=search_paths)
+
 def cmd_dump_tokens(args: argparse.Namespace) -> int:
     source_text = _read_source(args.file)
     if source_text is None:
@@ -82,7 +98,7 @@ def cmd_dump_llvm(args: argparse.Namespace) -> int:
     parser = Parser(source_text, diagnostics)
     unit = parser.parse_compilation_unit()
 
-    loader = ModuleLoader(diagnostics)
+    loader = _create_module_loader(diagnostics, args.file)
     binder = Binder(diagnostics, module_loader=loader, current_file=args.file)
     program = binder.bind_program(unit)
 
@@ -104,7 +120,7 @@ def cmd_check(args: argparse.Namespace) -> int:
     parser = Parser(source_text, diagnostics)
     unit = parser.parse_compilation_unit()
 
-    loader = ModuleLoader(diagnostics)
+    loader = _create_module_loader(diagnostics, args.file)
     binder = Binder(diagnostics, module_loader=loader, current_file=args.file)
     binder.bind_program(unit)
 
@@ -125,7 +141,7 @@ def cmd_build(args: argparse.Namespace) -> int:
     parser = Parser(source_text, diagnostics)
     unit = parser.parse_compilation_unit()
 
-    loader = ModuleLoader(diagnostics)
+    loader = _create_module_loader(diagnostics, args.file)
     binder = Binder(diagnostics, module_loader=loader, current_file=args.file)
     program = binder.bind_program(unit)
 
@@ -197,7 +213,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     parser = Parser(source_text, diagnostics)
     unit = parser.parse_compilation_unit()
 
-    loader = ModuleLoader(diagnostics)
+    loader = _create_module_loader(diagnostics, args.file)
     binder = Binder(diagnostics, module_loader=loader, current_file=args.file)
     program = binder.bind_program(unit)
 
