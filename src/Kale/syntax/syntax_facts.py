@@ -26,6 +26,8 @@ KEYWORDS: dict[str, SyntaxKind] = {
     # Builtins
     "print": SyntaxKind.PrintKeyword,
     "input": SyntaxKind.InputKeyword,
+    "alloc": SyntaxKind.AllocKeyword,
+    "free": SyntaxKind.FreeKeyword,
 
     # Types
     "int": SyntaxKind.IntKeyword,
@@ -79,6 +81,8 @@ def get_unary_operator_precedence(kind: SyntaxKind) -> int:
         SyntaxKind.TildeToken,
         SyntaxKind.PlusPlusToken,
         SyntaxKind.MinusMinusToken,
+        SyntaxKind.AmpersandToken,  # Address-of &
+        SyntaxKind.StarToken,       # Dereference *
     ):
         return 7
     return 0
@@ -104,7 +108,7 @@ def get_binary_operator_precedence(kind: SyntaxKind) -> int:
         return 1
     if kind == SyntaxKind.AmpersandToken:
         return 1
-    if kind == SyntaxKind.HatToken:
+    if kind in (SyntaxKind.HatToken, SyntaxKind.CaretToken):
         return 1
     if kind == SyntaxKind.PipeToken:
         return 1

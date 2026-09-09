@@ -1,0 +1,52 @@
+// Kale Phase 10 Example: Pointers, Heap Allocation, and Arrow Member Access
+
+struct Node {
+    int value;
+    int tag;
+};
+
+print("=== Pointers and Heap Allocation ===");
+
+// 1. Address-of and Dual Dereferencing
+int answer = 42;
+int* ptr = &answer;
+
+print("Direct value:", answer);
+
+// Prefix dereference
+*ptr = 100;
+print("After prefix deref (*ptr = 100):", answer);
+
+// Postfix dereference (creative syntax)
+ptr^ = 250;
+print("After postfix deref (ptr^ = 250):", answer);
+print("Read via ptr^:", ptr^);
+
+// 2. Struct Pointer and Arrow Access
+print("=== Struct Pointers and Arrow Operator ===");
+Node* node = alloc(Node, 1);
+node->value = 999;
+node->tag = 7;
+
+print("Node value via arrow:", node->value);
+print("Node tag via arrow:", node->tag);
+
+free(node);
+
+// 3. Dynamic Buffer Allocation
+print("=== Dynamic Array Buffer via alloc/free ===");
+int* buffer = alloc(int, 4);
+buffer[0] = 10;
+buffer[1] = 20;
+buffer[2] = 30;
+buffer[3] = 40;
+
+int sum = 0;
+for (int i = 0; i < 4; i++) {
+    sum += buffer[i];
+}
+
+print("Sum of allocated buffer elements:", sum);
+
+free(buffer);
+print("Memory freed successfully!");

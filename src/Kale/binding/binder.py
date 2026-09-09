@@ -23,12 +23,17 @@ from ..ast.nodes import (
     UnaryExpression,
     BinaryExpression,
     AssignmentExpression,
+    DereferenceAssignmentExpression,
     CallExpression,
     ArrayLiteralExpression,
     IndexExpression,
     IndexAssignmentExpression,
     MemberAccessExpression,
     MemberAssignmentExpression,
+    ArrowAccessExpression,
+    ArrowAssignmentExpression,
+    AllocExpression,
+    FreeStatement,
     StructDeclarationStatement,
     StructFieldNode,
 )
@@ -43,6 +48,7 @@ from .types import (
     TypeVoid,
     TypeUnknown,
     ArrayTypeSymbol,
+    PointerTypeSymbol,
     StructTypeSymbol,
     lookup_type,
     is_numeric,
@@ -63,6 +69,7 @@ from .bound_nodes import (
     BoundWhileStatement,
     BoundForStatement,
     BoundPrintStatement,
+    BoundFreeStatement,
     BoundReturnStatement,
     BoundBreakStatement,
     BoundContinueStatement,
@@ -75,6 +82,10 @@ from .bound_nodes import (
     BoundIndexAssignmentExpression,
     BoundMemberAccessExpression,
     BoundMemberAssignmentExpression,
+    BoundAddressOfExpression,
+    BoundDereferenceExpression,
+    BoundDereferenceAssignmentExpression,
+    BoundAllocExpression,
     BoundAssignmentExpression,
     BoundUnaryExpression,
     BoundUnaryOperator,
@@ -94,6 +105,12 @@ class Binder:
         # Check custom structs
         if type_name in self._struct_types:
             return self._struct_types[type_name]
+        # Check pointer types (e.g. Point*, int*, Point**)
+        if type_name.endswith("*"):
+            base_name = type_name[:-1].strip()
+            base_t = self._resolve_type(base_name)
+            if base_t is not TypeUnknown:
+                return PointerTypeSymbol(base_t)
         # Check array of struct (e.g. Point[] or Point[10])
         if type_name.endswith("]"):
             bracket_start = type_name.find("[")
@@ -205,6 +222,8 @@ class Binder:
             return self._bind_for_statement(statement)
         if isinstance(statement, PrintStatement):
             return self._bind_print_statement(statement)
+        if isinstance(statement, FreeStatement):
+            return self._bind_free_statement(statement)
         if isinstance(statement, ReturnStatement):
             return self._bind_return_statement(statement)
         if isinstance(statement, BreakStatement):
@@ -290,6 +309,12 @@ class Binder:
         bound_args = [self.bind_expression(arg) for arg in statement.arguments]
         return BoundPrintStatement(bound_args)
 
+    def _bind_free_statement(self, statement: FreeStatement) -> BoundFreeStatement:
+        bound_expr = self.bind_expression(statement.expression)
+        if not isinstance(bound_expr.type, (PointerTypeSymbol, ArrayTypeSymbol)):
+            self.diagnostics.report(statement.expression.span, f"Cannot free non-pointer expression of type '{bound_expr.type}'.")
+        return BoundFreeStatement(bound_expr)
+
     def _bind_return_statement(self, statement: ReturnStatement) -> BoundReturnStatement:
         bound_expr = self.bind_expression(statement.expression) if statement.expression else None
         if self._current_function is not None:
@@ -333,6 +358,14 @@ class Binder:
             return self._bind_member_access_expression(expression)
         if isinstance(expression, MemberAssignmentExpression):
             return self._bind_member_assignment_expression(expression)
+        if isinstance(expression, ArrowAccessExpression):
+            return self._bind_arrow_access_expression(expression)
+        if isinstance(expression, ArrowAssignmentExpression):
+            return self._bind_arrow_assignment_expression(expression)
+        if isinstance(expression, AllocExpression):
+            return self._bind_alloc_expression(expression)
+        if isinstance(expression, DereferenceAssignmentExpression):
+            return self._bind_dereference_assignment_expression(expression)
         return BoundLiteralExpression(None, TypeUnknown)
 
     def _bind_member_access_expression(self, expression: MemberAccessExpression) -> BoundExpression:
@@ -369,6 +402,73 @@ class Binder:
 
         return BoundMemberAssignmentExpression(target, m_name, m_idx, m_type, value, expression.operator_token.text)
 
+    def _bind_arrow_access_expression(self, expression: ArrowAccessExpression) -> BoundExpression:
+        target = self.bind_expression(expression.target)
+        if not (isinstance(target.type, PointerTypeSymbol) and isinstance(target.type.base_type, StructTypeSymbol)):
+            self.diagnostics.report(expression.target.span, f"Cannot use '->' operator on non-struct pointer type '{target.type}'.")
+            return BoundLiteralExpression(None, TypeUnknown)
+
+        struct_t: StructTypeSymbol = target.type.base_type # type: ignore
+        m_name = expression.member_token.text
+        m_type = struct_t.get_field_type(m_name)
+        if m_type is None:
+            self.diagnostics.report(expression.member_token.span, f"Struct '{struct_t.name}' has no field named '{m_name}'.")
+            return BoundLiteralExpression(None, TypeUnknown)
+
+        m_idx = struct_t.get_field_index(m_name)
+        # An arrow access ptr->member is semantically equivalent to (*ptr).member
+        deref_target = BoundDereferenceExpression(target, struct_t)
+        return BoundMemberAccessExpression(deref_target, m_name, m_idx, m_type)
+
+    def _bind_arrow_assignment_expression(self, expression: ArrowAssignmentExpression) -> BoundExpression:
+        target = self.bind_expression(expression.target)
+        if not (isinstance(target.type, PointerTypeSymbol) and isinstance(target.type.base_type, StructTypeSymbol)):
+            self.diagnostics.report(expression.target.span, f"Cannot use '->' operator on non-struct pointer type '{target.type}'.")
+            return BoundLiteralExpression(None, TypeUnknown)
+
+        struct_t: StructTypeSymbol = target.type.base_type # type: ignore
+        m_name = expression.member_token.text
+        m_type = struct_t.get_field_type(m_name)
+        if m_type is None:
+            self.diagnostics.report(expression.member_token.span, f"Struct '{struct_t.name}' has no field named '{m_name}'.")
+            return BoundLiteralExpression(None, TypeUnknown)
+
+        m_idx = struct_t.get_field_index(m_name)
+        value = self.bind_expression(expression.value)
+        if not can_convert(value.type, m_type):
+            self.diagnostics.report_cannot_convert(expression.value.span, str(value.type), str(m_type))
+
+        deref_target = BoundDereferenceExpression(target, struct_t)
+        return BoundMemberAssignmentExpression(deref_target, m_name, m_idx, m_type, value, expression.operator_token.text)
+
+    def _bind_alloc_expression(self, expression: AllocExpression) -> BoundExpression:
+        elem_t = self._resolve_type(expression.type_token.text)
+        if elem_t == TypeUnknown:
+            self.diagnostics.report(expression.type_token.span, f"Unknown type '{expression.type_token.text}' in alloc().")
+            return BoundLiteralExpression(None, TypeUnknown)
+
+        bound_count = None
+        if expression.count_expression:
+            bound_count = self.bind_expression(expression.count_expression)
+            if not can_convert(bound_count.type, TypeInt):
+                self.diagnostics.report_cannot_convert(expression.count_expression.span, str(bound_count.type), "int")
+
+        ptr_t = PointerTypeSymbol(elem_t)
+        return BoundAllocExpression(elem_t, bound_count, ptr_t)
+
+    def _bind_dereference_assignment_expression(self, expression: DereferenceAssignmentExpression) -> BoundExpression:
+        target = self.bind_expression(expression.target)
+        if not isinstance(target.type, PointerTypeSymbol):
+            self.diagnostics.report(expression.target.span, f"Cannot dereference non-pointer expression of type '{target.type}'.")
+            return BoundLiteralExpression(None, TypeUnknown)
+
+        value = self.bind_expression(expression.value)
+        elem_t = target.type.base_type
+        if not can_convert(value.type, elem_t):
+            self.diagnostics.report_cannot_convert(expression.value.span, str(value.type), str(elem_t))
+
+        return BoundDereferenceAssignmentExpression(target, value, expression.operator_token.text)
+
     def _bind_array_literal_expression(self, expression: ArrayLiteralExpression) -> BoundExpression:
         bound_elements = [self.bind_expression(elem) for elem in expression.elements]
         if not bound_elements:
@@ -386,28 +486,29 @@ class Binder:
         target = self.bind_expression(expression.target)
         index = self.bind_expression(expression.index)
 
-        if not isinstance(target.type, ArrayTypeSymbol):
+        if not isinstance(target.type, (ArrayTypeSymbol, PointerTypeSymbol)):
             self.diagnostics.report(expression.target.span, f"Cannot index a non-array type '{target.type}'.")
             return BoundLiteralExpression(None, TypeUnknown)
 
         if not can_convert(index.type, TypeInt):
             self.diagnostics.report_cannot_convert(expression.index.span, str(index.type), "int")
 
-        return BoundIndexExpression(target, index, target.type.element_type)
+        elem_type = target.type.element_type if isinstance(target.type, ArrayTypeSymbol) else target.type.base_type
+        return BoundIndexExpression(target, index, elem_type)
 
     def _bind_index_assignment_expression(self, expression: IndexAssignmentExpression) -> BoundExpression:
         target = self.bind_expression(expression.target)
         index = self.bind_expression(expression.index)
         value = self.bind_expression(expression.value)
 
-        if not isinstance(target.type, ArrayTypeSymbol):
+        if not isinstance(target.type, (ArrayTypeSymbol, PointerTypeSymbol)):
             self.diagnostics.report(expression.target.span, f"Cannot index a non-array type '{target.type}'.")
             return BoundLiteralExpression(None, TypeUnknown)
 
         if not can_convert(index.type, TypeInt):
             self.diagnostics.report_cannot_convert(expression.index.span, str(index.type), "int")
 
-        elem_type = target.type.element_type
+        elem_type = target.type.element_type if isinstance(target.type, ArrayTypeSymbol) else target.type.base_type
         if not can_convert(value.type, elem_type):
             self.diagnostics.report_cannot_convert(expression.value.span, str(value.type), str(elem_type))
 
@@ -509,6 +610,21 @@ class Binder:
                 self.diagnostics.report_undefined_unary_operator(op_tok.span, op_tok.text, str(operand.type))
             op = BoundUnaryOperator(op_tok.text, operand.type, operand.type)
             return BoundUnaryExpression(op, operand, is_postfix=False)
+
+        # Address-of (&)
+        if op_tok.kind == SyntaxKind.AmpersandToken and not expression.is_postfix:
+            if not isinstance(operand, (BoundVariableExpression, BoundIndexExpression, BoundMemberAccessExpression, BoundDereferenceExpression)):
+                self.diagnostics.report(expression.span, "Address-of operator '&' can only be applied to lvalues (variables, array elements, struct fields).")
+                return operand
+            ptr_t = PointerTypeSymbol(operand.type)
+            return BoundAddressOfExpression(operand, ptr_t)
+
+        # Dereference (* prefix or ^ postfix)
+        if (op_tok.kind == SyntaxKind.StarToken and not expression.is_postfix) or (op_tok.kind == SyntaxKind.CaretToken and expression.is_postfix):
+            if not isinstance(operand.type, PointerTypeSymbol):
+                self.diagnostics.report(expression.span, f"Cannot dereference non-pointer expression of type '{operand.type}'.")
+                return operand
+            return BoundDereferenceExpression(operand, operand.type.base_type)
 
         self.diagnostics.report_undefined_unary_operator(op_tok.span, op_tok.text, str(operand.type))
         return operand

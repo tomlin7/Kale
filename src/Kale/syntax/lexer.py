@@ -125,6 +125,7 @@ class Lexer:
             "&=": SyntaxKind.AmpersandEqualsToken,
             "|=": SyntaxKind.PipeEqualsToken,
             "^=": SyntaxKind.HatEqualsToken,
+            "->": SyntaxKind.ArrowToken,
         }
         if two_char in two_char_map:
             self._advance(2)
@@ -153,7 +154,7 @@ class Lexer:
             '!': SyntaxKind.BangToken,
             '&': SyntaxKind.AmpersandToken,
             '|': SyntaxKind.PipeToken,
-            '^': SyntaxKind.HatToken,
+            '^': SyntaxKind.CaretToken,
             '~': SyntaxKind.TildeToken,
         }
         if c in single_char_map:

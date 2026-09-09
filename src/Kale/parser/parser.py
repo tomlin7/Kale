@@ -18,12 +18,16 @@ from ..ast.nodes import (
     UnaryExpression,
     BinaryExpression,
     AssignmentExpression,
+    DereferenceAssignmentExpression,
     CallExpression,
     ArrayLiteralExpression,
     IndexExpression,
     IndexAssignmentExpression,
     MemberAccessExpression,
     MemberAssignmentExpression,
+    ArrowAccessExpression,
+    ArrowAssignmentExpression,
+    AllocExpression,
     Statement,
     BlockStatement,
     ParameterNode,
@@ -37,6 +41,7 @@ from ..ast.nodes import (
     WhileStatement,
     ForStatement,
     PrintStatement,
+    FreeStatement,
     ReturnStatement,
     BreakStatement,
     ContinueStatement,
@@ -129,6 +134,8 @@ class Parser:
                 return self.parse_for_statement()
             if self._check(SyntaxKind.PrintKeyword):
                 return self.parse_print_statement()
+            if self._check(SyntaxKind.FreeKeyword):
+                return self.parse_free_statement()
             if self._check(SyntaxKind.ReturnKeyword):
                 return self.parse_return_statement()
             if self._check(SyntaxKind.BreakKeyword):
@@ -144,36 +151,45 @@ class Parser:
         k = self._cur_token.kind
         if not (is_type_keyword(k) or k in (SyntaxKind.LetKeyword, SyntaxKind.VarKeyword) or k == SyntaxKind.IdentifierToken):
             return False
-        # If primitive/struct type: check if next is ident and next+1 is '('
-        # If array type: type [ ] ident (
-        if self._peek(1).kind == SyntaxKind.IdentifierToken and self._peek(2).kind == SyntaxKind.OpenParenthesisToken:
-            return True
-        if self._peek(1).kind == SyntaxKind.OpenBracketToken:
-            idx = 2
-            if self._peek(idx).kind == SyntaxKind.NumberToken:
+        # Advance through any '*' or '[...]' to check if ident followed by '('
+        idx = 1
+        while True:
+            if self._peek(idx).kind == SyntaxKind.StarToken:
                 idx += 1
-            if self._peek(idx).kind == SyntaxKind.CloseBracketToken:
-                return (
-                    self._peek(idx + 1).kind == SyntaxKind.IdentifierToken
-                    and self._peek(idx + 2).kind == SyntaxKind.OpenParenthesisToken
-                )
-        return False
+            elif self._peek(idx).kind == SyntaxKind.OpenBracketToken:
+                idx += 1
+                if self._peek(idx).kind == SyntaxKind.NumberToken:
+                    idx += 1
+                if self._peek(idx).kind == SyntaxKind.CloseBracketToken:
+                    idx += 1
+                else:
+                    return False
+            else:
+                break
+        return self._peek(idx).kind == SyntaxKind.IdentifierToken and self._peek(idx + 1).kind == SyntaxKind.OpenParenthesisToken
 
     def _is_declaration_start(self) -> bool:
         k = self._cur_token.kind
         if is_type_keyword(k) or k in (SyntaxKind.LetKeyword, SyntaxKind.VarKeyword, SyntaxKind.ConstKeyword):
             return True
-        # Check if user-defined struct identifier as type: `Point p;` or `Point[3] points;`
+        # Check if user-defined struct identifier as type: `Point p;`, `Point* p;`, or `Point[3] points;`
         if k == SyntaxKind.IdentifierToken:
-            next_k = self._peek(1).kind
-            if next_k == SyntaxKind.IdentifierToken: # `Point p;`
-                return True
-            if next_k == SyntaxKind.OpenBracketToken: # `Point[] p;` or `Point[5] p;`
-                idx = 2
-                if self._peek(idx).kind == SyntaxKind.NumberToken:
+            idx = 1
+            while True:
+                if self._peek(idx).kind == SyntaxKind.StarToken:
                     idx += 1
-                if self._peek(idx).kind == SyntaxKind.CloseBracketToken and self._peek(idx + 1).kind == SyntaxKind.IdentifierToken:
-                    return True
+                elif self._peek(idx).kind == SyntaxKind.OpenBracketToken:
+                    idx += 1
+                    if self._peek(idx).kind == SyntaxKind.NumberToken:
+                        idx += 1
+                    if self._peek(idx).kind == SyntaxKind.CloseBracketToken:
+                        idx += 1
+                    else:
+                        break
+                else:
+                    break
+            if self._peek(idx).kind == SyntaxKind.IdentifierToken:
+                return True
         return False
 
     def parse_struct_declaration(self) -> StructDeclarationStatement:
@@ -193,18 +209,30 @@ class Parser:
         return StructDeclarationStatement(struct_kw, name_tok, open_brace, fields, close_brace)
 
     def parse_type_token(self) -> SyntaxToken:
-        """Parses a type token, which may be a primitive (e.g. 'int') or an array type (e.g. 'int[]', 'int[5]')."""
+        """Parses a type token, which may be a primitive (e.g. 'int'), pointer ('int*', 'Point**'), or array ('int[]', 'int[5]')."""
         base_type_token = self._advance()
-        if self._check(SyntaxKind.OpenBracketToken):
-            open_b = self._advance()
-            sz_str = ""
-            if self._check(SyntaxKind.NumberToken):
-                num_tok = self._advance()
-                sz_str = str(num_tok.value)
-            close_b = self._match(SyntaxKind.CloseBracketToken)
-            full_span = TextSpan.from_bounds(base_type_token.span.start, close_b.span.end)
-            composite_text = f"{base_type_token.text}[{sz_str}]"
-            return SyntaxToken(base_type_token.kind, full_span, value=composite_text, text=composite_text)
+        comp_text = base_type_token.text
+
+        # Handle pointer suffixes (int*, int**, Point*) and array brackets in sequence
+        while True:
+            if self._check(SyntaxKind.StarToken):
+                star_tok = self._advance()
+                comp_text = f"{comp_text}*"
+                full_span = TextSpan.from_bounds(base_type_token.span.start, star_tok.span.end)
+                base_type_token = SyntaxToken(base_type_token.kind, full_span, value=comp_text, text=comp_text)
+            elif self._check(SyntaxKind.OpenBracketToken):
+                open_b = self._advance()
+                sz_str = ""
+                if self._check(SyntaxKind.NumberToken):
+                    num_tok = self._advance()
+                    sz_str = str(num_tok.value)
+                close_b = self._match(SyntaxKind.CloseBracketToken)
+                full_span = TextSpan.from_bounds(base_type_token.span.start, close_b.span.end)
+                comp_text = f"{comp_text}[{sz_str}]"
+                base_type_token = SyntaxToken(base_type_token.kind, full_span, value=comp_text, text=comp_text)
+            else:
+                break
+
         return base_type_token
 
     def parse_function_declaration(self) -> FunctionDeclarationStatement:
@@ -322,6 +350,14 @@ class Parser:
         semi = self._match(SyntaxKind.SemicolonToken) if self._check(SyntaxKind.SemicolonToken) else None
         return PrintStatement(print_kw, open_p, args, close_p, semi)
 
+    def parse_free_statement(self) -> FreeStatement:
+        free_kw = self._match(SyntaxKind.FreeKeyword)
+        open_p = self._match(SyntaxKind.OpenParenthesisToken)
+        expr = self.parse_expression(0)
+        close_p = self._match(SyntaxKind.CloseParenthesisToken)
+        semi = self._match(SyntaxKind.SemicolonToken) if self._check(SyntaxKind.SemicolonToken) else None
+        return FreeStatement(free_kw, open_p, expr, close_p, semi)
+
     def parse_return_statement(self) -> ReturnStatement:
         ret_kw = self._match(SyntaxKind.ReturnKeyword)
         expr = None
@@ -353,16 +389,20 @@ class Parser:
         unary_prec = get_unary_operator_precedence(self._cur_token.kind)
         if unary_prec != 0 and unary_prec >= parent_precedence:
             op_token = self._advance()
+            # Standard unary operand takes unary precedence (7)
             operand = self.parse_expression(unary_prec)
             left = UnaryExpression(op_token, operand, is_postfix=False)
         else:
             left = self._parse_primary_expression()
 
-        # Postfix ++ and --, array indexing [index], and member access .member
+        # Postfix ++ and --, array indexing [index], member access .member, arrow access ->member, and postfix dereference ^
         while True:
             if self._cur_token.kind in (SyntaxKind.PlusPlusToken, SyntaxKind.MinusMinusToken):
                 postfix_op = self._advance()
                 left = UnaryExpression(postfix_op, left, is_postfix=True)
+            elif self._cur_token.kind == SyntaxKind.CaretToken:
+                caret_tok = self._advance()
+                left = UnaryExpression(caret_tok, left, is_postfix=True)
             elif self._cur_token.kind == SyntaxKind.OpenBracketToken:
                 open_b = self._advance()
                 index_expr = self.parse_expression(0)
@@ -372,13 +412,17 @@ class Parser:
                 dot_tok = self._advance()
                 member_tok = self._match(SyntaxKind.IdentifierToken)
                 left = MemberAccessExpression(left, dot_tok, member_tok)
+            elif self._cur_token.kind == SyntaxKind.ArrowToken:
+                arrow_tok = self._advance()
+                member_tok = self._match(SyntaxKind.IdentifierToken)
+                left = ArrowAccessExpression(left, arrow_tok, member_tok)
             else:
                 break
 
         # Infix / Assignment
         while True:
-            # Check for assignment
-            if is_assignment_operator(self._cur_token.kind):
+            # Check for assignment (assignments have lowest precedence, parent_precedence must be 0)
+            if parent_precedence == 0 and is_assignment_operator(self._cur_token.kind):
                 op_token = self._advance()
                 if isinstance(left, VariableExpression):
                     right = self.parse_expression(0) # Right-associative
@@ -392,8 +436,19 @@ class Parser:
                     right = self.parse_expression(0) # Right-associative
                     left = MemberAssignmentExpression(left.target, left.dot_token, left.member_token, op_token, right)
                     continue
+                elif isinstance(left, ArrowAccessExpression):
+                    right = self.parse_expression(0) # Right-associative
+                    left = ArrowAssignmentExpression(left.target, left.arrow_token, left.member_token, op_token, right)
+                    continue
+                elif isinstance(left, UnaryExpression) and (
+                    (not left.is_postfix and left.operator_token.kind == SyntaxKind.StarToken)
+                    or (left.is_postfix and left.operator_token.kind == SyntaxKind.CaretToken)
+                ):
+                    right = self.parse_expression(0) # Right-associative
+                    left = DereferenceAssignmentExpression(left.operand, op_token, right)
+                    continue
                 else:
-                    self.diagnostics.report(left.span, "The left-hand side of an assignment must be a variable, array index, or struct field.")
+                    self.diagnostics.report(left.span, "The left-hand side of an assignment must be a variable, array index, struct field, or dereference.")
                     right = self.parse_expression(0)
                     return left
 
@@ -411,6 +466,18 @@ class Parser:
 
     def _parse_primary_expression(self) -> Expression:
         cur = self._cur_token
+
+        # Alloc expression: alloc(Type) or alloc(Type, count)
+        if cur.kind == SyntaxKind.AllocKeyword:
+            alloc_kw = self._advance()
+            open_p = self._match(SyntaxKind.OpenParenthesisToken)
+            type_tok = self.parse_type_token()
+            count_expr = None
+            if self._check(SyntaxKind.CommaToken):
+                self._advance()
+                count_expr = self.parse_expression(0)
+            close_p = self._match(SyntaxKind.CloseParenthesisToken)
+            return AllocExpression(alloc_kw, open_p, type_tok, count_expr, close_p)
 
         # Array literal: [elem1, elem2, ...]
         if cur.kind == SyntaxKind.OpenBracketToken:

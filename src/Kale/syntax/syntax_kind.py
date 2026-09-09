@@ -41,6 +41,8 @@ class SyntaxKind(enum.Enum):
     # Keywords - Built-in functions/statements
     PrintKeyword = enum.auto()
     InputKeyword = enum.auto()
+    AllocKeyword = enum.auto()
+    FreeKeyword = enum.auto()
 
     # Keywords - Types
     IntKeyword = enum.auto()
@@ -62,6 +64,8 @@ class SyntaxKind(enum.Enum):
     SemicolonToken = enum.auto()          # ;
     ColonToken = enum.auto()              # :
     DotToken = enum.auto()                # .
+    ArrowToken = enum.auto()              # ->
+    CaretToken = enum.auto()              # ^ (postfix dereference)
 
     # Operators - Arithmetic
     PlusToken = enum.auto()               # +

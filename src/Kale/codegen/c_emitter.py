@@ -24,6 +24,11 @@ from ..binding.bound_nodes import (
     BoundIndexAssignmentExpression,
     BoundMemberAccessExpression,
     BoundMemberAssignmentExpression,
+    BoundAddressOfExpression,
+    BoundDereferenceExpression,
+    BoundDereferenceAssignmentExpression,
+    BoundAllocExpression,
+    BoundFreeStatement,
     BoundStructDeclaration,
 )
 from ..binding.types import (
@@ -35,6 +40,7 @@ from ..binding.types import (
     TypeChar,
     TypeSymbol,
     ArrayTypeSymbol,
+    PointerTypeSymbol,
     StructTypeSymbol,
 )
 
@@ -54,6 +60,8 @@ class CEmitter:
             self._out.write("\n")
 
     def _map_type(self, t: TypeSymbol) -> str:
+        if isinstance(t, PointerTypeSymbol):
+            return f"{self._map_type(t.base_type)}*"
         if isinstance(t, StructTypeSymbol):
             return f"struct {t.name}"
         if isinstance(t, ArrayTypeSymbol):
@@ -221,6 +229,8 @@ class CEmitter:
             self._write_line("break;")
         elif isinstance(statement, BoundContinueStatement):
             self._write_line("continue;")
+        elif isinstance(statement, BoundFreeStatement):
+            self._write_line(f"free((void*)({self._emit_expression(statement.expression)}));")
         elif isinstance(statement, BoundExpressionStatement):
             self._write_line(f"{self._emit_expression(statement.expression)};")
 
@@ -275,4 +285,20 @@ class CEmitter:
             t_str = self._emit_expression(expr.target)
             val_str = self._emit_expression(expr.value)
             return f"{t_str}.{expr.member_name} {expr.operator_kind} {val_str}"
+        if isinstance(expr, BoundAddressOfExpression):
+            op_str = self._emit_expression(expr.operand)
+            return f"(&({op_str}))"
+        if isinstance(expr, BoundDereferenceExpression):
+            op_str = self._emit_expression(expr.operand)
+            return f"(*({op_str}))"
+        if isinstance(expr, BoundDereferenceAssignmentExpression):
+            target_str = self._emit_expression(expr.operand)
+            val_str = self._emit_expression(expr.value)
+            return f"(*({target_str})) {expr.operator_kind} {val_str}"
+        if isinstance(expr, BoundAllocExpression):
+            c_type = self._map_type(expr.allocated_type)
+            if expr.count is not None:
+                count_str = self._emit_expression(expr.count)
+                return f"(({c_type}*)malloc(sizeof({c_type}) * ({count_str})))"
+            return f"(({c_type}*)malloc(sizeof({c_type})))"
         return ""

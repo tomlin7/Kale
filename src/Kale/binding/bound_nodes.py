@@ -146,6 +146,44 @@ class BoundMemberAssignmentExpression(BoundExpression):
     def type(self) -> TypeSymbol:
         return self.member_type
 
+@dataclass(frozen=True)
+class BoundAddressOfExpression(BoundExpression):
+    operand: BoundExpression
+    pointer_type: TypeSymbol
+
+    @property
+    def type(self) -> TypeSymbol:
+        return self.pointer_type
+
+@dataclass(frozen=True)
+class BoundDereferenceExpression(BoundExpression):
+    operand: BoundExpression
+    target_type: TypeSymbol
+
+    @property
+    def type(self) -> TypeSymbol:
+        return self.target_type
+
+@dataclass(frozen=True)
+class BoundDereferenceAssignmentExpression(BoundExpression):
+    operand: BoundExpression
+    value: BoundExpression
+    operator_kind: str = "="
+
+    @property
+    def type(self) -> TypeSymbol:
+        return self.value.type
+
+@dataclass(frozen=True)
+class BoundAllocExpression(BoundExpression):
+    allocated_type: TypeSymbol
+    count: BoundExpression | None
+    pointer_type: TypeSymbol
+
+    @property
+    def type(self) -> TypeSymbol:
+        return self.pointer_type
+
 # ==========================================
 # Bound Statements
 # ==========================================
@@ -199,6 +237,10 @@ class BoundBreakStatement(BoundStatement):
 @dataclass(frozen=True)
 class BoundContinueStatement(BoundStatement):
     pass
+
+@dataclass(frozen=True)
+class BoundFreeStatement(BoundStatement):
+    expression: BoundExpression
 
 @dataclass(frozen=True)
 class BoundExpressionStatement(BoundStatement):

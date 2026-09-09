@@ -103,6 +103,19 @@ class AssignmentExpression(Expression):
         return [self.identifier_token, self.operator_token, self.value]
 
 @dataclass(frozen=True)
+class DereferenceAssignmentExpression(Expression):
+    target: Expression
+    operator_token: SyntaxToken
+    value: Expression
+
+    @property
+    def span(self) -> TextSpan:
+        return TextSpan.from_bounds(self.target.span.start, self.value.span.end)
+
+    def children(self) -> list[SyntaxNode | SyntaxToken]:
+        return [self.target, self.operator_token, self.value]
+
+@dataclass(frozen=True)
 class CallExpression(Expression):
     callee_token: SyntaxToken
     open_paren: SyntaxToken
@@ -186,6 +199,53 @@ class MemberAssignmentExpression(Expression):
 
     def children(self) -> list[SyntaxNode | SyntaxToken]:
         return [self.target, self.dot_token, self.member_token, self.operator_token, self.value]
+
+@dataclass(frozen=True)
+class ArrowAccessExpression(Expression):
+    target: Expression
+    arrow_token: SyntaxToken
+    member_token: SyntaxToken
+
+    @property
+    def span(self) -> TextSpan:
+        return TextSpan.from_bounds(self.target.span.start, self.member_token.span.end)
+
+    def children(self) -> list[SyntaxNode | SyntaxToken]:
+        return [self.target, self.arrow_token, self.member_token]
+
+@dataclass(frozen=True)
+class ArrowAssignmentExpression(Expression):
+    target: Expression
+    arrow_token: SyntaxToken
+    member_token: SyntaxToken
+    operator_token: SyntaxToken
+    value: Expression
+
+    @property
+    def span(self) -> TextSpan:
+        return TextSpan.from_bounds(self.target.span.start, self.value.span.end)
+
+    def children(self) -> list[SyntaxNode | SyntaxToken]:
+        return [self.target, self.arrow_token, self.member_token, self.operator_token, self.value]
+
+@dataclass(frozen=True)
+class AllocExpression(Expression):
+    alloc_keyword: SyntaxToken
+    open_paren: SyntaxToken
+    type_token: SyntaxToken
+    count_expression: Expression | None
+    close_paren: SyntaxToken
+
+    @property
+    def span(self) -> TextSpan:
+        return TextSpan.from_bounds(self.alloc_keyword.span.start, self.close_paren.span.end)
+
+    def children(self) -> list[SyntaxNode | SyntaxToken]:
+        items: list[SyntaxNode | SyntaxToken] = [self.alloc_keyword, self.open_paren, self.type_token]
+        if self.count_expression:
+            items.append(self.count_expression)
+        items.append(self.close_paren)
+        return items
 
 # ==========================================
 # Statements
@@ -456,6 +516,25 @@ class ContinueStatement(Statement):
 
     def children(self) -> list[SyntaxNode | SyntaxToken]:
         items: list[SyntaxNode | SyntaxToken] = [self.continue_keyword]
+        if self.semicolon_token:
+            items.append(self.semicolon_token)
+        return items
+
+@dataclass(frozen=True)
+class FreeStatement(Statement):
+    free_keyword: SyntaxToken
+    open_paren: SyntaxToken
+    expression: Expression
+    close_paren: SyntaxToken
+    semicolon_token: SyntaxToken | None
+
+    @property
+    def span(self) -> TextSpan:
+        end = self.semicolon_token.span.end if self.semicolon_token else self.close_paren.span.end
+        return TextSpan.from_bounds(self.free_keyword.span.start, end)
+
+    def children(self) -> list[SyntaxNode | SyntaxToken]:
+        items: list[SyntaxNode | SyntaxToken] = [self.free_keyword, self.open_paren, self.expression, self.close_paren]
         if self.semicolon_token:
             items.append(self.semicolon_token)
         return items

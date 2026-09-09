@@ -10,6 +10,7 @@ from ..binding.bound_nodes import (
     BoundWhileStatement,
     BoundForStatement,
     BoundPrintStatement,
+    BoundFreeStatement,
     BoundReturnStatement,
     BoundBreakStatement,
     BoundContinueStatement,
@@ -27,6 +28,10 @@ from ..binding.bound_nodes import (
     BoundIndexAssignmentExpression,
     BoundMemberAccessExpression,
     BoundMemberAssignmentExpression,
+    BoundAddressOfExpression,
+    BoundDereferenceExpression,
+    BoundDereferenceAssignmentExpression,
+    BoundAllocExpression,
     BoundStructDeclaration,
 )
 from ..binding.types import (
@@ -37,6 +42,7 @@ from ..binding.types import (
     TypeString,
     TypeVoid,
     ArrayTypeSymbol,
+    PointerTypeSymbol,
     StructTypeSymbol,
 )
 from .llvm_types import to_llvm_type
@@ -68,6 +74,8 @@ class LLVMEmitter:
         # Declare external runtime functions
         self._printf = self._declare_printf()
         self._pow = self._declare_pow()
+        self._malloc = self._declare_malloc()
+        self._free = self._declare_free()
 
     def _declare_printf(self) -> ir.Function:
         func_type = ir.FunctionType(ir.IntType(32), [ir.PointerType()], var_arg=True)
@@ -76,6 +84,14 @@ class LLVMEmitter:
     def _declare_pow(self) -> ir.Function:
         func_type = ir.FunctionType(ir.DoubleType(), [ir.DoubleType(), ir.DoubleType()])
         return ir.Function(self.module, func_type, name="pow")
+
+    def _declare_malloc(self) -> ir.Function:
+        func_type = ir.FunctionType(ir.PointerType(ir.IntType(8)), [ir.IntType(64)])
+        return ir.Function(self.module, func_type, name="malloc")
+
+    def _declare_free(self) -> ir.Function:
+        func_type = ir.FunctionType(ir.VoidType(), [ir.PointerType(ir.IntType(8))])
+        return ir.Function(self.module, func_type, name="free")
 
     def _get_string_constant(self, text: str) -> ir.Value:
         """Creates or reuses a global string constant and returns an i8* pointer to it."""
@@ -348,6 +364,9 @@ class LLVMEmitter:
                 elif arg.type == TypeString:
                     fmt = self._get_string_constant("%s")
                     self._builder.call(self._printf, [fmt, val])
+                elif isinstance(arg.type, (PointerTypeSymbol, ArrayTypeSymbol)):
+                    fmt = self._get_string_constant("%p")
+                    self._builder.call(self._printf, [fmt, val])
 
                 if i < len(statement.arguments) - 1:
                     space = self._get_string_constant(" ")
@@ -357,6 +376,13 @@ class LLVMEmitter:
             nl = self._get_string_constant("\n")
             fmt_s = self._get_string_constant("%s")
             self._builder.call(self._printf, [fmt_s, nl])
+
+        elif isinstance(statement, BoundFreeStatement):
+            ptr_val = self._emit_expression(statement.expression)
+            i8_ptr_t = ir.PointerType(ir.IntType(8))
+            if ptr_val.type != i8_ptr_t:
+                ptr_val = self._builder.bitcast(ptr_val, i8_ptr_t)
+            self._builder.call(self._free, [ptr_val])
 
         elif isinstance(statement, BoundExpressionStatement):
             self._emit_expression(statement.expression)
@@ -390,6 +416,8 @@ class LLVMEmitter:
                 inbounds=True,
                 name=f"member_{expr.member_name}_ptr"
             )
+        if isinstance(expr, BoundDereferenceExpression):
+            return self._emit_expression(expr.operand)
         raise RuntimeError(f"Cannot obtain lvalue pointer for {type(expr)}")
 
     def _emit_expression(self, expr: BoundExpression) -> ir.Value:
@@ -475,7 +503,7 @@ class LLVMEmitter:
 
             elem_ptr = self._builder.gep(target_ptr, [idx_val], inbounds=True, name="idx_assign_ptr")
             val = self._emit_expression(expr.value)
-            elem_t = expr.target.type.element_type if isinstance(expr.target.type, ArrayTypeSymbol) else expr.value.type
+            elem_t = expr.target.type.element_type if isinstance(expr.target.type, ArrayTypeSymbol) else (expr.target.type.base_type if isinstance(expr.target.type, PointerTypeSymbol) else expr.value.type)
             val = self._coerce_type(val, expr.value.type, elem_t)
 
             op = expr.operator_kind
@@ -523,6 +551,57 @@ class LLVMEmitter:
 
             self._builder.store(val, field_ptr)
             return val
+
+        if isinstance(expr, BoundAddressOfExpression):
+            # Take address of lvalue operand
+            return self._get_lvalue_ptr(expr.operand)
+
+        if isinstance(expr, BoundDereferenceExpression):
+            ptr_val = self._emit_expression(expr.operand)
+            if isinstance(expr.type, StructTypeSymbol):
+                return ptr_val
+            return self._builder.load(ptr_val, name="deref_val")
+
+        if isinstance(expr, BoundDereferenceAssignmentExpression):
+            ptr_val = self._emit_expression(expr.operand)
+            val = self._emit_expression(expr.value)
+            elem_t = expr.operand.type.base_type if isinstance(expr.operand.type, PointerTypeSymbol) else expr.value.type
+            val = self._coerce_type(val, expr.value.type, elem_t)
+
+            op = expr.operator_kind
+            if op != "=":
+                old_val = self._builder.load(ptr_val, name="old_deref_val")
+                base_op = op[:-1]
+                is_flt = (elem_t in (TypeFloat, TypeDouble))
+                if base_op == "+":
+                    val = self._builder.fadd(old_val, val) if is_flt else self._builder.add(old_val, val)
+                elif base_op == "-":
+                    val = self._builder.fsub(old_val, val) if is_flt else self._builder.sub(old_val, val)
+                elif base_op == "*":
+                    val = self._builder.fmul(old_val, val) if is_flt else self._builder.mul(old_val, val)
+                elif base_op == "/":
+                    val = self._builder.fdiv(old_val, val) if is_flt else self._builder.sdiv(old_val, val)
+
+            self._builder.store(val, ptr_val)
+            return val
+
+        if isinstance(expr, BoundAllocExpression):
+            llvm_elem_t = to_llvm_type(expr.allocated_type, self._struct_types)
+            # Calculate sizeof(llvm_elem_t) using GEP null idiom
+            null_ptr = ir.Constant(ir.PointerType(llvm_elem_t), None)
+            gep_one = self._builder.gep(null_ptr, [ir.Constant(ir.IntType(32), 1)], name="sizeof_gep")
+            sizeof_elem = self._builder.ptrtoint(gep_one, ir.IntType(64), name="sizeof_val")
+
+            if expr.count is not None:
+                count_val = self._emit_expression(expr.count)
+                if count_val.type != ir.IntType(64):
+                    count_val = self._builder.sext(count_val, ir.IntType(64)) if count_val.type.width < 64 else self._builder.trunc(count_val, ir.IntType(64))
+                total_bytes = self._builder.mul(sizeof_elem, count_val, name="alloc_bytes")
+            else:
+                total_bytes = sizeof_elem
+
+            raw_ptr = self._builder.call(self._malloc, [total_bytes], name="malloc_call")
+            return self._builder.bitcast(raw_ptr, ir.PointerType(llvm_elem_t), name="alloc_ptr")
 
         if isinstance(expr, BoundAssignmentExpression):
             alloca = self._lookup_var(expr.variable.name)
