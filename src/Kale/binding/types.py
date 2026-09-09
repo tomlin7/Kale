@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Any
 
 @dataclass(frozen=True)
 class TypeSymbol:
@@ -57,6 +58,29 @@ class StructTypeSymbol(TypeSymbol):
     def __repr__(self) -> str:
         fields_str = ", ".join(f"{fname}: {ftype}" for fname, ftype in self.fields)
         return f"struct {self.name} {{{fields_str}}}"
+
+@dataclass(frozen=True)
+class ModuleTypeSymbol(TypeSymbol):
+    module_name: str = ""
+    file_path: str = ""
+    symbols: dict[str, Any] = None # type: ignore
+    structs: dict[str, Any] = None # type: ignore
+
+    def __init__(self, module_name: str, file_path: str, symbols: dict[str, Any] | None = None, structs: dict[str, Any] | None = None):
+        object.__setattr__(self, "name", f"module {module_name}")
+        object.__setattr__(self, "module_name", module_name)
+        object.__setattr__(self, "file_path", file_path)
+        object.__setattr__(self, "symbols", symbols if symbols is not None else {})
+        object.__setattr__(self, "structs", structs if structs is not None else {})
+
+    def get_member_symbol(self, member_name: str) -> Any:
+        return self.symbols.get(member_name)
+
+    def get_struct_type(self, struct_name: str) -> Any:
+        return self.structs.get(struct_name)
+
+    def __repr__(self) -> str:
+        return f"module {self.module_name}"
 
 # Built-in primitive types
 TypeInt = TypeSymbol("int")

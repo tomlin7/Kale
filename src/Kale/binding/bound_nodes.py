@@ -1,8 +1,8 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
-from .types import TypeSymbol, StructTypeSymbol
-from .symbols import VariableSymbol, FunctionSymbol
+from .types import TypeSymbol, StructTypeSymbol, ModuleTypeSymbol
+from .symbols import Symbol, VariableSymbol, FunctionSymbol, ModuleSymbol
 from .scope import Scope
 
 class BoundNode(ABC):
@@ -252,14 +252,24 @@ class BoundFunctionDeclaration(BoundStatement):
     body: BoundBlockStatement
 
 @dataclass(frozen=True)
+class BoundImportStatement(BoundStatement):
+    module_path: str
+    alias: str
+    module_symbol: ModuleSymbol
+
+@dataclass(frozen=True)
 class BoundProgram(BoundNode):
     statements: list[BoundStatement]
     root_scope: Scope
     functions: list[BoundFunctionDeclaration] = None # type: ignore
     structs: list[BoundStructDeclaration] = None # type: ignore
+    module_symbols: dict[str, ModuleSymbol] = None # type: ignore
 
     def __post_init__(self):
         if self.functions is None:
             object.__setattr__(self, "functions", [])
         if self.structs is None:
             object.__setattr__(self, "structs", [])
+        if self.module_symbols is None:
+            object.__setattr__(self, "module_symbols", {})
+

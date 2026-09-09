@@ -1,0 +1,78 @@
+import os
+from typing import Dict, List, Set, Optional, Tuple
+from ..diagnostics.source_text import SourceText
+from ..diagnostics.diagnostic_bag import DiagnosticBag
+from ..diagnostics.text_span import TextSpan
+from ..parser.parser import Parser
+from ..ast.nodes import CompilationUnit, ImportStatement, FromImportStatement
+
+class ModuleLoader:
+    """Manages file path resolution, cycle detection, and parsing across multiple Kale source modules."""
+    def __init__(self, diagnostics: DiagnosticBag):
+        self.diagnostics = diagnostics
+        self._parsed_units: Dict[str, CompilationUnit] = {}
+        self._source_texts: Dict[str, SourceText] = {}
+        self._import_chain: List[str] = []
+        self._bound_modules: Dict[str, Tuple[str, Any]] = {}
+        self._binding_chain: List[str] = []
+
+    def get_source_text(self, normalized_path: str) -> Optional[SourceText]:
+        return self._source_texts.get(normalized_path)
+
+    def load_module(self, relative_path: str, importing_file: Optional[str] = None, span: Optional[TextSpan] = None) -> Tuple[Optional[str], Optional[CompilationUnit]]:
+        """
+        Resolves relative_path relative to importing_file, parses it, checks for cycles,
+        and returns (normalized_path, compilation_unit).
+        """
+        # Resolve target path
+        if importing_file:
+            base_dir = os.path.dirname(os.path.abspath(importing_file))
+            target_path = os.path.normpath(os.path.join(base_dir, relative_path))
+        else:
+            target_path = os.path.normpath(os.path.abspath(relative_path))
+
+        # Check existence
+        if not os.path.isfile(target_path):
+            sp = span or TextSpan(0, 0)
+            self.diagnostics.report(sp, f"Cannot find module file '{relative_path}'.")
+            return None, None
+
+        # Cycle detection
+        if target_path in self._import_chain:
+            cycle_str = " -> ".join([os.path.basename(p) for p in self._import_chain] + [os.path.basename(target_path)])
+            sp = span or TextSpan(0, 0)
+            self.diagnostics.report(sp, f"Circular import dependency detected: {cycle_str}.")
+            return None, None
+
+        # Return cached if already parsed
+        if target_path in self._parsed_units:
+            return target_path, self._parsed_units[target_path]
+
+        # Read source
+        try:
+            with open(target_path, "r", encoding="utf-8") as f:
+                code = f.read()
+        except Exception as e:
+            sp = span or TextSpan(0, 0)
+            self.diagnostics.report(sp, f"Error reading module file '{relative_path}': {e}")
+            return None, None
+
+        source_text = SourceText(code, file_name=target_path)
+        self._source_texts[target_path] = source_text
+
+        parser = Parser(source_text, self.diagnostics)
+        unit = parser.parse_compilation_unit()
+        self._parsed_units[target_path] = unit
+
+        # Recursively discover and parse any imports in this unit
+        self._import_chain.append(target_path)
+        for stmt in unit.statements:
+            if isinstance(stmt, (ImportStatement, FromImportStatement)):
+                sub_path = str(stmt.module_path_token.value)
+                self.load_module(sub_path, importing_file=target_path, span=stmt.module_path_token.span)
+        self._import_chain.pop()
+
+        return target_path, unit
+
+    def get_all_loaded_units(self) -> Dict[str, CompilationUnit]:
+        return dict(self._parsed_units)

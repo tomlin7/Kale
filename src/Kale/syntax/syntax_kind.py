@@ -26,6 +26,9 @@ class SyntaxKind(enum.Enum):
     VarKeyword = enum.auto()
     ConstKeyword = enum.auto()
     StructKeyword = enum.auto()
+    ImportKeyword = enum.auto()
+    FromKeyword = enum.auto()
+    AsKeyword = enum.auto()
 
     # Keywords - Control Flow
     IfKeyword = enum.auto()

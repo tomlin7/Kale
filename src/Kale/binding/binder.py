@@ -1,3 +1,5 @@
+import os
+from typing import Any, Optional
 from ..diagnostics.diagnostic_bag import DiagnosticBag
 from ..syntax.syntax_kind import SyntaxKind
 from ..syntax.syntax_token import SyntaxToken
@@ -36,6 +38,8 @@ from ..ast.nodes import (
     FreeStatement,
     StructDeclarationStatement,
     StructFieldNode,
+    ImportStatement,
+    FromImportStatement,
 )
 from .types import (
     TypeSymbol,
@@ -50,12 +54,13 @@ from .types import (
     ArrayTypeSymbol,
     PointerTypeSymbol,
     StructTypeSymbol,
+    ModuleTypeSymbol,
     lookup_type,
     is_numeric,
     can_convert,
     get_promoted_numeric_type,
 )
-from .symbols import VariableSymbol, FunctionSymbol
+from .symbols import VariableSymbol, FunctionSymbol, ModuleSymbol, Symbol
 from .scope import Scope
 from .bound_nodes import (
     BoundProgram,
@@ -73,6 +78,7 @@ from .bound_nodes import (
     BoundReturnStatement,
     BoundBreakStatement,
     BoundContinueStatement,
+    BoundImportStatement,
     BoundExpression,
     BoundLiteralExpression,
     BoundVariableExpression,
@@ -95,13 +101,27 @@ from .bound_nodes import (
 
 class Binder:
     """Walks the AST, resolves symbols, checks types, and produces a typed BoundProgram."""
-    def __init__(self, diagnostics: DiagnosticBag):
+    def __init__(self, diagnostics: DiagnosticBag, module_loader: Any = None, current_file: str | None = None):
         self.diagnostics = diagnostics
+        self._module_loader = module_loader
+        self._current_file = current_file
         self._current_scope = Scope()
         self._current_function: FunctionSymbol | None = None
         self._struct_types: dict[str, StructTypeSymbol] = {}
+        self._module_symbols: dict[str, ModuleSymbol] = {}
+        self._imported_functions: list[BoundFunctionDeclaration] = []
+        self._imported_structs: list[BoundStructDeclaration] = []
 
     def _resolve_type(self, type_name: str) -> TypeSymbol:
+        # Check qualified module types: e.g. geo.Point or math.Vec3
+        if "." in type_name and not type_name.endswith("*") and not type_name.endswith("]"):
+            parts = type_name.split(".", 1)
+            mod_sym = self._current_scope.lookup(parts[0])
+            if isinstance(mod_sym, ModuleSymbol) and isinstance(mod_sym.type, ModuleTypeSymbol):
+                st = mod_sym.type.get_struct_type(parts[1])
+                if st is not None:
+                    return st
+
         # Check custom structs
         if type_name in self._struct_types:
             return self._struct_types[type_name]
@@ -202,16 +222,33 @@ class Binder:
             if bound_stmt is not None:
                 bound_statements.append(bound_stmt)
 
+        # Combine local structs and imported structs
+        all_structs = list(self._imported_structs)
+        for st in bound_structs:
+            if not any(s.struct_type.name == st.struct_type.name for s in all_structs):
+                all_structs.append(st)
+
+        # Combine local functions and imported functions
+        all_functions = list(self._imported_functions)
+        for fn in bound_functions:
+            if not any(f.symbol.name == fn.symbol.name and f.symbol.mangled_name == fn.symbol.mangled_name for f in all_functions):
+                all_functions.append(fn)
+
         return BoundProgram(
             statements=bound_statements,
             root_scope=self._current_scope,
-            functions=bound_functions,
-            structs=bound_structs,
+            functions=all_functions,
+            structs=all_structs,
+            module_symbols=self._module_symbols,
         )
 
     def bind_statement(self, statement: Statement) -> BoundStatement | None:
         if isinstance(statement, BlockStatement):
             return self._bind_block_statement(statement)
+        if isinstance(statement, ImportStatement):
+            return self._bind_import_statement(statement)
+        if isinstance(statement, FromImportStatement):
+            return self._bind_from_import_statement(statement)
         if isinstance(statement, VariableDeclarationStatement):
             return self._bind_variable_declaration(statement)
         if isinstance(statement, IfStatement):
@@ -232,6 +269,102 @@ class Binder:
             return BoundContinueStatement()
         if isinstance(statement, ExpressionStatement):
             return self._bind_expression_statement(statement)
+        return None
+
+    def _load_and_bind_module(self, module_rel_path: str, span: Any) -> tuple[str, ModuleTypeSymbol] | None:
+        if self._module_loader is None:
+            self.diagnostics.report(span, "No module loader configured to resolve imports.")
+            return None
+
+        norm_path, unit = self._module_loader.load_module(module_rel_path, importing_file=self._current_file, span=span)
+        if unit is None or norm_path is None:
+            return None
+
+        # If already bound, return cached module symbol
+        if norm_path in self._module_loader._bound_modules:
+            return self._module_loader._bound_modules[norm_path]
+
+        # Check for circular import in binding chain
+        if norm_path in self._module_loader._binding_chain:
+            chain = [os.path.basename(p) for p in self._module_loader._binding_chain] + [os.path.basename(norm_path)]
+            self.diagnostics.report(span, f"Circular import dependency detected: {' -> '.join(chain)}.")
+            return None
+
+        self._module_loader._binding_chain.append(norm_path)
+
+        # Bind the loaded module in a sub-binder
+        try:
+            sub_binder = Binder(self.diagnostics, module_loader=self._module_loader, current_file=norm_path)
+            sub_program = sub_binder.bind_program(unit)
+        finally:
+            self._module_loader._binding_chain.pop()
+
+        # Collect imported structs and functions into our own lists (with prefix mangling for uniqueness if needed)
+        mod_base_name = os.path.splitext(os.path.basename(norm_path))[0]
+        symbols: dict[str, Any] = {}
+        structs: dict[str, Any] = {}
+
+        for st in sub_program.structs:
+            structs[st.struct_type.name] = st.struct_type
+            if not any(s.struct_type.name == st.struct_type.name for s in self._imported_structs):
+                self._imported_structs.append(st)
+
+        for fn in sub_program.functions:
+            fn_sym = fn.symbol
+            # Give imported functions a unique mangled name: kale_<mod>_<func>
+            mangled = f"kale_{mod_base_name}_{fn_sym.name}"
+            mangled_fn_sym = FunctionSymbol(
+                name=fn_sym.name,
+                parameters=fn_sym.parameters,
+                return_type=fn_sym.return_type,
+                mangled_name=mangled,
+            )
+            symbols[fn_sym.name] = mangled_fn_sym
+            mangled_fn_decl = BoundFunctionDeclaration(mangled_fn_sym, fn.body)
+            if not any(f.symbol.mangled_name == mangled for f in self._imported_functions):
+                self._imported_functions.append(mangled_fn_decl)
+
+        mod_type = ModuleTypeSymbol(module_name=mod_base_name, file_path=norm_path, symbols=symbols, structs=structs)
+        self._module_loader._bound_modules[norm_path] = (mod_base_name, mod_type)
+        return mod_base_name, mod_type
+
+    def _bind_import_statement(self, statement: ImportStatement) -> BoundStatement | None:
+        rel_path = str(statement.module_path_token.value)
+        res = self._load_and_bind_module(rel_path, statement.module_path_token.span)
+        if res is None:
+            return None
+        mod_base_name, mod_type = res
+        alias = statement.alias_token.text if statement.alias_token else mod_base_name
+
+        mod_sym = ModuleSymbol(name=alias, type=mod_type)
+        if not self._current_scope.try_declare(mod_sym):
+            self.diagnostics.report(
+                statement.alias_token.span if statement.alias_token else statement.module_path_token.span,
+                f"Symbol '{alias}' is already declared in this scope."
+            )
+        self._module_symbols[alias] = mod_sym
+        return BoundImportStatement(module_path=rel_path, alias=alias, module_symbol=mod_sym)
+
+    def _bind_from_import_statement(self, statement: FromImportStatement) -> BoundStatement | None:
+        rel_path = str(statement.module_path_token.value)
+        res = self._load_and_bind_module(rel_path, statement.module_path_token.span)
+        if res is None:
+            return None
+        mod_base_name, mod_type = res
+
+        for sym_token in statement.imported_symbols:
+            sym_name = sym_token.text
+            fn_sym = mod_type.get_member_symbol(sym_name)
+            st_sym = mod_type.get_struct_type(sym_name)
+
+            if fn_sym is not None:
+                if not self._current_scope.try_declare(fn_sym):
+                    self.diagnostics.report(sym_token.span, f"Symbol '{sym_name}' is already declared in this scope.")
+            elif st_sym is not None:
+                self._struct_types[sym_name] = st_sym
+            else:
+                self.diagnostics.report(sym_token.span, f"Module '{mod_base_name}' has no member or struct named '{sym_name}'.")
+
         return None
 
     def _bind_block_statement(self, statement: BlockStatement, new_scope: bool = True) -> BoundBlockStatement:
@@ -370,6 +503,19 @@ class Binder:
 
     def _bind_member_access_expression(self, expression: MemberAccessExpression) -> BoundExpression:
         target = self.bind_expression(expression.target)
+        if isinstance(target.type, ModuleTypeSymbol):
+            m_name = expression.member_token.text
+            sym = target.type.get_member_symbol(m_name)
+            if sym is None:
+                self.diagnostics.report(expression.member_token.span, f"Module '{target.type.module_name}' has no member named '{m_name}'.")
+                return BoundLiteralExpression(None, TypeUnknown)
+            if isinstance(sym, VariableSymbol):
+                return BoundVariableExpression(sym)
+            if isinstance(sym, FunctionSymbol):
+                # Wrapped in a dummy variable or expression for binding
+                return BoundVariableExpression(VariableSymbol(name=sym.mangled_name or sym.name, type=sym.type))
+            return BoundLiteralExpression(None, TypeUnknown)
+
         if not isinstance(target.type, StructTypeSymbol):
             self.diagnostics.report(expression.target.span, f"Cannot access member of non-struct type '{target.type}'.")
             return BoundLiteralExpression(None, TypeUnknown)
@@ -515,16 +661,42 @@ class Binder:
         return BoundIndexAssignmentExpression(target, index, value, expression.operator_token.text)
 
     def _bind_call_expression(self, expression: CallExpression) -> BoundExpression:
-        name = expression.callee_token.text
-        symbol = self._current_scope.lookup(name)
-        if symbol is None or not isinstance(symbol, FunctionSymbol):
-            self.diagnostics.report(expression.callee_token.span, f"Function '{name}' is not defined.")
+        symbol = None
+        func_name = ""
+        callee_span = expression.span
+
+        if isinstance(expression.callee, MemberAccessExpression):
+            target = self.bind_expression(expression.callee.target)
+            m_name = expression.callee.member_token.text
+            callee_span = expression.callee.span
+            if isinstance(target.type, ModuleTypeSymbol):
+                sym = target.type.get_member_symbol(m_name)
+                if isinstance(sym, FunctionSymbol):
+                    symbol = sym
+                    func_name = f"{target.type.module_name}.{m_name}"
+                else:
+                    self.diagnostics.report(expression.callee.member_token.span, f"Member '{m_name}' in module '{target.type.module_name}' is not a function.")
+                    return BoundLiteralExpression(None, TypeUnknown)
+            else:
+                self.diagnostics.report(expression.callee.target.span, f"Cannot call member '{m_name}' on non-module type '{target.type}'.")
+                return BoundLiteralExpression(None, TypeUnknown)
+        elif expression.callee_token is not None:
+            func_name = expression.callee_token.text
+            callee_span = expression.callee_token.span
+            sym = self._current_scope.lookup(func_name)
+            if isinstance(sym, FunctionSymbol):
+                symbol = sym
+            else:
+                self.diagnostics.report(callee_span, f"Function '{func_name}' is not defined.")
+                return BoundLiteralExpression(None, TypeUnknown)
+        else:
+            self.diagnostics.report(expression.span, "Invalid function call target.")
             return BoundLiteralExpression(None, TypeUnknown)
 
         if len(expression.arguments) != len(symbol.parameters):
             self.diagnostics.report(
                 expression.span,
-                f"Function '{name}' expects {len(symbol.parameters)} arguments, but got {len(expression.arguments)}."
+                f"Function '{func_name}' expects {len(symbol.parameters)} arguments, but got {len(expression.arguments)}."
             )
 
         bound_args: list[BoundExpression] = []
@@ -555,10 +727,10 @@ class Binder:
     def _bind_variable_expression(self, expression: VariableExpression) -> BoundExpression:
         name = expression.identifier_token.text
         symbol = self._current_scope.lookup(name)
-        if symbol is None or not isinstance(symbol, VariableSymbol):
+        if symbol is None or not (isinstance(symbol, VariableSymbol) or isinstance(symbol, ModuleSymbol)):
             self.diagnostics.report_undefined_variable(expression.identifier_token.span, name)
             return BoundLiteralExpression(None, TypeUnknown)
-        return BoundVariableExpression(symbol)
+        return BoundVariableExpression(symbol) # type: ignore
 
     def _bind_assignment_expression(self, expression: AssignmentExpression) -> BoundExpression:
         name = expression.identifier_token.text

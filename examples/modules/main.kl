@@ -1,0 +1,20 @@
+import "math_utils.kl" as math;
+from "geometry.kl" import Point, distance_squared;
+
+print("--- Testing Kale Modules ---");
+
+int sum = math.add(15, 27);
+int prod = math.multiply(6, 7);
+print("Sum:", sum);
+print("Product:", prod);
+
+Point p1;
+p1.x = 0;
+p1.y = 0;
+
+Point p2;
+p2.x = 3;
+p2.y = 4;
+
+int d2 = distance_squared(p1, p2);
+print("Distance squared:", d2);

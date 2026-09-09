@@ -18,6 +18,7 @@ class VariableSymbol(Symbol):
 class FunctionSymbol(Symbol):
     parameters: tuple[VariableSymbol, ...] = ()
     return_type: TypeSymbol = None  # type: ignore
+    mangled_name: str | None = None
 
     def __init__(
         self,
@@ -25,12 +26,14 @@ class FunctionSymbol(Symbol):
         parameters: tuple[VariableSymbol, ...] = (),
         return_type: TypeSymbol | None = None,
         type: TypeSymbol | None = None,
+        mangled_name: str | None = None,
     ):
         actual_type = return_type if return_type is not None else type
         object.__setattr__(self, "name", name)
         object.__setattr__(self, "type", actual_type)
         object.__setattr__(self, "parameters", parameters)
         object.__setattr__(self, "return_type", actual_type)
+        object.__setattr__(self, "mangled_name", mangled_name or name)
 
     @property
     def parameter_types(self) -> tuple[TypeSymbol, ...]:
@@ -39,3 +42,8 @@ class FunctionSymbol(Symbol):
     def __repr__(self) -> str:
         params = ", ".join(f"{p.name}: {p.type}" for p in self.parameters)
         return f"FunctionSymbol({self.name}({params}): {self.type})"
+
+@dataclass(frozen=True)
+class ModuleSymbol(Symbol):
+    pass
+

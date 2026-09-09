@@ -7,6 +7,7 @@ from .syntax.lexer import Lexer
 from .ast.printer import AstPrinter
 from .parser.parser import Parser
 from .binding.binder import Binder
+from .binding.module_loader import ModuleLoader
 from .codegen.llvm_emitter import LLVMEmitter
 from .codegen.llvm_jit import LLVMJIT
 from .codegen.llvm_driver import LLVMDriver
@@ -81,7 +82,8 @@ def cmd_dump_llvm(args: argparse.Namespace) -> int:
     parser = Parser(source_text, diagnostics)
     unit = parser.parse_compilation_unit()
 
-    binder = Binder(diagnostics)
+    loader = ModuleLoader(diagnostics)
+    binder = Binder(diagnostics, module_loader=loader, current_file=args.file)
     program = binder.bind_program(unit)
 
     if diagnostics.has_errors:
@@ -102,7 +104,8 @@ def cmd_check(args: argparse.Namespace) -> int:
     parser = Parser(source_text, diagnostics)
     unit = parser.parse_compilation_unit()
 
-    binder = Binder(diagnostics)
+    loader = ModuleLoader(diagnostics)
+    binder = Binder(diagnostics, module_loader=loader, current_file=args.file)
     binder.bind_program(unit)
 
     if diagnostics:
@@ -122,7 +125,8 @@ def cmd_build(args: argparse.Namespace) -> int:
     parser = Parser(source_text, diagnostics)
     unit = parser.parse_compilation_unit()
 
-    binder = Binder(diagnostics)
+    loader = ModuleLoader(diagnostics)
+    binder = Binder(diagnostics, module_loader=loader, current_file=args.file)
     program = binder.bind_program(unit)
 
     if diagnostics.has_errors:
@@ -193,7 +197,8 @@ def cmd_run(args: argparse.Namespace) -> int:
     parser = Parser(source_text, diagnostics)
     unit = parser.parse_compilation_unit()
 
-    binder = Binder(diagnostics)
+    loader = ModuleLoader(diagnostics)
+    binder = Binder(diagnostics, module_loader=loader, current_file=args.file)
     program = binder.bind_program(unit)
 
     if diagnostics.has_errors:

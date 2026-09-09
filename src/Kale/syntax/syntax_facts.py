@@ -6,6 +6,9 @@ KEYWORDS: dict[str, SyntaxKind] = {
     "var": SyntaxKind.VarKeyword,
     "const": SyntaxKind.ConstKeyword,
     "struct": SyntaxKind.StructKeyword,
+    "import": SyntaxKind.ImportKeyword,
+    "from": SyntaxKind.FromKeyword,
+    "as": SyntaxKind.AsKeyword,
 
     # Values
     "true": SyntaxKind.TrueKeyword,

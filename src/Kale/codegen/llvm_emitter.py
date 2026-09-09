@@ -148,15 +148,17 @@ class LLVMEmitter:
 
         # Pass 1: Declare all user functions
         for fn_decl in program.functions:
+            fn_key = fn_decl.symbol.mangled_name or fn_decl.symbol.name
             param_types = [to_llvm_type(p.type, self._struct_types) for p in fn_decl.symbol.parameters]
             ret_type = to_llvm_type(fn_decl.symbol.return_type or TypeVoid, self._struct_types)
             func_type = ir.FunctionType(ret_type, param_types)
-            llvm_func = ir.Function(self.module, func_type, name=fn_decl.symbol.name)
-            self._functions[fn_decl.symbol.name] = llvm_func
+            llvm_func = ir.Function(self.module, func_type, name=fn_key)
+            self._functions[fn_key] = llvm_func
 
         # Pass 2: Emit user function bodies
         for fn_decl in program.functions:
-            llvm_func = self._functions[fn_decl.symbol.name]
+            fn_key = fn_decl.symbol.mangled_name or fn_decl.symbol.name
+            llvm_func = self._functions[fn_key]
             self._current_func = llvm_func
             entry_block = llvm_func.append_basic_block(name="entry")
             self._builder = ir.IRBuilder(entry_block)
@@ -441,7 +443,7 @@ class LLVMEmitter:
             return self._builder.load(alloca, name=expr.variable.name)
 
         if isinstance(expr, BoundCallExpression):
-            fn_name = expr.function.name
+            fn_name = expr.function.mangled_name or expr.function.name
             llvm_func = self._functions.get(fn_name)
             if llvm_func is None:
                 return ir.Constant(ir.IntType(64), 0)

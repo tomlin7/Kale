@@ -117,17 +117,22 @@ class DereferenceAssignmentExpression(Expression):
 
 @dataclass(frozen=True)
 class CallExpression(Expression):
-    callee_token: SyntaxToken
+    callee: SyntaxToken | Expression
     open_paren: SyntaxToken
     arguments: list[Expression]
     close_paren: SyntaxToken
 
     @property
+    def callee_token(self) -> SyntaxToken | None:
+        """Backward compatibility property if callee is a SyntaxToken."""
+        return self.callee if isinstance(self.callee, SyntaxToken) else None
+
+    @property
     def span(self) -> TextSpan:
-        return TextSpan.from_bounds(self.callee_token.span.start, self.close_paren.span.end)
+        return TextSpan.from_bounds(self.callee.span.start, self.close_paren.span.end)
 
     def children(self) -> list[SyntaxNode | SyntaxToken]:
-        return [self.callee_token, self.open_paren, *self.arguments, self.close_paren]
+        return [self.callee, self.open_paren, *self.arguments, self.close_paren]
 
 @dataclass(frozen=True)
 class ArrayLiteralExpression(Expression):
@@ -535,6 +540,53 @@ class FreeStatement(Statement):
 
     def children(self) -> list[SyntaxNode | SyntaxToken]:
         items: list[SyntaxNode | SyntaxToken] = [self.free_keyword, self.open_paren, self.expression, self.close_paren]
+        if self.semicolon_token:
+            items.append(self.semicolon_token)
+        return items
+
+@dataclass(frozen=True)
+class ImportStatement(Statement):
+    import_keyword: SyntaxToken
+    module_path_token: SyntaxToken
+    as_keyword: SyntaxToken | None = None
+    alias_token: SyntaxToken | None = None
+    semicolon_token: SyntaxToken | None = None
+
+    @property
+    def span(self) -> TextSpan:
+        end = self.semicolon_token.span.end if self.semicolon_token else (
+            self.alias_token.span.end if self.alias_token else self.module_path_token.span.end
+        )
+        return TextSpan.from_bounds(self.import_keyword.span.start, end)
+
+    def children(self) -> list[SyntaxNode | SyntaxToken]:
+        items: list[SyntaxNode | SyntaxToken] = [self.import_keyword, self.module_path_token]
+        if self.as_keyword:
+            items.append(self.as_keyword)
+        if self.alias_token:
+            items.append(self.alias_token)
+        if self.semicolon_token:
+            items.append(self.semicolon_token)
+        return items
+
+@dataclass(frozen=True)
+class FromImportStatement(Statement):
+    from_keyword: SyntaxToken
+    module_path_token: SyntaxToken
+    import_keyword: SyntaxToken
+    imported_symbols: list[SyntaxToken]
+    semicolon_token: SyntaxToken | None = None
+
+    @property
+    def span(self) -> TextSpan:
+        end = self.semicolon_token.span.end if self.semicolon_token else (
+            self.imported_symbols[-1].span.end if self.imported_symbols else self.import_keyword.span.end
+        )
+        return TextSpan.from_bounds(self.from_keyword.span.start, end)
+
+    def children(self) -> list[SyntaxNode | SyntaxToken]:
+        items: list[SyntaxNode | SyntaxToken] = [self.from_keyword, self.module_path_token, self.import_keyword]
+        items.extend(self.imported_symbols)
         if self.semicolon_token:
             items.append(self.semicolon_token)
         return items

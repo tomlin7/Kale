@@ -34,6 +34,8 @@ from .nodes import (
     ReturnStatement,
     BreakStatement,
     ContinueStatement,
+    ImportStatement,
+    FromImportStatement,
     CompilationUnit,
 )
 from .printer import AstPrinter
@@ -74,6 +76,8 @@ __all__ = [
     "ReturnStatement",
     "BreakStatement",
     "ContinueStatement",
+    "ImportStatement",
+    "FromImportStatement",
     "CompilationUnit",
     "AstPrinter",
 ]

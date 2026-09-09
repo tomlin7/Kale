@@ -11,11 +11,12 @@ from .types import (
     ArrayTypeSymbol,
     PointerTypeSymbol,
     StructTypeSymbol,
+    ModuleTypeSymbol,
     lookup_type,
     can_convert,
     is_numeric,
 )
-from .symbols import Symbol, VariableSymbol, FunctionSymbol
+from .symbols import Symbol, VariableSymbol, FunctionSymbol, ModuleSymbol
 from .scope import Scope
 from .bound_nodes import (
     BoundNode,
@@ -32,6 +33,7 @@ from .bound_nodes import (
     BoundReturnStatement,
     BoundBreakStatement,
     BoundContinueStatement,
+    BoundImportStatement,
     BoundExpressionStatement,
     BoundExpression,
     BoundLiteralExpression,
@@ -54,6 +56,7 @@ from .bound_nodes import (
     BoundBinaryOperator,
 )
 from .binder import Binder
+from .module_loader import ModuleLoader
 
 __all__ = [
     "TypeSymbol",
@@ -68,12 +71,14 @@ __all__ = [
     "ArrayTypeSymbol",
     "PointerTypeSymbol",
     "StructTypeSymbol",
+    "ModuleTypeSymbol",
     "lookup_type",
     "can_convert",
     "is_numeric",
     "Symbol",
     "VariableSymbol",
     "FunctionSymbol",
+    "ModuleSymbol",
     "Scope",
     "BoundNode",
     "BoundProgram",
@@ -89,6 +94,7 @@ __all__ = [
     "BoundReturnStatement",
     "BoundBreakStatement",
     "BoundContinueStatement",
+    "BoundImportStatement",
     "BoundExpressionStatement",
     "BoundExpression",
     "BoundLiteralExpression",
@@ -110,4 +116,5 @@ __all__ = [
     "BoundBinaryExpression",
     "BoundBinaryOperator",
     "Binder",
+    "ModuleLoader",
 ]

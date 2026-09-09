@@ -1,0 +1,10 @@
+struct Point {
+    int x;
+    int y;
+};
+
+int distance_squared(Point p1, Point p2) {
+    int dx = p1.x - p2.x;
+    int dy = p1.y - p2.y;
+    return dx * dx + dy * dy;
+}

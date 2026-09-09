@@ -45,6 +45,8 @@ from ..ast.nodes import (
     ReturnStatement,
     BreakStatement,
     ContinueStatement,
+    ImportStatement,
+    FromImportStatement,
     CompilationUnit,
 )
 
@@ -118,6 +120,10 @@ class Parser:
 
     def parse_statement(self) -> Statement | None:
         try:
+            if self._check(SyntaxKind.ImportKeyword):
+                return self.parse_import_statement()
+            if self._check(SyntaxKind.FromKeyword):
+                return self.parse_from_import_statement()
             if self._check(SyntaxKind.StructKeyword):
                 return self.parse_struct_declaration()
             if self._check(SyntaxKind.OpenBraceToken):
@@ -151,8 +157,11 @@ class Parser:
         k = self._cur_token.kind
         if not (is_type_keyword(k) or k in (SyntaxKind.LetKeyword, SyntaxKind.VarKeyword) or k == SyntaxKind.IdentifierToken):
             return False
-        # Advance through any '*' or '[...]' to check if ident followed by '('
         idx = 1
+        # Advance through any dot qualifier e.g. geo.Point
+        if self._peek(idx).kind == SyntaxKind.DotToken and self._peek(idx + 1).kind == SyntaxKind.IdentifierToken:
+            idx += 2
+        # Advance through any '*' or '[...]' to check if ident followed by '('
         while True:
             if self._peek(idx).kind == SyntaxKind.StarToken:
                 idx += 1
@@ -172,9 +181,11 @@ class Parser:
         k = self._cur_token.kind
         if is_type_keyword(k) or k in (SyntaxKind.LetKeyword, SyntaxKind.VarKeyword, SyntaxKind.ConstKeyword):
             return True
-        # Check if user-defined struct identifier as type: `Point p;`, `Point* p;`, or `Point[3] points;`
+        # Check if user-defined struct identifier as type: `Point p;`, `geo.Point p;`, `Point* p;`, or `Point[3] points;`
         if k == SyntaxKind.IdentifierToken:
             idx = 1
+            if self._peek(idx).kind == SyntaxKind.DotToken and self._peek(idx + 1).kind == SyntaxKind.IdentifierToken:
+                idx += 2
             while True:
                 if self._peek(idx).kind == SyntaxKind.StarToken:
                     idx += 1
@@ -191,6 +202,35 @@ class Parser:
             if self._peek(idx).kind == SyntaxKind.IdentifierToken:
                 return True
         return False
+
+    def parse_import_statement(self) -> ImportStatement:
+        import_kw = self._match(SyntaxKind.ImportKeyword)
+        module_path = self._match(SyntaxKind.StringToken)
+        as_kw = None
+        alias_tok = None
+        if self._check(SyntaxKind.AsKeyword):
+            as_kw = self._advance()
+            alias_tok = self._match(SyntaxKind.IdentifierToken)
+        semi = None
+        if self._check(SyntaxKind.SemicolonToken):
+            semi = self._advance()
+        return ImportStatement(import_kw, module_path, as_kw, alias_tok, semi)
+
+    def parse_from_import_statement(self) -> FromImportStatement:
+        from_kw = self._match(SyntaxKind.FromKeyword)
+        module_path = self._match(SyntaxKind.StringToken)
+        import_kw = self._match(SyntaxKind.ImportKeyword)
+        symbols: list[SyntaxToken] = []
+        sym = self._match(SyntaxKind.IdentifierToken)
+        symbols.append(sym)
+        while self._check(SyntaxKind.CommaToken):
+            self._advance()
+            sym = self._match(SyntaxKind.IdentifierToken)
+            symbols.append(sym)
+        semi = None
+        if self._check(SyntaxKind.SemicolonToken):
+            semi = self._advance()
+        return FromImportStatement(from_kw, module_path, import_kw, symbols, semi)
 
     def parse_struct_declaration(self) -> StructDeclarationStatement:
         struct_kw = self._match(SyntaxKind.StructKeyword)
@@ -212,6 +252,14 @@ class Parser:
         """Parses a type token, which may be a primitive (e.g. 'int'), pointer ('int*', 'Point**'), or array ('int[]', 'int[5]')."""
         base_type_token = self._advance()
         comp_text = base_type_token.text
+
+        # Support qualified module types: e.g. geo.Point or math.Complex
+        if self._check(SyntaxKind.DotToken) and self._peek(1).kind == SyntaxKind.IdentifierToken:
+            dot_tok = self._advance()
+            member_tok = self._advance()
+            comp_text = f"{comp_text}.{member_tok.text}"
+            full_span = TextSpan.from_bounds(base_type_token.span.start, member_tok.span.end)
+            base_type_token = SyntaxToken(SyntaxKind.IdentifierToken, full_span, value=comp_text, text=comp_text)
 
         # Handle pointer suffixes (int*, int**, Point*) and array brackets in sequence
         while True:
@@ -416,6 +464,16 @@ class Parser:
                 arrow_tok = self._advance()
                 member_tok = self._match(SyntaxKind.IdentifierToken)
                 left = ArrowAccessExpression(left, arrow_tok, member_tok)
+            elif self._cur_token.kind == SyntaxKind.OpenParenthesisToken:
+                open_p = self._advance()
+                args: list[Expression] = []
+                if not self._check(SyntaxKind.CloseParenthesisToken):
+                    args.append(self.parse_expression(0))
+                    while self._check(SyntaxKind.CommaToken):
+                        self._advance()
+                        args.append(self.parse_expression(0))
+                close_p = self._match(SyntaxKind.CloseParenthesisToken)
+                left = CallExpression(left, open_p, args, close_p)
             else:
                 break
 

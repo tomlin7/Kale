@@ -115,17 +115,19 @@ class CEmitter:
         if program.functions:
             self._write_line("// --- User Function Prototypes ---")
             for fn in program.functions:
+                fn_name = fn.symbol.mangled_name or fn.symbol.name
                 ret_t = self._map_type(fn.symbol.return_type)
                 params_str = ", ".join(f"{self._map_type(p.type)} {p.name}" for p in fn.symbol.parameters) or "void"
-                self._write_line(f"{ret_t} {fn.symbol.name}({params_str});")
+                self._write_line(f"{ret_t} {fn_name}({params_str});")
             self._write_line()
 
             # User function definitions
             self._write_line("// --- User Functions ---")
             for fn in program.functions:
+                fn_name = fn.symbol.mangled_name or fn.symbol.name
                 ret_t = self._map_type(fn.symbol.return_type)
                 params_str = ", ".join(f"{self._map_type(p.type)} {p.name}" for p in fn.symbol.parameters) or "void"
-                self._write_line(f"{ret_t} {fn.symbol.name}({params_str}) {{")
+                self._write_line(f"{ret_t} {fn_name}({params_str}) {{")
                 self._indent_level += 1
                 for s in fn.body.statements:
                     self._emit_statement(s)
@@ -247,8 +249,9 @@ class CEmitter:
         if isinstance(expr, BoundVariableExpression):
             return expr.variable.name
         if isinstance(expr, BoundCallExpression):
+            fn_name = expr.function.mangled_name or expr.function.name
             args_str = ", ".join(self._emit_expression(a) for a in expr.arguments)
-            return f"{expr.function.name}({args_str})"
+            return f"{fn_name}({args_str})"
         if isinstance(expr, BoundAssignmentExpression):
             right_str = self._emit_expression(expr.expression)
             return f"{expr.variable.name} {expr.operator_kind} {right_str}"
