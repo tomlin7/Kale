@@ -20,26 +20,38 @@ File open(string filename, string mode) {
     return f;
 }
 
-int write(File* f, string content) {
-    if (!f->is_open) {
+fn int File.write(string content) {
+    if (!this->is_open) {
         return -1;
     }
-    return fputs(content, f->handle);
+    return fputs(content, this->handle);
 }
 
-int close(File* f) {
-    if (!f->is_open) {
+fn int File.close() {
+    if (!this->is_open) {
         return 0;
     }
-    int res = fclose(f->handle);
-    f->is_open = false;
-    f->handle = (void*)0;
+    int res = fclose(this->handle);
+    this->is_open = false;
+    this->handle = (void*)0;
     return res;
 }
 
-int flush(File* f) {
-    if (!f->is_open) {
+fn int File.flush() {
+    if (!this->is_open) {
         return -1;
     }
-    return fflush(f->handle);
+    return fflush(this->handle);
+}
+
+int write(File* f, string content) {
+    return f->write(content);
+}
+
+int close(File* f) {
+    return f->close();
+}
+
+int flush(File* f) {
+    return f->flush();
 }

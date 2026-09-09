@@ -455,6 +455,9 @@ class Binder:
             # Keep extern functions un-mangled so they resolve to their actual C symbols
             if fn_sym.is_extern:
                 mangled = fn_sym.name
+            elif fn_sym.is_method:
+                # Struct methods already have their canonical mangled name (kale_{Struct}_{method})
+                mangled = fn_sym.mangled_name
             else:
                 mangled = f"kale_{mod_base_name}_{fn_sym.name}"
             mangled_fn_sym = FunctionSymbol(
@@ -464,6 +467,7 @@ class Binder:
                 mangled_name=mangled,
                 is_extern=fn_sym.is_extern,
                 is_var_args=fn_sym.is_var_args,
+                struct_type=fn_sym.struct_type,
             )
             symbols[fn_sym.name] = mangled_fn_sym
             mangled_fn_decl = BoundFunctionDeclaration(mangled_fn_sym, fn.body)

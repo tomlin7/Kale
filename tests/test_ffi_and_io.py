@@ -77,8 +77,8 @@ int main_work() {{
     if (!f.is_open) {{
         return 1;
     }}
-    io.write(&f, "Kale Monorepo FFI Test\\n");
-    io.close(&f);
+    f.write("Kale Monorepo FFI Test\\n");
+    f.close();
     return 0;
 }}
 
