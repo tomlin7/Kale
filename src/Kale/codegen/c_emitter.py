@@ -28,6 +28,7 @@ from ..binding.bound_nodes import (
     BoundDereferenceExpression,
     BoundDereferenceAssignmentExpression,
     BoundAllocExpression,
+    BoundCastExpression,
     BoundFreeStatement,
     BoundStructDeclaration,
 )
@@ -304,4 +305,8 @@ class CEmitter:
                 count_str = self._emit_expression(expr.count)
                 return f"(({c_type}*)malloc(sizeof({c_type}) * ({count_str})))"
             return f"(({c_type}*)malloc(sizeof({c_type})))"
+        if isinstance(expr, BoundCastExpression):
+            c_type = self._map_type(expr.target_type)
+            inner_str = self._emit_expression(expr.expression)
+            return f"(({c_type})({inner_str}))"
         return ""

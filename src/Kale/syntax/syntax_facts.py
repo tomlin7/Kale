@@ -87,36 +87,36 @@ def get_unary_operator_precedence(kind: SyntaxKind) -> int:
         SyntaxKind.AmpersandToken,  # Address-of &
         SyntaxKind.StarToken,       # Dereference *
     ):
-        return 7
+        return 12
     return 0
 
 def get_binary_operator_precedence(kind: SyntaxKind) -> int:
     """Returns the precedence of a binary operator (higher binds tighter), or 0 if not binary."""
     if kind == SyntaxKind.DoubleStarToken:
-        return 6
+        return 11
     if kind in (SyntaxKind.StarToken, SyntaxKind.SlashToken, SyntaxKind.PercentToken):
-        return 5
+        return 10
     if kind in (SyntaxKind.PlusToken, SyntaxKind.MinusToken):
-        return 4
+        return 9
     if kind in (SyntaxKind.LeftShiftToken, SyntaxKind.RightShiftToken):
-        return 3
+        return 8
     if kind in (
         SyntaxKind.LessToken,
         SyntaxKind.LessOrEqualsToken,
         SyntaxKind.GreaterToken,
         SyntaxKind.GreaterOrEqualsToken,
     ):
-        return 2
+        return 7
     if kind in (SyntaxKind.EqualsEqualsToken, SyntaxKind.BangEqualsToken):
-        return 1
+        return 6
     if kind == SyntaxKind.AmpersandToken:
-        return 1
+        return 5
     if kind in (SyntaxKind.HatToken, SyntaxKind.CaretToken):
-        return 1
+        return 4
     if kind == SyntaxKind.PipeToken:
-        return 1
+        return 3
     if kind == SyntaxKind.AmpersandAmpersandToken:
-        return 1
+        return 2
     if kind == SyntaxKind.PipePipeToken:
         return 1
     return 0

@@ -184,6 +184,15 @@ class BoundAllocExpression(BoundExpression):
     def type(self) -> TypeSymbol:
         return self.pointer_type
 
+@dataclass(frozen=True)
+class BoundCastExpression(BoundExpression):
+    expression: BoundExpression
+    target_type: TypeSymbol
+
+    @property
+    def type(self) -> TypeSymbol:
+        return self.target_type
+
 # ==========================================
 # Bound Statements
 # ==========================================

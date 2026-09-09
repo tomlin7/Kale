@@ -149,6 +149,32 @@ def can_convert(from_type: TypeSymbol, to_type: TypeSymbol) -> bool:
         return True
     return False
 
+def can_explicit_cast(from_type: TypeSymbol, to_type: TypeSymbol) -> bool:
+    """Checks whether from_type can be explicitly cast to to_type."""
+    if from_type == to_type:
+        return True
+    if from_type == TypeUnknown or to_type == TypeUnknown:
+        return True
+    # If implicit conversion is allowed, explicit cast is definitely allowed
+    if can_convert(from_type, to_type):
+        return True
+    # Numeric <-> Numeric (int, float, double, bool, char)
+    scalar_types = (TypeInt, TypeFloat, TypeDouble, TypeBool, TypeChar)
+    if from_type in scalar_types and to_type in scalar_types:
+        return True
+    # Pointer <-> Pointer (any pointer can cast to any pointer, including void*)
+    if isinstance(from_type, PointerTypeSymbol) and isinstance(to_type, PointerTypeSymbol):
+        return True
+    # Pointer <-> Int (e.g. uintptr_t style integer address manipulation)
+    if isinstance(from_type, PointerTypeSymbol) and to_type == TypeInt:
+        return True
+    if from_type == TypeInt and isinstance(to_type, PointerTypeSymbol):
+        return True
+    # Array <-> Pointer
+    if isinstance(from_type, ArrayTypeSymbol) and isinstance(to_type, PointerTypeSymbol):
+        return True
+    return False
+
 def get_promoted_numeric_type(left: TypeSymbol, right: TypeSymbol) -> TypeSymbol:
     """Returns the common promoted type for numeric operations."""
     if TypeDouble in (left, right):

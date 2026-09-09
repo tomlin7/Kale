@@ -15,6 +15,7 @@ from ..ast.nodes import (
     LiteralExpression,
     VariableExpression,
     GroupingExpression,
+    CastExpression,
     UnaryExpression,
     BinaryExpression,
     AssignmentExpression,
@@ -202,6 +203,38 @@ class Parser:
             if self._peek(idx).kind == SyntaxKind.IdentifierToken:
                 return True
         return False
+
+    def _is_cast_expression_start(self) -> bool:
+        """Checks if current token is '(' followed by a valid type and ')'."""
+        if self._cur_token.kind != SyntaxKind.OpenParenthesisToken:
+            return False
+        k = self._peek(1).kind
+        idx = 1
+        if is_type_keyword(k):
+            idx = 2
+        elif k == SyntaxKind.IdentifierToken:
+            idx = 2
+            if self._peek(idx).kind == SyntaxKind.DotToken and self._peek(idx + 1).kind == SyntaxKind.IdentifierToken:
+                idx += 2
+        else:
+            return False
+
+        # Scan any pointer stars or array brackets
+        while True:
+            if self._peek(idx).kind == SyntaxKind.StarToken:
+                idx += 1
+            elif self._peek(idx).kind == SyntaxKind.OpenBracketToken:
+                idx += 1
+                if self._peek(idx).kind == SyntaxKind.NumberToken:
+                    idx += 1
+                if self._peek(idx).kind == SyntaxKind.CloseBracketToken:
+                    idx += 1
+                else:
+                    return False
+            else:
+                break
+
+        return self._peek(idx).kind == SyntaxKind.CloseParenthesisToken
 
     def parse_import_statement(self) -> ImportStatement:
         import_kw = self._match(SyntaxKind.ImportKeyword)
@@ -449,6 +482,18 @@ class Parser:
                 postfix_op = self._advance()
                 left = UnaryExpression(postfix_op, left, is_postfix=True)
             elif self._cur_token.kind == SyntaxKind.CaretToken:
+                # If followed by a token that starts an expression, it's binary XOR: a ^ b
+                # Postfix deref only applies if next token cannot start an expression or is '.'/'->'/')'/';'/','/'='
+                k_next = self._peek(1).kind
+                can_start_expr = (
+                    k_next in (SyntaxKind.NumberToken, SyntaxKind.StringToken, SyntaxKind.IdentifierToken,
+                               SyntaxKind.TrueKeyword, SyntaxKind.FalseKeyword, SyntaxKind.NullKeyword,
+                               SyntaxKind.OpenParenthesisToken, SyntaxKind.OpenBracketToken, SyntaxKind.AllocKeyword)
+                    or get_unary_operator_precedence(k_next) > 0
+                )
+                if can_start_expr:
+                    # It's binary bitwise XOR (infix), break to let binary operator loop handle it!
+                    break
                 caret_tok = self._advance()
                 left = UnaryExpression(caret_tok, left, is_postfix=True)
             elif self._cur_token.kind == SyntaxKind.OpenBracketToken:
@@ -474,6 +519,10 @@ class Parser:
                         args.append(self.parse_expression(0))
                 close_p = self._match(SyntaxKind.CloseParenthesisToken)
                 left = CallExpression(left, open_p, args, close_p)
+            elif self._cur_token.kind == SyntaxKind.AsKeyword:
+                as_tok = self._advance()
+                target_type_tok = self.parse_type_token()
+                left = CastExpression(target_type_tok, left, as_token=as_tok)
             else:
                 break
 
@@ -568,8 +617,15 @@ class Parser:
             tok = self._advance()
             return LiteralExpression(tok, None)
 
-        # Parenthesized expression
+        # Cast expression: (Type)expr or Parenthesized expression: (expr)
         if cur.kind == SyntaxKind.OpenParenthesisToken:
+            if self._is_cast_expression_start():
+                open_p = self._advance()
+                type_tok = self.parse_type_token()
+                close_p = self._match(SyntaxKind.CloseParenthesisToken)
+                cast_operand = self.parse_expression(12) # Bind with unary precedence
+                return CastExpression(type_tok, cast_operand, open_paren=open_p, close_paren=close_p)
+
             open_p = self._advance()
             expr = self.parse_expression()
             close_p = self._match(SyntaxKind.CloseParenthesisToken)

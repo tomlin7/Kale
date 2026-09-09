@@ -60,6 +60,34 @@ class GroupingExpression(Expression):
         return [self.open_paren, self.expression, self.close_paren]
 
 @dataclass(frozen=True)
+class CastExpression(Expression):
+    target_type_token: SyntaxToken
+    expression: Expression
+    as_token: SyntaxToken | None = None # If using `expr as Type`
+    open_paren: SyntaxToken | None = None # If using `(Type)expr`
+    close_paren: SyntaxToken | None = None
+
+    @property
+    def span(self) -> TextSpan:
+        if self.open_paren:
+            return TextSpan.from_bounds(self.open_paren.span.start, self.expression.span.end)
+        if self.as_token:
+            return TextSpan.from_bounds(self.expression.span.start, self.target_type_token.span.end)
+        return TextSpan.from_bounds(self.target_type_token.span.start, self.expression.span.end)
+
+    def children(self) -> list[SyntaxNode | SyntaxToken]:
+        c: list[SyntaxNode | SyntaxToken] = []
+        if self.open_paren:
+            c.append(self.open_paren)
+        c.append(self.target_type_token)
+        if self.close_paren:
+            c.append(self.close_paren)
+        if self.as_token:
+            c.append(self.as_token)
+        c.append(self.expression)
+        return c
+
+@dataclass(frozen=True)
 class UnaryExpression(Expression):
     operator_token: SyntaxToken
     operand: Expression

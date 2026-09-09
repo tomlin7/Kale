@@ -1,3 +1,4 @@
+from typing import Any
 import llvmlite.ir as ir
 import llvmlite.binding as llvm
 
@@ -32,6 +33,7 @@ from ..binding.bound_nodes import (
     BoundDereferenceExpression,
     BoundDereferenceAssignmentExpression,
     BoundAllocExpression,
+    BoundCastExpression,
     BoundStructDeclaration,
 )
 from ..binding.types import (
@@ -40,6 +42,7 @@ from ..binding.types import (
     TypeDouble,
     TypeBool,
     TypeString,
+    TypeChar,
     TypeVoid,
     ArrayTypeSymbol,
     PointerTypeSymbol,
@@ -398,6 +401,31 @@ class LLVMEmitter:
             return self._builder.fptosi(value, ir.IntType(64))
         return value
 
+    def _apply_compound_op(self, op: str, old_val: ir.Value, rhs_val: ir.Value, target_t: Any) -> ir.Value:
+        base_op = op[:-1] # e.g. "+=", "&=", "<<=" -> "+", "&", "<<"
+        is_flt = (target_t in (TypeFloat, TypeDouble))
+        if base_op == "+":
+            return self._builder.fadd(old_val, rhs_val) if is_flt else self._builder.add(old_val, rhs_val)
+        if base_op == "-":
+            return self._builder.fsub(old_val, rhs_val) if is_flt else self._builder.sub(old_val, rhs_val)
+        if base_op == "*":
+            return self._builder.fmul(old_val, rhs_val) if is_flt else self._builder.mul(old_val, rhs_val)
+        if base_op == "/":
+            return self._builder.fdiv(old_val, rhs_val) if is_flt else self._builder.sdiv(old_val, rhs_val)
+        if base_op == "%":
+            return self._builder.frem(old_val, rhs_val) if is_flt else self._builder.srem(old_val, rhs_val)
+        if base_op == "&":
+            return self._builder.and_(old_val, rhs_val)
+        if base_op == "|":
+            return self._builder.or_(old_val, rhs_val)
+        if base_op == "^":
+            return self._builder.xor(old_val, rhs_val)
+        if base_op == "<<":
+            return self._builder.shl(old_val, rhs_val)
+        if base_op == ">>":
+            return self._builder.ashr(old_val, rhs_val)
+        return rhs_val
+
     def _get_lvalue_ptr(self, expr: BoundExpression) -> ir.Value:
         if isinstance(expr, BoundVariableExpression):
             ptr = self._lookup_var(expr.variable.name)
@@ -511,16 +539,7 @@ class LLVMEmitter:
             op = expr.operator_kind
             if op != "=":
                 old_val = self._builder.load(elem_ptr, name="old_elem_val")
-                base_op = op[:-1]
-                is_flt = (elem_t in (TypeFloat, TypeDouble))
-                if base_op == "+":
-                    val = self._builder.fadd(old_val, val) if is_flt else self._builder.add(old_val, val)
-                elif base_op == "-":
-                    val = self._builder.fsub(old_val, val) if is_flt else self._builder.sub(old_val, val)
-                elif base_op == "*":
-                    val = self._builder.fmul(old_val, val) if is_flt else self._builder.mul(old_val, val)
-                elif base_op == "/":
-                    val = self._builder.fdiv(old_val, val) if is_flt else self._builder.sdiv(old_val, val)
+                val = self._apply_compound_op(op, old_val, val, elem_t)
 
             self._builder.store(val, elem_ptr)
             return val
@@ -540,16 +559,7 @@ class LLVMEmitter:
             op = expr.operator_kind
             if op != "=":
                 old_val = self._builder.load(field_ptr, name="old_field_val")
-                base_op = op[:-1]
-                is_flt = (expr.member_type in (TypeFloat, TypeDouble))
-                if base_op == "+":
-                    val = self._builder.fadd(old_val, val) if is_flt else self._builder.add(old_val, val)
-                elif base_op == "-":
-                    val = self._builder.fsub(old_val, val) if is_flt else self._builder.sub(old_val, val)
-                elif base_op == "*":
-                    val = self._builder.fmul(old_val, val) if is_flt else self._builder.mul(old_val, val)
-                elif base_op == "/":
-                    val = self._builder.fdiv(old_val, val) if is_flt else self._builder.sdiv(old_val, val)
+                val = self._apply_compound_op(op, old_val, val, expr.member_type)
 
             self._builder.store(val, field_ptr)
             return val
@@ -573,16 +583,7 @@ class LLVMEmitter:
             op = expr.operator_kind
             if op != "=":
                 old_val = self._builder.load(ptr_val, name="old_deref_val")
-                base_op = op[:-1]
-                is_flt = (elem_t in (TypeFloat, TypeDouble))
-                if base_op == "+":
-                    val = self._builder.fadd(old_val, val) if is_flt else self._builder.add(old_val, val)
-                elif base_op == "-":
-                    val = self._builder.fsub(old_val, val) if is_flt else self._builder.sub(old_val, val)
-                elif base_op == "*":
-                    val = self._builder.fmul(old_val, val) if is_flt else self._builder.mul(old_val, val)
-                elif base_op == "/":
-                    val = self._builder.fdiv(old_val, val) if is_flt else self._builder.sdiv(old_val, val)
+                val = self._apply_compound_op(op, old_val, val, elem_t)
 
             self._builder.store(val, ptr_val)
             return val
@@ -605,6 +606,54 @@ class LLVMEmitter:
             raw_ptr = self._builder.call(self._malloc, [total_bytes], name="malloc_call")
             return self._builder.bitcast(raw_ptr, ir.PointerType(llvm_elem_t), name="alloc_ptr")
 
+        if isinstance(expr, BoundCastExpression):
+            inner_val = self._emit_expression(expr.expression)
+            from_t = expr.expression.type
+            to_t = expr.target_type
+            dest_llvm_t = to_llvm_type(to_t, self._struct_types)
+
+            # Same type
+            if inner_val.type == dest_llvm_t:
+                return inner_val
+
+            # Int <-> Float/Double
+            if from_t == TypeInt and to_t in (TypeFloat, TypeDouble):
+                return self._builder.sitofp(inner_val, dest_llvm_t)
+            if from_t in (TypeFloat, TypeDouble) and to_t == TypeInt:
+                return self._builder.fptosi(inner_val, dest_llvm_t)
+
+            # Pointer <-> Pointer
+            if isinstance(from_t, PointerTypeSymbol) and isinstance(to_t, PointerTypeSymbol):
+                return self._builder.bitcast(inner_val, dest_llvm_t)
+
+            # Pointer <-> Int
+            if isinstance(from_t, PointerTypeSymbol) and to_t == TypeInt:
+                return self._builder.ptrtoint(inner_val, dest_llvm_t)
+            if from_t == TypeInt and isinstance(to_t, PointerTypeSymbol):
+                return self._builder.inttoptr(inner_val, dest_llvm_t)
+
+            # Int <-> Char
+            if from_t == TypeInt and to_t == TypeChar:
+                return self._builder.trunc(inner_val, dest_llvm_t)
+            if from_t == TypeChar and to_t == TypeInt:
+                return self._builder.sext(inner_val, dest_llvm_t)
+
+            # Int <-> Bool
+            if from_t == TypeInt and to_t == TypeBool:
+                return self._builder.icmp_signed("!=", inner_val, ir.Constant(ir.IntType(64), 0))
+            if from_t == TypeBool and to_t == TypeInt:
+                return self._builder.zext(inner_val, dest_llvm_t)
+
+            # Array <-> Pointer
+            if isinstance(from_t, ArrayTypeSymbol) and isinstance(to_t, PointerTypeSymbol):
+                return self._builder.bitcast(inner_val, dest_llvm_t)
+
+            # General bitcast fallback
+            try:
+                return self._builder.bitcast(inner_val, dest_llvm_t)
+            except Exception:
+                return inner_val
+
         if isinstance(expr, BoundAssignmentExpression):
             alloca = self._lookup_var(expr.variable.name)
             if alloca is None:
@@ -615,17 +664,7 @@ class LLVMEmitter:
 
             if op != "=":
                 old_val = self._builder.load(alloca, name=expr.variable.name)
-                # Compute arithmetic
-                base_op = op[:-1]
-                is_flt = (expr.variable.type in (TypeFloat, TypeDouble))
-                if base_op == "+":
-                    right_val = self._builder.fadd(old_val, right_val) if is_flt else self._builder.add(old_val, right_val)
-                elif base_op == "-":
-                    right_val = self._builder.fsub(old_val, right_val) if is_flt else self._builder.sub(old_val, right_val)
-                elif base_op == "*":
-                    right_val = self._builder.fmul(old_val, right_val) if is_flt else self._builder.mul(old_val, right_val)
-                elif base_op == "/":
-                    right_val = self._builder.fdiv(old_val, right_val) if is_flt else self._builder.sdiv(old_val, right_val)
+                right_val = self._apply_compound_op(op, old_val, right_val, expr.variable.type)
 
             right_val = self._coerce_type(right_val, expr.expression.type, expr.variable.type)
             self._builder.store(right_val, alloca)

@@ -35,6 +35,7 @@ from ..ast.nodes import (
     ArrowAccessExpression,
     ArrowAssignmentExpression,
     AllocExpression,
+    CastExpression,
     FreeStatement,
     StructDeclarationStatement,
     StructFieldNode,
@@ -58,6 +59,7 @@ from .types import (
     lookup_type,
     is_numeric,
     can_convert,
+    can_explicit_cast,
     get_promoted_numeric_type,
 )
 from .symbols import VariableSymbol, FunctionSymbol, ModuleSymbol, Symbol
@@ -92,6 +94,7 @@ from .bound_nodes import (
     BoundDereferenceExpression,
     BoundDereferenceAssignmentExpression,
     BoundAllocExpression,
+    BoundCastExpression,
     BoundAssignmentExpression,
     BoundUnaryExpression,
     BoundUnaryOperator,
@@ -497,9 +500,27 @@ class Binder:
             return self._bind_arrow_assignment_expression(expression)
         if isinstance(expression, AllocExpression):
             return self._bind_alloc_expression(expression)
+        if isinstance(expression, CastExpression):
+            return self._bind_cast_expression(expression)
         if isinstance(expression, DereferenceAssignmentExpression):
             return self._bind_dereference_assignment_expression(expression)
         return BoundLiteralExpression(None, TypeUnknown)
+
+    def _bind_cast_expression(self, expression: CastExpression) -> BoundExpression:
+        target_type = self._resolve_type(expression.target_type_token.text)
+        if target_type == TypeUnknown:
+            self.diagnostics.report(expression.target_type_token.span, f"Unknown type '{expression.target_type_token.text}' in cast.")
+            return BoundLiteralExpression(None, TypeUnknown)
+
+        bound_inner = self.bind_expression(expression.expression)
+        if not can_explicit_cast(bound_inner.type, target_type):
+            self.diagnostics.report(
+                expression.span,
+                f"Cannot cast expression of type '{bound_inner.type}' to '{target_type}'."
+            )
+            return BoundLiteralExpression(None, TypeUnknown)
+
+        return BoundCastExpression(bound_inner, target_type)
 
     def _bind_member_access_expression(self, expression: MemberAccessExpression) -> BoundExpression:
         target = self.bind_expression(expression.target)
@@ -861,6 +882,7 @@ class Binder:
             SyntaxKind.AmpersandToken,
             SyntaxKind.PipeToken,
             SyntaxKind.HatToken,
+            SyntaxKind.CaretToken,
             SyntaxKind.LeftShiftToken,
             SyntaxKind.RightShiftToken,
         ):
