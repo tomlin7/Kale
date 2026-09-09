@@ -279,14 +279,42 @@ class Binder:
             if ret_type == TypeUnknown and stmt.return_type_token.text != "void":
                 self.diagnostics.report(stmt.return_type_token.span, f"Unknown return type '{stmt.return_type_token.text}'.")
             params: list[VariableSymbol] = []
+            struct_sym: StructTypeSymbol | None = None
+            mangled_name = None
+
+            if stmt.struct_name_token is not None:
+                s_name = stmt.struct_name_token.text
+                struct_sym = self._struct_types.get(s_name)
+                if struct_sym is None:
+                    self.diagnostics.report(stmt.struct_name_token.span, f"Unknown struct '{s_name}' in method declaration.")
+                else:
+                    mangled_name = f"kale_{s_name}_{fn_name}"
+                    # Auto-insert 'this' as first parameter (pointer to struct)
+                    this_ptr_t = PointerTypeSymbol(base_type=struct_sym)
+                    params.append(VariableSymbol(name="this", type=this_ptr_t))
+
             for p in stmt.parameters:
                 pt = self._resolve_type(p.type_token.text)
                 if pt == TypeUnknown:
                     self.diagnostics.report(p.type_token.span, f"Unknown parameter type '{p.type_token.text}'.")
                 params.append(VariableSymbol(name=p.identifier_token.text, type=pt))
-            fn_sym = FunctionSymbol(name=fn_name, parameters=tuple(params), return_type=ret_type)
-            if not self._current_scope.try_declare(fn_sym):
-                self.diagnostics.report(stmt.identifier_token.span, f"Function '{fn_name}' is already declared in this scope.")
+
+            fn_sym = FunctionSymbol(
+                name=fn_name,
+                parameters=tuple(params),
+                return_type=ret_type,
+                mangled_name=mangled_name,
+                struct_type=struct_sym,
+            )
+
+            if struct_sym is not None:
+                if struct_sym.has_method(fn_name):
+                    self.diagnostics.report(stmt.identifier_token.span, f"Method '{fn_name}' is already defined on struct '{struct_sym.name}'.")
+                else:
+                    struct_sym.methods[fn_name] = fn_sym
+            else:
+                if not self._current_scope.try_declare(fn_sym):
+                    self.diagnostics.report(stmt.identifier_token.span, f"Function '{fn_name}' is already declared in this scope.")
 
         # Pass 2a: Bind function bodies
         bound_functions: list[BoundFunctionDeclaration] = []
@@ -296,7 +324,13 @@ class Binder:
                 bound_functions.append(BoundFunctionDeclaration(sym, body=None))
 
         for fn_stmt in function_decls:
-            sym = self._current_scope.lookup(fn_stmt.identifier_token.text)
+            if fn_stmt.struct_name_token is not None:
+                s_name = fn_stmt.struct_name_token.text
+                struct_sym = self._struct_types.get(s_name)
+                sym = struct_sym.get_method(fn_stmt.identifier_token.text) if struct_sym else None
+            else:
+                sym = self._current_scope.lookup(fn_stmt.identifier_token.text)
+
             if isinstance(sym, FunctionSymbol):
                 self._current_scope = Scope(parent=self._current_scope)
                 for p in sym.parameters:
@@ -850,6 +884,8 @@ class Binder:
         func_name = ""
         callee_span = expression.span
 
+        extra_first_arg: BoundExpression | None = None
+
         if isinstance(expression.callee, MemberAccessExpression):
             target = self.bind_expression(expression.callee.target)
             m_name = expression.callee.member_token.text
@@ -862,8 +898,40 @@ class Binder:
                 else:
                     self.diagnostics.report(expression.callee.member_token.span, f"Member '{m_name}' in module '{target.type.module_name}' is not a function.")
                     return BoundLiteralExpression(None, TypeUnknown)
+            elif isinstance(target.type, StructTypeSymbol) or (isinstance(target.type, PointerTypeSymbol) and isinstance(target.type.base_type, StructTypeSymbol)):
+                st_sym = target.type if isinstance(target.type, StructTypeSymbol) else target.type.base_type
+                method_sym = st_sym.get_method(m_name)
+                if method_sym is not None:
+                    symbol = method_sym
+                    func_name = f"{st_sym.name}.{m_name}"
+                    if isinstance(target.type, StructTypeSymbol):
+                        # Receiver is a value, pass &target to method (which expects struct*)
+                        extra_first_arg = BoundAddressOfExpression(target, PointerTypeSymbol(target.type))
+                    else:
+                        # Receiver is already a pointer
+                        extra_first_arg = target
+                else:
+                    self.diagnostics.report(expression.callee.member_token.span, f"Struct '{st_sym.name}' has no method named '{m_name}'.")
+                    return BoundLiteralExpression(None, TypeUnknown)
             else:
-                self.diagnostics.report(expression.callee.target.span, f"Cannot call member '{m_name}' on non-module type '{target.type}'.")
+                self.diagnostics.report(expression.callee.target.span, f"Cannot call member '{m_name}' on non-module/non-struct type '{target.type}'.")
+                return BoundLiteralExpression(None, TypeUnknown)
+        elif isinstance(expression.callee, ArrowAccessExpression):
+            target = self.bind_expression(expression.callee.target)
+            m_name = expression.callee.member_token.text
+            callee_span = expression.callee.span
+            if isinstance(target.type, PointerTypeSymbol) and isinstance(target.type.base_type, StructTypeSymbol):
+                st_sym = target.type.base_type
+                method_sym = st_sym.get_method(m_name)
+                if method_sym is not None:
+                    symbol = method_sym
+                    func_name = f"{st_sym.name}.{m_name}"
+                    extra_first_arg = target
+                else:
+                    self.diagnostics.report(expression.callee.member_token.span, f"Struct '{st_sym.name}' has no method named '{m_name}'.")
+                    return BoundLiteralExpression(None, TypeUnknown)
+            else:
+                self.diagnostics.report(expression.callee.target.span, f"Cannot use '->' to call member '{m_name}' on non-struct pointer type '{target.type}'.")
                 return BoundLiteralExpression(None, TypeUnknown)
         elif expression.callee_token is not None:
             func_name = expression.callee_token.text
@@ -878,23 +946,31 @@ class Binder:
             self.diagnostics.report(expression.span, "Invalid function call target.")
             return BoundLiteralExpression(None, TypeUnknown)
 
+        effective_param_count = len(symbol.parameters)
+        expected_user_arg_count = effective_param_count - 1 if extra_first_arg is not None else effective_param_count
+
         if symbol.is_var_args:
-            if len(expression.arguments) < len(symbol.parameters):
+            if len(expression.arguments) < expected_user_arg_count:
                 self.diagnostics.report(
                     expression.span,
-                    f"Function '{func_name}' expects at least {len(symbol.parameters)} arguments, but got {len(expression.arguments)}."
+                    f"Function '{func_name}' expects at least {expected_user_arg_count} arguments, but got {len(expression.arguments)}."
                 )
-        elif len(expression.arguments) != len(symbol.parameters):
+        elif len(expression.arguments) != expected_user_arg_count:
             self.diagnostics.report(
                 expression.span,
-                f"Function '{func_name}' expects {len(symbol.parameters)} arguments, but got {len(expression.arguments)}."
+                f"Function '{func_name}' expects {expected_user_arg_count} arguments, but got {len(expression.arguments)}."
             )
 
         bound_args: list[BoundExpression] = []
+        if extra_first_arg is not None:
+            bound_args.append(extra_first_arg)
+
+        param_offset = 1 if extra_first_arg is not None else 0
         for i, arg in enumerate(expression.arguments):
             bound_arg = self.bind_expression(arg)
-            if i < len(symbol.parameters):
-                param_type = symbol.parameters[i].type
+            p_idx = i + param_offset
+            if p_idx < len(symbol.parameters):
+                param_type = symbol.parameters[p_idx].type
                 if not can_convert(bound_arg.type, param_type):
                     self.diagnostics.report_cannot_convert(arg.span, str(bound_arg.type), str(param_type))
             bound_args.append(bound_arg)

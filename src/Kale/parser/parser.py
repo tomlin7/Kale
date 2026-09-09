@@ -167,10 +167,13 @@ class Parser:
             return None
 
     def _is_function_declaration_start(self) -> bool:
-        k = self._cur_token.kind
+        idx = 0
+        if self._cur_token.kind == SyntaxKind.FnKeyword:
+            idx = 1
+        k = self._peek(idx).kind
         if not (is_type_keyword(k) or k in (SyntaxKind.LetKeyword, SyntaxKind.VarKeyword) or k == SyntaxKind.IdentifierToken):
             return False
-        idx = 1
+        idx += 1
         # Advance through any dot qualifier e.g. geo.Point
         if self._peek(idx).kind == SyntaxKind.DotToken and self._peek(idx + 1).kind == SyntaxKind.IdentifierToken:
             idx += 2
@@ -188,7 +191,13 @@ class Parser:
                     return False
             else:
                 break
-        return self._peek(idx).kind == SyntaxKind.IdentifierToken and self._peek(idx + 1).kind == SyntaxKind.OpenParenthesisToken
+        if self._peek(idx).kind != SyntaxKind.IdentifierToken:
+            return False
+        idx += 1
+        # Check if struct method syntax: Type StructName.methodName(...)
+        if self._peek(idx).kind == SyntaxKind.DotToken and self._peek(idx + 1).kind == SyntaxKind.IdentifierToken:
+            idx += 2
+        return self._peek(idx).kind == SyntaxKind.OpenParenthesisToken
 
     def _is_declaration_start(self) -> bool:
         k = self._cur_token.kind
@@ -351,8 +360,15 @@ class Parser:
         return base_type_token
 
     def parse_function_declaration(self) -> FunctionDeclarationStatement:
+        if self._check(SyntaxKind.FnKeyword):
+            self._advance()
         return_type_token = self.parse_type_token()
         identifier_token = self._match(SyntaxKind.IdentifierToken)
+        struct_name_token = None
+        if self._check(SyntaxKind.DotToken):
+            self._advance()
+            struct_name_token = identifier_token
+            identifier_token = self._match(SyntaxKind.IdentifierToken)
         open_paren = self._match(SyntaxKind.OpenParenthesisToken)
 
         parameters: list[ParameterNode] = []
@@ -376,6 +392,7 @@ class Parser:
             parameters,
             close_paren,
             body,
+            struct_name_token=struct_name_token,
         )
 
     def parse_extern_function_declaration(self) -> ExternFunctionDeclarationStatement:

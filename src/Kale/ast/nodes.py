@@ -383,20 +383,24 @@ class FunctionDeclarationStatement(Statement):
     parameters: list[ParameterNode]
     close_paren: SyntaxToken
     body: BlockStatement
+    struct_name_token: SyntaxToken | None = None
 
     @property
     def span(self) -> TextSpan:
         return TextSpan.from_bounds(self.return_type_token.span.start, self.body.span.end)
 
     def children(self) -> list[SyntaxNode | SyntaxToken]:
-        return [
-            self.return_type_token,
+        items: list[SyntaxNode | SyntaxToken] = [self.return_type_token]
+        if self.struct_name_token is not None:
+            items.append(self.struct_name_token)
+        items.extend([
             self.identifier_token,
             self.open_paren,
             *self.parameters,
             self.close_paren,
             self.body,
-        ]
+        ])
+        return items
 
 @dataclass(frozen=True)
 class ExternFunctionDeclarationStatement(Statement):

@@ -38,10 +38,17 @@ class PointerTypeSymbol(TypeSymbol):
 @dataclass(frozen=True)
 class StructTypeSymbol(TypeSymbol):
     fields: tuple[tuple[str, TypeSymbol], ...] = ()
+    methods: dict[str, Any] = None  # type: ignore
 
-    def __init__(self, name: str, fields: tuple[tuple[str, TypeSymbol], ...] = ()):
+    def __init__(
+        self,
+        name: str,
+        fields: tuple[tuple[str, TypeSymbol], ...] = (),
+        methods: dict[str, Any] | None = None,
+    ):
         object.__setattr__(self, "name", name)
         object.__setattr__(self, "fields", fields)
+        object.__setattr__(self, "methods", methods if methods is not None else {})
 
     def get_field_type(self, field_name: str) -> TypeSymbol | None:
         for fname, ftype in self.fields:
@@ -54,6 +61,12 @@ class StructTypeSymbol(TypeSymbol):
             if fname == field_name:
                 return idx
         return -1
+
+    def get_method(self, method_name: str) -> Any:
+        return self.methods.get(method_name)
+
+    def has_method(self, method_name: str) -> bool:
+        return method_name in self.methods
 
     def __repr__(self) -> str:
         fields_str = ", ".join(f"{fname}: {ftype}" for fname, ftype in self.fields)

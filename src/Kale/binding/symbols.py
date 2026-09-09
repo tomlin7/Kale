@@ -21,6 +21,7 @@ class FunctionSymbol(Symbol):
     mangled_name: str | None = None
     is_extern: bool = False
     is_var_args: bool = False
+    struct_type: TypeSymbol | None = None
 
     def __init__(
         self,
@@ -31,6 +32,7 @@ class FunctionSymbol(Symbol):
         mangled_name: str | None = None,
         is_extern: bool = False,
         is_var_args: bool = False,
+        struct_type: TypeSymbol | None = None,
     ):
         actual_type = return_type if return_type is not None else type
         object.__setattr__(self, "name", name)
@@ -40,6 +42,11 @@ class FunctionSymbol(Symbol):
         object.__setattr__(self, "mangled_name", mangled_name or name)
         object.__setattr__(self, "is_extern", is_extern)
         object.__setattr__(self, "is_var_args", is_var_args)
+        object.__setattr__(self, "struct_type", struct_type)
+
+    @property
+    def is_method(self) -> bool:
+        return self.struct_type is not None
 
     @property
     def parameter_types(self) -> tuple[TypeSymbol, ...]:
