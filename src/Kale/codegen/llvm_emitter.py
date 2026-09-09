@@ -18,8 +18,10 @@ from ..binding.bound_nodes import (
     BoundLiteralExpression,
     BoundVariableExpression,
     BoundAssignmentExpression,
+    BoundCallExpression,
     BoundUnaryExpression,
     BoundBinaryExpression,
+    BoundFunctionDeclaration,
 )
 from ..binding.types import (
     TypeInt,
@@ -27,6 +29,7 @@ from ..binding.types import (
     TypeDouble,
     TypeBool,
     TypeString,
+    TypeVoid,
 )
 from .llvm_types import to_llvm_type
 
@@ -41,7 +44,11 @@ class LLVMEmitter:
 
         self._builder: ir.IRBuilder | None = None
         self._main_func: ir.Function | None = None
+        self._current_func: ir.Function | None = None
         self._entry_block: ir.Block | None = None
+
+        # Functions map: name -> ir.Function
+        self._functions: dict[str, ir.Function] = {}
 
         # Scopes: list of variable maps mapping name -> alloca_instruction
         self._scopes: list[dict[str, ir.AllocaInstr]] = [{}]
@@ -99,9 +106,46 @@ class LLVMEmitter:
         return b.is_terminated
 
     def emit_module(self, program: BoundProgram) -> ir.Module:
-        # Create main() function
+        self._functions = {}
+
+        # Pass 1: Declare all user functions
+        for fn_decl in program.functions:
+            param_types = [to_llvm_type(p.type) for p in fn_decl.symbol.parameters]
+            ret_type = to_llvm_type(fn_decl.symbol.return_type or TypeVoid)
+            func_type = ir.FunctionType(ret_type, param_types)
+            llvm_func = ir.Function(self.module, func_type, name=fn_decl.symbol.name)
+            self._functions[fn_decl.symbol.name] = llvm_func
+
+        # Pass 2: Emit user function bodies
+        for fn_decl in program.functions:
+            llvm_func = self._functions[fn_decl.symbol.name]
+            self._current_func = llvm_func
+            entry_block = llvm_func.append_basic_block(name="entry")
+            self._builder = ir.IRBuilder(entry_block)
+            self._scopes = [{}]
+            self._break_blocks = []
+            self._continue_blocks = []
+
+            # Store parameters into stack allocas
+            for p, arg in zip(fn_decl.symbol.parameters, llvm_func.args):
+                arg.name = p.name
+                alloca = self._builder.alloca(to_llvm_type(p.type), name=p.name)
+                self._builder.store(arg, alloca)
+                self._declare_var(p.name, alloca)
+
+            for statement in fn_decl.body.statements:
+                self._emit_statement(statement)
+
+            if not self._is_block_terminated():
+                if fn_decl.symbol.return_type == TypeVoid or llvm_func.function_type.return_type == ir.VoidType():
+                    self._builder.ret_void()
+                else:
+                    self._builder.ret(ir.Constant(to_llvm_type(fn_decl.symbol.return_type), 0))
+
+        # Pass 3: Create main() function for top-level statements
         func_type = ir.FunctionType(ir.IntType(32), [])
         self._main_func = ir.Function(self.module, func_type, name="main")
+        self._current_func = self._main_func
         self._entry_block = self._main_func.append_basic_block(name="entry")
         self._builder = ir.IRBuilder(self._entry_block)
 
@@ -146,9 +190,9 @@ class LLVMEmitter:
             if cond_val.type != ir.IntType(1):
                 cond_val = self._builder.icmp_signed("!=", cond_val, ir.Constant(cond_val.type, 0))
 
-            then_block = self._main_func.append_basic_block("if.then")
-            else_block = self._main_func.append_basic_block("if.else") if statement.else_statement else None
-            merge_block = self._main_func.append_basic_block("if.end")
+            then_block = self._current_func.append_basic_block("if.then")
+            else_block = self._current_func.append_basic_block("if.else") if statement.else_statement else None
+            merge_block = self._current_func.append_basic_block("if.end")
 
             if else_block:
                 self._builder.cbranch(cond_val, then_block, else_block)
@@ -171,9 +215,9 @@ class LLVMEmitter:
             self._builder.position_at_end(merge_block)
 
         elif isinstance(statement, BoundWhileStatement):
-            cond_block = self._main_func.append_basic_block("while.cond")
-            body_block = self._main_func.append_basic_block("while.body")
-            after_block = self._main_func.append_basic_block("while.end")
+            cond_block = self._current_func.append_basic_block("while.cond")
+            body_block = self._current_func.append_basic_block("while.body")
+            after_block = self._current_func.append_basic_block("while.end")
 
             self._builder.branch(cond_block)
 
@@ -200,10 +244,10 @@ class LLVMEmitter:
             if statement.initializer:
                 self._emit_statement(statement.initializer)
 
-            cond_block = self._main_func.append_basic_block("for.cond")
-            body_block = self._main_func.append_basic_block("for.body")
-            inc_block = self._main_func.append_basic_block("for.inc")
-            after_block = self._main_func.append_basic_block("for.end")
+            cond_block = self._current_func.append_basic_block("for.cond")
+            body_block = self._current_func.append_basic_block("for.body")
+            inc_block = self._current_func.append_basic_block("for.inc")
+            after_block = self._current_func.append_basic_block("for.end")
 
             self._builder.branch(cond_block)
 
@@ -245,14 +289,24 @@ class LLVMEmitter:
                 self._builder.branch(self._continue_blocks[-1])
 
         elif isinstance(statement, BoundReturnStatement):
-            ret_val = None
+            if self._current_func is None:
+                return
+            ret_t = self._current_func.function_type.return_type
             if statement.expression:
                 ret_val = self._emit_expression(statement.expression)
+                if ret_val.type != ret_t:
+                    if ret_t == ir.DoubleType() and ret_val.type == ir.IntType(64):
+                        ret_val = self._builder.sitofp(ret_val, ir.DoubleType())
+                    elif ret_t == ir.IntType(64) and ret_val.type == ir.DoubleType():
+                        ret_val = self._builder.fptosi(ret_val, ir.IntType(64))
+                    elif ret_t == ir.IntType(32) and ret_val.type == ir.IntType(64):
+                        ret_val = self._builder.trunc(ret_val, ir.IntType(32))
+                self._builder.ret(ret_val)
             else:
-                ret_val = ir.Constant(ir.IntType(32), 0)
-            if ret_val.type != ir.IntType(32):
-                ret_val = self._builder.trunc(ret_val, ir.IntType(32))
-            self._builder.ret(ret_val)
+                if ret_t == ir.VoidType():
+                    self._builder.ret_void()
+                else:
+                    self._builder.ret(ir.Constant(ret_t, 0))
 
         elif isinstance(statement, BoundPrintStatement):
             for i, arg in enumerate(statement.arguments):
@@ -313,6 +367,22 @@ class LLVMEmitter:
             if alloca is None:
                 return ir.Constant(ir.IntType(64), 0)
             return self._builder.load(alloca, name=expr.variable.name)
+
+        if isinstance(expr, BoundCallExpression):
+            fn_name = expr.function.name
+            llvm_func = self._functions.get(fn_name)
+            if llvm_func is None:
+                return ir.Constant(ir.IntType(64), 0)
+
+            arg_values: list[ir.Value] = []
+            for i, arg in enumerate(expr.arguments):
+                val = self._emit_expression(arg)
+                expected_type = expr.function.parameters[i].type
+                val = self._coerce_type(val, arg.type, expected_type)
+                arg_values.append(val)
+
+            call_name = f"call_{fn_name}" if llvm_func.function_type.return_type != ir.VoidType() else ""
+            return self._builder.call(llvm_func, arg_values, name=call_name)
 
         if isinstance(expr, BoundAssignmentExpression):
             alloca = self._lookup_var(expr.variable.name)

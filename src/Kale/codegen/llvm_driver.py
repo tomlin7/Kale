@@ -28,6 +28,10 @@ class LLVMDriver:
         if output_path is None:
             output_path = f"{base}.exe" if is_windows else base
 
+        out_dir = os.path.dirname(output_path)
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
+
         cmd = [self.clang_path, ll_path, f"-O{opt_level}", "-o", output_path]
         if is_windows:
             cmd.append("--target=x86_64-pc-windows-msvc")

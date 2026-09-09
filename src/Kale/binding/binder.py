@@ -5,6 +5,8 @@ from ..ast.nodes import (
     CompilationUnit,
     Statement,
     BlockStatement,
+    ParameterNode,
+    FunctionDeclarationStatement,
     VariableDeclarationStatement,
     ExpressionStatement,
     IfStatement,
@@ -45,6 +47,7 @@ from .bound_nodes import (
     BoundStatement,
     BoundBlockStatement,
     BoundVariableDeclaration,
+    BoundFunctionDeclaration,
     BoundExpressionStatement,
     BoundIfStatement,
     BoundWhileStatement,
@@ -56,6 +59,7 @@ from .bound_nodes import (
     BoundExpression,
     BoundLiteralExpression,
     BoundVariableExpression,
+    BoundCallExpression,
     BoundAssignmentExpression,
     BoundUnaryExpression,
     BoundUnaryOperator,
@@ -68,14 +72,54 @@ class Binder:
     def __init__(self, diagnostics: DiagnosticBag):
         self.diagnostics = diagnostics
         self._current_scope = Scope()
+        self._current_function: FunctionSymbol | None = None
 
     def bind_program(self, compilation_unit: CompilationUnit) -> BoundProgram:
+        # Pass 1: Discover all function declarations and register signatures
+        function_decls: list[FunctionDeclarationStatement] = []
+        top_level_stmts: list[Statement] = []
+
+        for stmt in compilation_unit.statements:
+            if isinstance(stmt, FunctionDeclarationStatement):
+                function_decls.append(stmt)
+                fn_name = stmt.identifier_token.text
+                ret_type = lookup_type(stmt.return_type_token.text) or TypeVoid
+                params: list[VariableSymbol] = []
+                for p in stmt.parameters:
+                    pt = lookup_type(p.type_token.text) or TypeUnknown
+                    params.append(VariableSymbol(name=p.identifier_token.text, type=pt))
+                fn_sym = FunctionSymbol(name=fn_name, parameters=tuple(params), return_type=ret_type)
+                if not self._current_scope.try_declare(fn_sym):
+                    self.diagnostics.report(stmt.identifier_token.span, f"Function '{fn_name}' is already declared in this scope.")
+            else:
+                top_level_stmts.append(stmt)
+
+        # Pass 2a: Bind function bodies
+        bound_functions: list[BoundFunctionDeclaration] = []
+        for fn_stmt in function_decls:
+            sym = self._current_scope.lookup(fn_stmt.identifier_token.text)
+            if isinstance(sym, FunctionSymbol):
+                self._current_scope = Scope(parent=self._current_scope)
+                for p in sym.parameters:
+                    self._current_scope.try_declare(p)
+                self._current_function = sym
+                bound_body = self._bind_block_statement(fn_stmt.body, new_scope=False)
+                self._current_function = None
+                self._current_scope = self._current_scope.parent # type: ignore
+                bound_functions.append(BoundFunctionDeclaration(sym, bound_body))
+
+        # Pass 2b: Bind top-level statements
         bound_statements: list[BoundStatement] = []
-        for statement in compilation_unit.statements:
+        for statement in top_level_stmts:
             bound_stmt = self.bind_statement(statement)
             if bound_stmt is not None:
                 bound_statements.append(bound_stmt)
-        return BoundProgram(statements=bound_statements, root_scope=self._current_scope)
+
+        return BoundProgram(
+            statements=bound_statements,
+            root_scope=self._current_scope,
+            functions=bound_functions,
+        )
 
     def bind_statement(self, statement: Statement) -> BoundStatement | None:
         if isinstance(statement, BlockStatement):
@@ -100,14 +144,16 @@ class Binder:
             return self._bind_expression_statement(statement)
         return None
 
-    def _bind_block_statement(self, statement: BlockStatement) -> BoundBlockStatement:
-        self._current_scope = Scope(parent=self._current_scope)
+    def _bind_block_statement(self, statement: BlockStatement, new_scope: bool = True) -> BoundBlockStatement:
+        if new_scope:
+            self._current_scope = Scope(parent=self._current_scope)
         bound_stmts: list[BoundStatement] = []
         for s in statement.statements:
             b = self.bind_statement(s)
             if b is not None:
                 bound_stmts.append(b)
-        self._current_scope = self._current_scope.parent # type: ignore
+        if new_scope:
+            self._current_scope = self._current_scope.parent # type: ignore
         return BoundBlockStatement(bound_stmts)
 
     def _bind_variable_declaration(self, statement: VariableDeclarationStatement) -> BoundVariableDeclaration:
@@ -176,6 +222,12 @@ class Binder:
 
     def _bind_return_statement(self, statement: ReturnStatement) -> BoundReturnStatement:
         bound_expr = self.bind_expression(statement.expression) if statement.expression else None
+        if self._current_function is not None:
+            expected_type = self._current_function.return_type or TypeVoid
+            actual_type = bound_expr.type if bound_expr else TypeVoid
+            if not can_convert(actual_type, expected_type):
+                span = statement.expression.span if statement.expression else statement.return_keyword.span
+                self.diagnostics.report_cannot_convert(span, str(actual_type), str(expected_type))
         return BoundReturnStatement(bound_expr)
 
     def _bind_expression_statement(self, statement: ExpressionStatement) -> BoundExpressionStatement:
@@ -191,6 +243,8 @@ class Binder:
             return self._bind_literal_expression(expression)
         if isinstance(expression, VariableExpression):
             return self._bind_variable_expression(expression)
+        if isinstance(expression, CallExpression):
+            return self._bind_call_expression(expression)
         if isinstance(expression, GroupingExpression):
             return self.bind_expression(expression.expression)
         if isinstance(expression, UnaryExpression):
@@ -200,6 +254,30 @@ class Binder:
         if isinstance(expression, AssignmentExpression):
             return self._bind_assignment_expression(expression)
         return BoundLiteralExpression(None, TypeUnknown)
+
+    def _bind_call_expression(self, expression: CallExpression) -> BoundExpression:
+        name = expression.callee_token.text
+        symbol = self._current_scope.lookup(name)
+        if symbol is None or not isinstance(symbol, FunctionSymbol):
+            self.diagnostics.report(expression.callee_token.span, f"Function '{name}' is not defined.")
+            return BoundLiteralExpression(None, TypeUnknown)
+
+        if len(expression.arguments) != len(symbol.parameters):
+            self.diagnostics.report(
+                expression.span,
+                f"Function '{name}' expects {len(symbol.parameters)} arguments, but got {len(expression.arguments)}."
+            )
+
+        bound_args: list[BoundExpression] = []
+        for i, arg in enumerate(expression.arguments):
+            bound_arg = self.bind_expression(arg)
+            if i < len(symbol.parameters):
+                param_type = symbol.parameters[i].type
+                if not can_convert(bound_arg.type, param_type):
+                    self.diagnostics.report_cannot_convert(arg.span, str(bound_arg.type), str(param_type))
+            bound_args.append(bound_arg)
+
+        return BoundCallExpression(symbol, bound_args)
 
     def _bind_literal_expression(self, expression: LiteralExpression) -> BoundLiteralExpression:
         val = expression.value

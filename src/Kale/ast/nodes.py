@@ -138,6 +138,41 @@ class BlockStatement(Statement):
         return [self.open_brace, *self.statements, self.close_brace]
 
 @dataclass(frozen=True)
+class ParameterNode(SyntaxNode):
+    type_token: SyntaxToken
+    identifier_token: SyntaxToken
+
+    @property
+    def span(self) -> TextSpan:
+        return TextSpan.from_bounds(self.type_token.span.start, self.identifier_token.span.end)
+
+    def children(self) -> list[SyntaxNode | SyntaxToken]:
+        return [self.type_token, self.identifier_token]
+
+@dataclass(frozen=True)
+class FunctionDeclarationStatement(Statement):
+    return_type_token: SyntaxToken
+    identifier_token: SyntaxToken
+    open_paren: SyntaxToken
+    parameters: list[ParameterNode]
+    close_paren: SyntaxToken
+    body: BlockStatement
+
+    @property
+    def span(self) -> TextSpan:
+        return TextSpan.from_bounds(self.return_type_token.span.start, self.body.span.end)
+
+    def children(self) -> list[SyntaxNode | SyntaxToken]:
+        return [
+            self.return_type_token,
+            self.identifier_token,
+            self.open_paren,
+            *self.parameters,
+            self.close_paren,
+            self.body,
+        ]
+
+@dataclass(frozen=True)
 class VariableDeclarationStatement(Statement):
     type_token: SyntaxToken
     identifier_token: SyntaxToken

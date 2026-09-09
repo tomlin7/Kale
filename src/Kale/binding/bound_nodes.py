@@ -147,6 +147,16 @@ class BoundExpressionStatement(BoundStatement):
     expression: BoundExpression
 
 @dataclass(frozen=True)
+class BoundFunctionDeclaration(BoundStatement):
+    symbol: FunctionSymbol
+    body: BoundBlockStatement
+
+@dataclass(frozen=True)
 class BoundProgram(BoundNode):
     statements: list[BoundStatement]
     root_scope: Scope
+    functions: list[BoundFunctionDeclaration] = None # type: ignore
+
+    def __post_init__(self):
+        if self.functions is None:
+            object.__setattr__(self, "functions", [])

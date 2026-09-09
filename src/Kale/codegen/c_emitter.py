@@ -15,6 +15,7 @@ from ..binding.bound_nodes import (
     BoundExpression,
     BoundLiteralExpression,
     BoundVariableExpression,
+    BoundCallExpression,
     BoundAssignmentExpression,
     BoundUnaryExpression,
     BoundBinaryExpression,
@@ -77,6 +78,28 @@ class CEmitter:
         self._write_line("static inline void _kale_print_str(const char* x) { printf(\"%s\", x); }")
         self._write_line("static inline void _kale_println(void) { printf(\"\\n\"); }")
         self._write_line()
+
+        # Forward declarations of user functions
+        if program.functions:
+            self._write_line("// --- User Function Prototypes ---")
+            for fn in program.functions:
+                ret_t = self._map_type(fn.symbol.return_type)
+                params_str = ", ".join(f"{self._map_type(p.type)} {p.name}" for p in fn.symbol.parameters) or "void"
+                self._write_line(f"{ret_t} {fn.symbol.name}({params_str});")
+            self._write_line()
+
+            # User function definitions
+            self._write_line("// --- User Functions ---")
+            for fn in program.functions:
+                ret_t = self._map_type(fn.symbol.return_type)
+                params_str = ", ".join(f"{self._map_type(p.type)} {p.name}" for p in fn.symbol.parameters) or "void"
+                self._write_line(f"{ret_t} {fn.symbol.name}({params_str}) {{")
+                self._indent_level += 1
+                for s in fn.body.statements:
+                    self._emit_statement(s)
+                self._indent_level -= 1
+                self._write_line("}")
+                self._write_line()
 
         # Main function
         self._write_line("int main(int argc, char** argv) {")
@@ -189,6 +212,9 @@ class CEmitter:
             return str(expr.value)
         if isinstance(expr, BoundVariableExpression):
             return expr.variable.name
+        if isinstance(expr, BoundCallExpression):
+            args_str = ", ".join(self._emit_expression(a) for a in expr.arguments)
+            return f"{expr.function.name}({args_str})"
         if isinstance(expr, BoundAssignmentExpression):
             right_str = self._emit_expression(expr.expression)
             return f"{expr.variable.name} {expr.operator_kind} {right_str}"

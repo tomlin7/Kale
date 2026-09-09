@@ -20,6 +20,8 @@ from ..ast.nodes import (
     CallExpression,
     Statement,
     BlockStatement,
+    ParameterNode,
+    FunctionDeclarationStatement,
     VariableDeclarationStatement,
     ExpressionStatement,
     IfStatement,
@@ -105,6 +107,8 @@ class Parser:
         try:
             if self._check(SyntaxKind.OpenBraceToken):
                 return self.parse_block_statement()
+            if self._is_function_declaration_start():
+                return self.parse_function_declaration()
             if self._is_declaration_start():
                 return self.parse_variable_declaration()
             if self._check(SyntaxKind.IfKeyword):
@@ -126,9 +130,45 @@ class Parser:
             self._synchronize()
             return None
 
+    def _is_function_declaration_start(self) -> bool:
+        k = self._cur_token.kind
+        return (
+            (is_type_keyword(k) or k in (SyntaxKind.LetKeyword, SyntaxKind.VarKeyword))
+            and self._peek(1).kind == SyntaxKind.IdentifierToken
+            and self._peek(2).kind == SyntaxKind.OpenParenthesisToken
+        )
+
     def _is_declaration_start(self) -> bool:
         k = self._cur_token.kind
         return is_type_keyword(k) or k in (SyntaxKind.LetKeyword, SyntaxKind.VarKeyword, SyntaxKind.ConstKeyword)
+
+    def parse_function_declaration(self) -> FunctionDeclarationStatement:
+        return_type_token = self._advance()
+        identifier_token = self._match(SyntaxKind.IdentifierToken)
+        open_paren = self._match(SyntaxKind.OpenParenthesisToken)
+
+        parameters: list[ParameterNode] = []
+        if not self._check(SyntaxKind.CloseParenthesisToken):
+            param_type = self._advance()
+            param_name = self._match(SyntaxKind.IdentifierToken)
+            parameters.append(ParameterNode(param_type, param_name))
+
+            while self._check(SyntaxKind.CommaToken):
+                self._advance()
+                param_type = self._advance()
+                param_name = self._match(SyntaxKind.IdentifierToken)
+                parameters.append(ParameterNode(param_type, param_name))
+
+        close_paren = self._match(SyntaxKind.CloseParenthesisToken)
+        body = self.parse_block_statement()
+        return FunctionDeclarationStatement(
+            return_type_token,
+            identifier_token,
+            open_paren,
+            parameters,
+            close_paren,
+            body,
+        )
 
     def parse_block_statement(self) -> BlockStatement:
         open_brace = self._match(SyntaxKind.OpenBraceToken)
