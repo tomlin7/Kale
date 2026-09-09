@@ -24,6 +24,9 @@ from ..ast.nodes import (
     BinaryExpression,
     AssignmentExpression,
     CallExpression,
+    ArrayLiteralExpression,
+    IndexExpression,
+    IndexAssignmentExpression,
 )
 from .types import (
     TypeSymbol,
@@ -35,6 +38,7 @@ from .types import (
     TypeChar,
     TypeVoid,
     TypeUnknown,
+    ArrayTypeSymbol,
     lookup_type,
     is_numeric,
     can_convert,
@@ -60,6 +64,9 @@ from .bound_nodes import (
     BoundLiteralExpression,
     BoundVariableExpression,
     BoundCallExpression,
+    BoundArrayLiteralExpression,
+    BoundIndexExpression,
+    BoundIndexAssignmentExpression,
     BoundAssignmentExpression,
     BoundUnaryExpression,
     BoundUnaryOperator,
@@ -253,7 +260,57 @@ class Binder:
             return self._bind_binary_expression(expression)
         if isinstance(expression, AssignmentExpression):
             return self._bind_assignment_expression(expression)
+        if isinstance(expression, ArrayLiteralExpression):
+            return self._bind_array_literal_expression(expression)
+        if isinstance(expression, IndexExpression):
+            return self._bind_index_expression(expression)
+        if isinstance(expression, IndexAssignmentExpression):
+            return self._bind_index_assignment_expression(expression)
         return BoundLiteralExpression(None, TypeUnknown)
+
+    def _bind_array_literal_expression(self, expression: ArrayLiteralExpression) -> BoundExpression:
+        bound_elements = [self.bind_expression(elem) for elem in expression.elements]
+        if not bound_elements:
+            elem_type = TypeInt # Default empty array element type
+        else:
+            elem_type = bound_elements[0].type
+            for elem in bound_elements[1:]:
+                if not can_convert(elem.type, elem_type):
+                    self.diagnostics.report_cannot_convert(expression.span, str(elem.type), str(elem_type))
+
+        arr_type = ArrayTypeSymbol(element_type=elem_type, size=len(bound_elements))
+        return BoundArrayLiteralExpression(bound_elements, arr_type)
+
+    def _bind_index_expression(self, expression: IndexExpression) -> BoundExpression:
+        target = self.bind_expression(expression.target)
+        index = self.bind_expression(expression.index)
+
+        if not isinstance(target.type, ArrayTypeSymbol):
+            self.diagnostics.report(expression.target.span, f"Cannot index a non-array type '{target.type}'.")
+            return BoundLiteralExpression(None, TypeUnknown)
+
+        if not can_convert(index.type, TypeInt):
+            self.diagnostics.report_cannot_convert(expression.index.span, str(index.type), "int")
+
+        return BoundIndexExpression(target, index, target.type.element_type)
+
+    def _bind_index_assignment_expression(self, expression: IndexAssignmentExpression) -> BoundExpression:
+        target = self.bind_expression(expression.target)
+        index = self.bind_expression(expression.index)
+        value = self.bind_expression(expression.value)
+
+        if not isinstance(target.type, ArrayTypeSymbol):
+            self.diagnostics.report(expression.target.span, f"Cannot index a non-array type '{target.type}'.")
+            return BoundLiteralExpression(None, TypeUnknown)
+
+        if not can_convert(index.type, TypeInt):
+            self.diagnostics.report_cannot_convert(expression.index.span, str(index.type), "int")
+
+        elem_type = target.type.element_type
+        if not can_convert(value.type, elem_type):
+            self.diagnostics.report_cannot_convert(expression.value.span, str(value.type), str(elem_type))
+
+        return BoundIndexAssignmentExpression(target, index, value, expression.operator_token.text)
 
     def _bind_call_expression(self, expression: CallExpression) -> BoundExpression:
         name = expression.callee_token.text

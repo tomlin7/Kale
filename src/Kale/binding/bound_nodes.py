@@ -92,6 +92,36 @@ class BoundCallExpression(BoundExpression):
     def type(self) -> TypeSymbol:
         return self.function.type
 
+@dataclass(frozen=True)
+class BoundArrayLiteralExpression(BoundExpression):
+    elements: list[BoundExpression]
+    array_type: TypeSymbol
+
+    @property
+    def type(self) -> TypeSymbol:
+        return self.array_type
+
+@dataclass(frozen=True)
+class BoundIndexExpression(BoundExpression):
+    target: BoundExpression
+    index: BoundExpression
+    element_type: TypeSymbol
+
+    @property
+    def type(self) -> TypeSymbol:
+        return self.element_type
+
+@dataclass(frozen=True)
+class BoundIndexAssignmentExpression(BoundExpression):
+    target: BoundExpression
+    index: BoundExpression
+    value: BoundExpression
+    operator_kind: str = "="
+
+    @property
+    def type(self) -> TypeSymbol:
+        return self.value.type
+
 # ==========================================
 # Bound Statements
 # ==========================================

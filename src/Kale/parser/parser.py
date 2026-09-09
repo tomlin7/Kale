@@ -1,5 +1,6 @@
 from ..diagnostics.source_text import SourceText
 from ..diagnostics.diagnostic_bag import DiagnosticBag
+from ..diagnostics.text_span import TextSpan
 from ..syntax.syntax_kind import SyntaxKind
 from ..syntax.syntax_token import SyntaxToken
 from ..syntax.syntax_facts import (
@@ -18,6 +19,9 @@ from ..ast.nodes import (
     BinaryExpression,
     AssignmentExpression,
     CallExpression,
+    ArrayLiteralExpression,
+    IndexExpression,
+    IndexAssignmentExpression,
     Statement,
     BlockStatement,
     ParameterNode,
@@ -132,30 +136,56 @@ class Parser:
 
     def _is_function_declaration_start(self) -> bool:
         k = self._cur_token.kind
-        return (
-            (is_type_keyword(k) or k in (SyntaxKind.LetKeyword, SyntaxKind.VarKeyword))
-            and self._peek(1).kind == SyntaxKind.IdentifierToken
-            and self._peek(2).kind == SyntaxKind.OpenParenthesisToken
-        )
+        if not (is_type_keyword(k) or k in (SyntaxKind.LetKeyword, SyntaxKind.VarKeyword)):
+            return False
+        # If primitive type: check if next is ident and next+1 is '('
+        # If array type: type [ ] ident (
+        if self._peek(1).kind == SyntaxKind.IdentifierToken and self._peek(2).kind == SyntaxKind.OpenParenthesisToken:
+            return True
+        if self._peek(1).kind == SyntaxKind.OpenBracketToken:
+            idx = 2
+            if self._peek(idx).kind == SyntaxKind.NumberToken:
+                idx += 1
+            if self._peek(idx).kind == SyntaxKind.CloseBracketToken:
+                return (
+                    self._peek(idx + 1).kind == SyntaxKind.IdentifierToken
+                    and self._peek(idx + 2).kind == SyntaxKind.OpenParenthesisToken
+                )
+        return False
 
     def _is_declaration_start(self) -> bool:
         k = self._cur_token.kind
         return is_type_keyword(k) or k in (SyntaxKind.LetKeyword, SyntaxKind.VarKeyword, SyntaxKind.ConstKeyword)
 
+    def parse_type_token(self) -> SyntaxToken:
+        """Parses a type token, which may be a primitive (e.g. 'int') or an array type (e.g. 'int[]', 'int[5]')."""
+        base_type_token = self._advance()
+        if self._check(SyntaxKind.OpenBracketToken):
+            open_b = self._advance()
+            sz_str = ""
+            if self._check(SyntaxKind.NumberToken):
+                num_tok = self._advance()
+                sz_str = str(num_tok.value)
+            close_b = self._match(SyntaxKind.CloseBracketToken)
+            full_span = TextSpan.from_bounds(base_type_token.span.start, close_b.span.end)
+            composite_text = f"{base_type_token.text}[{sz_str}]"
+            return SyntaxToken(base_type_token.kind, full_span, value=composite_text, text=composite_text)
+        return base_type_token
+
     def parse_function_declaration(self) -> FunctionDeclarationStatement:
-        return_type_token = self._advance()
+        return_type_token = self.parse_type_token()
         identifier_token = self._match(SyntaxKind.IdentifierToken)
         open_paren = self._match(SyntaxKind.OpenParenthesisToken)
 
         parameters: list[ParameterNode] = []
         if not self._check(SyntaxKind.CloseParenthesisToken):
-            param_type = self._advance()
+            param_type = self.parse_type_token()
             param_name = self._match(SyntaxKind.IdentifierToken)
             parameters.append(ParameterNode(param_type, param_name))
 
             while self._check(SyntaxKind.CommaToken):
                 self._advance()
-                param_type = self._advance()
+                param_type = self.parse_type_token()
                 param_name = self._match(SyntaxKind.IdentifierToken)
                 parameters.append(ParameterNode(param_type, param_name))
 
@@ -181,7 +211,7 @@ class Parser:
         return BlockStatement(open_brace, statements, close_brace)
 
     def parse_variable_declaration(self) -> VariableDeclarationStatement:
-        type_token = self._advance() # int, double, let, var, etc.
+        type_token = self.parse_type_token() # int, int[], double, let, var, etc.
         identifier = self._match(SyntaxKind.IdentifierToken)
 
         equals_token = None
@@ -293,23 +323,36 @@ class Parser:
         else:
             left = self._parse_primary_expression()
 
-        # Postfix ++ and --
-        if self._cur_token.kind in (SyntaxKind.PlusPlusToken, SyntaxKind.MinusMinusToken):
-            postfix_op = self._advance()
-            left = UnaryExpression(postfix_op, left, is_postfix=True)
+        # Postfix ++ and --, and array indexing [index]
+        while True:
+            if self._cur_token.kind in (SyntaxKind.PlusPlusToken, SyntaxKind.MinusMinusToken):
+                postfix_op = self._advance()
+                left = UnaryExpression(postfix_op, left, is_postfix=True)
+            elif self._cur_token.kind == SyntaxKind.OpenBracketToken:
+                open_b = self._advance()
+                index_expr = self.parse_expression(0)
+                close_b = self._match(SyntaxKind.CloseBracketToken)
+                left = IndexExpression(left, open_b, index_expr, close_b)
+            else:
+                break
 
         # Infix / Assignment
         while True:
             # Check for assignment
             if is_assignment_operator(self._cur_token.kind):
                 op_token = self._advance()
-                if not isinstance(left, VariableExpression):
-                    self.diagnostics.report(left.span, "The left-hand side of an assignment must be a variable.")
+                if isinstance(left, VariableExpression):
+                    right = self.parse_expression(0) # Right-associative
+                    left = AssignmentExpression(left.identifier_token, op_token, right)
+                    continue
+                elif isinstance(left, IndexExpression):
+                    right = self.parse_expression(0) # Right-associative
+                    left = IndexAssignmentExpression(left.target, left.open_bracket, left.index, left.close_bracket, op_token, right)
+                    continue
+                else:
+                    self.diagnostics.report(left.span, "The left-hand side of an assignment must be a variable or array index.")
                     right = self.parse_expression(0)
                     return left
-                right = self.parse_expression(0) # Right-associative
-                left = AssignmentExpression(left.identifier_token, op_token, right)
-                continue
 
             prec = get_binary_operator_precedence(self._cur_token.kind)
             if prec == 0 or prec <= parent_precedence:
@@ -325,6 +368,20 @@ class Parser:
 
     def _parse_primary_expression(self) -> Expression:
         cur = self._cur_token
+
+        # Array literal: [elem1, elem2, ...]
+        if cur.kind == SyntaxKind.OpenBracketToken:
+            open_b = self._advance()
+            elements: list[Expression] = []
+            if not self._check(SyntaxKind.CloseBracketToken):
+                elements.append(self.parse_expression(0))
+                while self._check(SyntaxKind.CommaToken):
+                    self._advance()
+                    if self._check(SyntaxKind.CloseBracketToken):
+                        break
+                    elements.append(self.parse_expression(0))
+            close_b = self._match(SyntaxKind.CloseBracketToken)
+            return ArrayLiteralExpression(open_b, elements, close_b)
 
         # Literals
         if cur.kind == SyntaxKind.NumberToken:

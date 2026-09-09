@@ -19,6 +19,9 @@ from ..binding.bound_nodes import (
     BoundAssignmentExpression,
     BoundUnaryExpression,
     BoundBinaryExpression,
+    BoundArrayLiteralExpression,
+    BoundIndexExpression,
+    BoundIndexAssignmentExpression,
 )
 from ..binding.types import (
     TypeInt,
@@ -28,6 +31,7 @@ from ..binding.types import (
     TypeString,
     TypeChar,
     TypeSymbol,
+    ArrayTypeSymbol,
 )
 
 class CEmitter:
@@ -46,6 +50,8 @@ class CEmitter:
             self._out.write("\n")
 
     def _map_type(self, t: TypeSymbol) -> str:
+        if isinstance(t, ArrayTypeSymbol):
+            return f"{self._map_type(t.element_type)}*"
         if t == TypeInt:
             return "long long"
         if t in (TypeFloat, TypeDouble):
@@ -231,4 +237,17 @@ class CEmitter:
             if op == "**":
                 return f"pow((double)({left_str}), (double)({right_str}))"
             return f"({left_str} {op} {right_str})"
+        if isinstance(expr, BoundArrayLiteralExpression):
+            elems = ", ".join(self._emit_expression(e) for e in expr.elements)
+            elem_t = self._map_type(expr.array_type.element_type) if isinstance(expr.array_type, ArrayTypeSymbol) else "long long"
+            return f"(({elem_t}[]){{{elems}}})"
+        if isinstance(expr, BoundIndexExpression):
+            t_str = self._emit_expression(expr.target)
+            idx_str = self._emit_expression(expr.index)
+            return f"{t_str}[{idx_str}]"
+        if isinstance(expr, BoundIndexAssignmentExpression):
+            t_str = self._emit_expression(expr.target)
+            idx_str = self._emit_expression(expr.index)
+            val_str = self._emit_expression(expr.value)
+            return f"{t_str}[{idx_str}] {expr.operator_kind} {val_str}"
         return ""

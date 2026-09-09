@@ -22,6 +22,9 @@ from ..binding.bound_nodes import (
     BoundUnaryExpression,
     BoundBinaryExpression,
     BoundFunctionDeclaration,
+    BoundArrayLiteralExpression,
+    BoundIndexExpression,
+    BoundIndexAssignmentExpression,
 )
 from ..binding.types import (
     TypeInt,
@@ -30,6 +33,7 @@ from ..binding.types import (
     TypeBool,
     TypeString,
     TypeVoid,
+    ArrayTypeSymbol,
 )
 from .llvm_types import to_llvm_type
 
@@ -383,6 +387,73 @@ class LLVMEmitter:
 
             call_name = f"call_{fn_name}" if llvm_func.function_type.return_type != ir.VoidType() else ""
             return self._builder.call(llvm_func, arg_values, name=call_name)
+
+        if isinstance(expr, BoundArrayLiteralExpression):
+            count = len(expr.elements)
+            elem_t = expr.array_type.element_type if isinstance(expr.array_type, ArrayTypeSymbol) else TypeInt
+            llvm_elem_t = to_llvm_type(elem_t)
+            # Allocate stack buffer for the array elements: [count x llvm_elem_t]
+            arr_type = ir.ArrayType(llvm_elem_t, max(count, 1))
+            with self._builder.goto_entry_block(): # type: ignore
+                arr_alloca = self._builder.alloca(arr_type, name="arr_lit")
+
+            # Store each element into its index in the stack buffer
+            for i, elem in enumerate(expr.elements):
+                val = self._emit_expression(elem)
+                val = self._coerce_type(val, elem.type, elem_t)
+                elem_ptr = self._builder.gep(
+                    arr_alloca,
+                    [ir.Constant(ir.IntType(32), 0), ir.Constant(ir.IntType(32), i)],
+                    inbounds=True,
+                    name=f"arr_elem_{i}"
+                )
+                self._builder.store(val, elem_ptr)
+
+            # Return a decayed pointer to the first element (llvm_elem_t*)
+            first_elem_ptr = self._builder.gep(
+                arr_alloca,
+                [ir.Constant(ir.IntType(32), 0), ir.Constant(ir.IntType(32), 0)],
+                inbounds=True,
+                name="arr_decay"
+            )
+            return first_elem_ptr
+
+        if isinstance(expr, BoundIndexExpression):
+            target_ptr = self._emit_expression(expr.target)
+            idx_val = self._emit_expression(expr.index)
+            # Ensure idx_val is i64
+            if idx_val.type != ir.IntType(64):
+                idx_val = self._builder.sext(idx_val, ir.IntType(64)) if idx_val.type.width < 64 else self._builder.trunc(idx_val, ir.IntType(64))
+            elem_ptr = self._builder.gep(target_ptr, [idx_val], inbounds=True, name="idx_ptr")
+            return self._builder.load(elem_ptr, name="idx_val")
+
+        if isinstance(expr, BoundIndexAssignmentExpression):
+            target_ptr = self._emit_expression(expr.target)
+            idx_val = self._emit_expression(expr.index)
+            if idx_val.type != ir.IntType(64):
+                idx_val = self._builder.sext(idx_val, ir.IntType(64)) if idx_val.type.width < 64 else self._builder.trunc(idx_val, ir.IntType(64))
+
+            elem_ptr = self._builder.gep(target_ptr, [idx_val], inbounds=True, name="idx_assign_ptr")
+            val = self._emit_expression(expr.value)
+            elem_t = expr.target.type.element_type if isinstance(expr.target.type, ArrayTypeSymbol) else expr.value.type
+            val = self._coerce_type(val, expr.value.type, elem_t)
+
+            op = expr.operator_kind
+            if op != "=":
+                old_val = self._builder.load(elem_ptr, name="old_elem_val")
+                base_op = op[:-1]
+                is_flt = (elem_t in (TypeFloat, TypeDouble))
+                if base_op == "+":
+                    val = self._builder.fadd(old_val, val) if is_flt else self._builder.add(old_val, val)
+                elif base_op == "-":
+                    val = self._builder.fsub(old_val, val) if is_flt else self._builder.sub(old_val, val)
+                elif base_op == "*":
+                    val = self._builder.fmul(old_val, val) if is_flt else self._builder.mul(old_val, val)
+                elif base_op == "/":
+                    val = self._builder.fdiv(old_val, val) if is_flt else self._builder.sdiv(old_val, val)
+
+            self._builder.store(val, elem_ptr)
+            return val
 
         if isinstance(expr, BoundAssignmentExpression):
             alloca = self._lookup_var(expr.variable.name)

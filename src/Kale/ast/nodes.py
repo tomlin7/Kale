@@ -116,6 +116,49 @@ class CallExpression(Expression):
     def children(self) -> list[SyntaxNode | SyntaxToken]:
         return [self.callee_token, self.open_paren, *self.arguments, self.close_paren]
 
+@dataclass(frozen=True)
+class ArrayLiteralExpression(Expression):
+    open_bracket: SyntaxToken
+    elements: list[Expression]
+    close_bracket: SyntaxToken
+
+    @property
+    def span(self) -> TextSpan:
+        return TextSpan.from_bounds(self.open_bracket.span.start, self.close_bracket.span.end)
+
+    def children(self) -> list[SyntaxNode | SyntaxToken]:
+        return [self.open_bracket, *self.elements, self.close_bracket]
+
+@dataclass(frozen=True)
+class IndexExpression(Expression):
+    target: Expression
+    open_bracket: SyntaxToken
+    index: Expression
+    close_bracket: SyntaxToken
+
+    @property
+    def span(self) -> TextSpan:
+        return TextSpan.from_bounds(self.target.span.start, self.close_bracket.span.end)
+
+    def children(self) -> list[SyntaxNode | SyntaxToken]:
+        return [self.target, self.open_bracket, self.index, self.close_bracket]
+
+@dataclass(frozen=True)
+class IndexAssignmentExpression(Expression):
+    target: Expression
+    open_bracket: SyntaxToken
+    index: Expression
+    close_bracket: SyntaxToken
+    operator_token: SyntaxToken
+    value: Expression
+
+    @property
+    def span(self) -> TextSpan:
+        return TextSpan.from_bounds(self.target.span.start, self.value.span.end)
+
+    def children(self) -> list[SyntaxNode | SyntaxToken]:
+        return [self.target, self.open_bracket, self.index, self.close_bracket, self.operator_token, self.value]
+
 # ==========================================
 # Statements
 # ==========================================
