@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kale-lang"
+version = "0.2.0"
+description = "A modern LLVM-backed compiler for the Kale programming language"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "colorama>=0.4.6",
+    "llvmlite>=0.40.0",
+]
+
+[project.scripts]
+kale = "kale.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

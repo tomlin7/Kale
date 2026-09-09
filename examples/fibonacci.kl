@@ -1,0 +1,12 @@
+int n = 10;
+int a = 0;
+int b = 1;
+int i = 0;
+print("Fibonacci sequence:");
+while (i < n) {
+    print(a);
+    int next = a + b;
+    a = b;
+    b = next;
+    i++;
+}

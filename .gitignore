@@ -137,9 +137,13 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
-# Kookie builds
+# Builds & Artifacts
 *.c
 *.exe
+*.ll
+*.bc
+*.o
+*.obj
 
 
 # Jetbrains

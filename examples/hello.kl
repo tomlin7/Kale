@@ -1,0 +1,2 @@
+string message = "Hello, Kale World!";
+print(message);
