@@ -1,0 +1,32 @@
+struct Point {
+    int x;
+    int y;
+};
+
+struct Rectangle {
+    Point origin;
+    int width;
+    int height;
+};
+
+int area(int w, int h) {
+    return w * h;
+}
+
+print("--- Struct Demo ---");
+
+Point p;
+p.x = 10;
+p.y = 20;
+print("Point coordinates: x =", p.x, "y =", p.y);
+
+Rectangle rect;
+rect.origin.x = p.x;
+rect.origin.y = p.y;
+rect.width = 15;
+rect.height = 30;
+
+print("Rectangle origin: (", rect.origin.x, ",", rect.origin.y, ")");
+int a = area(rect.width, rect.height);
+print("Rectangle width:", rect.width, "height:", rect.height);
+print("Calculated area:", a);

@@ -25,6 +25,9 @@ from ..binding.bound_nodes import (
     BoundArrayLiteralExpression,
     BoundIndexExpression,
     BoundIndexAssignmentExpression,
+    BoundMemberAccessExpression,
+    BoundMemberAssignmentExpression,
+    BoundStructDeclaration,
 )
 from ..binding.types import (
     TypeInt,
@@ -34,13 +37,15 @@ from ..binding.types import (
     TypeString,
     TypeVoid,
     ArrayTypeSymbol,
+    StructTypeSymbol,
 )
 from .llvm_types import to_llvm_type
 
 class LLVMEmitter:
     """Compiles a typed BoundProgram into an LLVM IR Module."""
     def __init__(self, module_name: str = "kale_module"):
-        self.module = ir.Module(name=module_name)
+        self.context = ir.Context()
+        self.module = ir.Module(name=module_name, context=self.context)
         try:
             self.module.triple = llvm.get_default_triple()
         except Exception:
@@ -111,11 +116,24 @@ class LLVMEmitter:
 
     def emit_module(self, program: BoundProgram) -> ir.Module:
         self._functions = {}
+        self._struct_types = {}
+
+        # Pass 0: Register identified struct types
+        for st_decl in program.structs:
+            s_name = f"struct.{st_decl.struct_type.name}"
+            llvm_struct = self.module.context.get_identified_type(s_name)
+            self._struct_types[st_decl.struct_type.name] = llvm_struct
+
+        # Set struct body element types
+        for st_decl in program.structs:
+            llvm_struct = self._struct_types[st_decl.struct_type.name]
+            field_types = [to_llvm_type(ftype, self._struct_types) for _, ftype in st_decl.struct_type.fields]
+            llvm_struct.set_body(*field_types)
 
         # Pass 1: Declare all user functions
         for fn_decl in program.functions:
-            param_types = [to_llvm_type(p.type) for p in fn_decl.symbol.parameters]
-            ret_type = to_llvm_type(fn_decl.symbol.return_type or TypeVoid)
+            param_types = [to_llvm_type(p.type, self._struct_types) for p in fn_decl.symbol.parameters]
+            ret_type = to_llvm_type(fn_decl.symbol.return_type or TypeVoid, self._struct_types)
             func_type = ir.FunctionType(ret_type, param_types)
             llvm_func = ir.Function(self.module, func_type, name=fn_decl.symbol.name)
             self._functions[fn_decl.symbol.name] = llvm_func
@@ -133,7 +151,7 @@ class LLVMEmitter:
             # Store parameters into stack allocas
             for p, arg in zip(fn_decl.symbol.parameters, llvm_func.args):
                 arg.name = p.name
-                alloca = self._builder.alloca(to_llvm_type(p.type), name=p.name)
+                alloca = self._builder.alloca(to_llvm_type(p.type, self._struct_types), name=p.name)
                 self._builder.store(arg, alloca)
                 self._declare_var(p.name, alloca)
 
@@ -177,7 +195,7 @@ class LLVMEmitter:
             self._pop_scope()
 
         elif isinstance(statement, BoundVariableDeclaration):
-            llvm_t = to_llvm_type(statement.variable.type)
+            llvm_t = to_llvm_type(statement.variable.type, self._struct_types)
             # Create alloca in the entry block for efficient stack promotion
             with self._builder.goto_entry_block(): # type: ignore
                 alloca = self._builder.alloca(llvm_t, name=statement.variable.name)
@@ -352,6 +370,28 @@ class LLVMEmitter:
             return self._builder.fptosi(value, ir.IntType(64))
         return value
 
+    def _get_lvalue_ptr(self, expr: BoundExpression) -> ir.Value:
+        if isinstance(expr, BoundVariableExpression):
+            ptr = self._lookup_var(expr.variable.name)
+            if ptr is None:
+                raise RuntimeError(f"Undefined variable '{expr.variable.name}'")
+            return ptr
+        if isinstance(expr, BoundIndexExpression):
+            target_ptr = self._emit_expression(expr.target)
+            idx_val = self._emit_expression(expr.index)
+            if idx_val.type != ir.IntType(64):
+                idx_val = self._builder.sext(idx_val, ir.IntType(64)) if idx_val.type.width < 64 else self._builder.trunc(idx_val, ir.IntType(64))
+            return self._builder.gep(target_ptr, [idx_val], inbounds=True, name="idx_lval_ptr")
+        if isinstance(expr, BoundMemberAccessExpression):
+            parent_ptr = self._get_lvalue_ptr(expr.target)
+            return self._builder.gep(
+                parent_ptr,
+                [ir.Constant(ir.IntType(32), 0), ir.Constant(ir.IntType(32), expr.member_index)],
+                inbounds=True,
+                name=f"member_{expr.member_name}_ptr"
+            )
+        raise RuntimeError(f"Cannot obtain lvalue pointer for {type(expr)}")
+
     def _emit_expression(self, expr: BoundExpression) -> ir.Value:
         if isinstance(expr, BoundLiteralExpression):
             if expr.value is None:
@@ -453,6 +493,35 @@ class LLVMEmitter:
                     val = self._builder.fdiv(old_val, val) if is_flt else self._builder.sdiv(old_val, val)
 
             self._builder.store(val, elem_ptr)
+            return val
+
+        if isinstance(expr, BoundMemberAccessExpression):
+            field_ptr = self._get_lvalue_ptr(expr)
+            if isinstance(expr.type, StructTypeSymbol):
+                return field_ptr
+            return self._builder.load(field_ptr, name=f"field_{expr.member_name}_val")
+
+        if isinstance(expr, BoundMemberAssignmentExpression):
+            target_expr = BoundMemberAccessExpression(expr.target, expr.member_name, expr.member_index, expr.member_type)
+            field_ptr = self._get_lvalue_ptr(target_expr)
+            val = self._emit_expression(expr.value)
+            val = self._coerce_type(val, expr.value.type, expr.member_type)
+
+            op = expr.operator_kind
+            if op != "=":
+                old_val = self._builder.load(field_ptr, name="old_field_val")
+                base_op = op[:-1]
+                is_flt = (expr.member_type in (TypeFloat, TypeDouble))
+                if base_op == "+":
+                    val = self._builder.fadd(old_val, val) if is_flt else self._builder.add(old_val, val)
+                elif base_op == "-":
+                    val = self._builder.fsub(old_val, val) if is_flt else self._builder.sub(old_val, val)
+                elif base_op == "*":
+                    val = self._builder.fmul(old_val, val) if is_flt else self._builder.mul(old_val, val)
+                elif base_op == "/":
+                    val = self._builder.fdiv(old_val, val) if is_flt else self._builder.sdiv(old_val, val)
+
+            self._builder.store(val, field_ptr)
             return val
 
         if isinstance(expr, BoundAssignmentExpression):

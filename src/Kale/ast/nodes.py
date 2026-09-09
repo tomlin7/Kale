@@ -159,6 +159,34 @@ class IndexAssignmentExpression(Expression):
     def children(self) -> list[SyntaxNode | SyntaxToken]:
         return [self.target, self.open_bracket, self.index, self.close_bracket, self.operator_token, self.value]
 
+@dataclass(frozen=True)
+class MemberAccessExpression(Expression):
+    target: Expression
+    dot_token: SyntaxToken
+    member_token: SyntaxToken
+
+    @property
+    def span(self) -> TextSpan:
+        return TextSpan.from_bounds(self.target.span.start, self.member_token.span.end)
+
+    def children(self) -> list[SyntaxNode | SyntaxToken]:
+        return [self.target, self.dot_token, self.member_token]
+
+@dataclass(frozen=True)
+class MemberAssignmentExpression(Expression):
+    target: Expression
+    dot_token: SyntaxToken
+    member_token: SyntaxToken
+    operator_token: SyntaxToken
+    value: Expression
+
+    @property
+    def span(self) -> TextSpan:
+        return TextSpan.from_bounds(self.target.span.start, self.value.span.end)
+
+    def children(self) -> list[SyntaxNode | SyntaxToken]:
+        return [self.target, self.dot_token, self.member_token, self.operator_token, self.value]
+
 # ==========================================
 # Statements
 # ==========================================
@@ -191,6 +219,34 @@ class ParameterNode(SyntaxNode):
 
     def children(self) -> list[SyntaxNode | SyntaxToken]:
         return [self.type_token, self.identifier_token]
+
+@dataclass(frozen=True)
+class StructFieldNode(SyntaxNode):
+    type_token: SyntaxToken
+    identifier_token: SyntaxToken
+    semicolon_token: SyntaxToken
+
+    @property
+    def span(self) -> TextSpan:
+        return TextSpan.from_bounds(self.type_token.span.start, self.semicolon_token.span.end)
+
+    def children(self) -> list[SyntaxNode | SyntaxToken]:
+        return [self.type_token, self.identifier_token, self.semicolon_token]
+
+@dataclass(frozen=True)
+class StructDeclarationStatement(Statement):
+    struct_keyword: SyntaxToken
+    identifier_token: SyntaxToken
+    open_brace: SyntaxToken
+    fields: list[StructFieldNode]
+    close_brace: SyntaxToken
+
+    @property
+    def span(self) -> TextSpan:
+        return TextSpan.from_bounds(self.struct_keyword.span.start, self.close_brace.span.end)
+
+    def children(self) -> list[SyntaxNode | SyntaxToken]:
+        return [self.struct_keyword, self.identifier_token, self.open_brace, *self.fields, self.close_brace]
 
 @dataclass(frozen=True)
 class FunctionDeclarationStatement(Statement):

@@ -27,6 +27,10 @@ from ..ast.nodes import (
     ArrayLiteralExpression,
     IndexExpression,
     IndexAssignmentExpression,
+    MemberAccessExpression,
+    MemberAssignmentExpression,
+    StructDeclarationStatement,
+    StructFieldNode,
 )
 from .types import (
     TypeSymbol,
@@ -39,6 +43,7 @@ from .types import (
     TypeVoid,
     TypeUnknown,
     ArrayTypeSymbol,
+    StructTypeSymbol,
     lookup_type,
     is_numeric,
     can_convert,
@@ -52,6 +57,7 @@ from .bound_nodes import (
     BoundBlockStatement,
     BoundVariableDeclaration,
     BoundFunctionDeclaration,
+    BoundStructDeclaration,
     BoundExpressionStatement,
     BoundIfStatement,
     BoundWhileStatement,
@@ -67,6 +73,8 @@ from .bound_nodes import (
     BoundArrayLiteralExpression,
     BoundIndexExpression,
     BoundIndexAssignmentExpression,
+    BoundMemberAccessExpression,
+    BoundMemberAssignmentExpression,
     BoundAssignmentExpression,
     BoundUnaryExpression,
     BoundUnaryOperator,
@@ -80,26 +88,81 @@ class Binder:
         self.diagnostics = diagnostics
         self._current_scope = Scope()
         self._current_function: FunctionSymbol | None = None
+        self._struct_types: dict[str, StructTypeSymbol] = {}
+
+    def _resolve_type(self, type_name: str) -> TypeSymbol:
+        # Check custom structs
+        if type_name in self._struct_types:
+            return self._struct_types[type_name]
+        # Check array of struct (e.g. Point[] or Point[10])
+        if type_name.endswith("]"):
+            bracket_start = type_name.find("[")
+            if bracket_start != -1:
+                base_name = type_name[:bracket_start].strip()
+                size_str = type_name[bracket_start + 1:-1].strip()
+                elem_t = self._resolve_type(base_name)
+                if elem_t is not TypeUnknown:
+                    sz = int(size_str) if size_str.isdigit() else None
+                    return ArrayTypeSymbol(elem_t, sz)
+        # Builtins
+        looked_up = lookup_type(type_name)
+        return looked_up if looked_up is not None else TypeUnknown
 
     def bind_program(self, compilation_unit: CompilationUnit) -> BoundProgram:
-        # Pass 1: Discover all function declarations and register signatures
+        # Pass 0: Discover and register all struct declarations
+        struct_decls: list[StructDeclarationStatement] = []
         function_decls: list[FunctionDeclarationStatement] = []
         top_level_stmts: list[Statement] = []
 
         for stmt in compilation_unit.statements:
-            if isinstance(stmt, FunctionDeclarationStatement):
+            if isinstance(stmt, StructDeclarationStatement):
+                struct_decls.append(stmt)
+                s_name = stmt.identifier_token.text
+                if s_name in self._struct_types:
+                    self.diagnostics.report(stmt.identifier_token.span, f"Struct '{s_name}' is already defined.")
+                else:
+                    # Temporary empty struct symbol to allow self-referencing pointers if needed later
+                    self._struct_types[s_name] = StructTypeSymbol(name=s_name, fields=())
+            elif isinstance(stmt, FunctionDeclarationStatement):
                 function_decls.append(stmt)
-                fn_name = stmt.identifier_token.text
-                ret_type = lookup_type(stmt.return_type_token.text) or TypeVoid
-                params: list[VariableSymbol] = []
-                for p in stmt.parameters:
-                    pt = lookup_type(p.type_token.text) or TypeUnknown
-                    params.append(VariableSymbol(name=p.identifier_token.text, type=pt))
-                fn_sym = FunctionSymbol(name=fn_name, parameters=tuple(params), return_type=ret_type)
-                if not self._current_scope.try_declare(fn_sym):
-                    self.diagnostics.report(stmt.identifier_token.span, f"Function '{fn_name}' is already declared in this scope.")
             else:
                 top_level_stmts.append(stmt)
+
+        # Populate struct fields
+        bound_structs: list[BoundStructDeclaration] = []
+        for s_stmt in struct_decls:
+            s_name = s_stmt.identifier_token.text
+            field_list: list[tuple[str, TypeSymbol]] = []
+            seen_fields: set[str] = set()
+            for f in s_stmt.fields:
+                fname = f.identifier_token.text
+                if fname in seen_fields:
+                    self.diagnostics.report(f.identifier_token.span, f"Duplicate field '{fname}' in struct '{s_name}'.")
+                seen_fields.add(fname)
+                ftype = self._resolve_type(f.type_token.text)
+                if ftype == TypeUnknown:
+                    self.diagnostics.report(f.type_token.span, f"Unknown type '{f.type_token.text}' for field '{fname}'.")
+                field_list.append((fname, ftype))
+
+            st_sym = StructTypeSymbol(name=s_name, fields=tuple(field_list))
+            self._struct_types[s_name] = st_sym
+            bound_structs.append(BoundStructDeclaration(st_sym))
+
+        # Pass 1: Discover all function declarations and register signatures
+        for stmt in function_decls:
+            fn_name = stmt.identifier_token.text
+            ret_type = self._resolve_type(stmt.return_type_token.text)
+            if ret_type == TypeUnknown and stmt.return_type_token.text != "void":
+                self.diagnostics.report(stmt.return_type_token.span, f"Unknown return type '{stmt.return_type_token.text}'.")
+            params: list[VariableSymbol] = []
+            for p in stmt.parameters:
+                pt = self._resolve_type(p.type_token.text)
+                if pt == TypeUnknown:
+                    self.diagnostics.report(p.type_token.span, f"Unknown parameter type '{p.type_token.text}'.")
+                params.append(VariableSymbol(name=p.identifier_token.text, type=pt))
+            fn_sym = FunctionSymbol(name=fn_name, parameters=tuple(params), return_type=ret_type)
+            if not self._current_scope.try_declare(fn_sym):
+                self.diagnostics.report(stmt.identifier_token.span, f"Function '{fn_name}' is already declared in this scope.")
 
         # Pass 2a: Bind function bodies
         bound_functions: list[BoundFunctionDeclaration] = []
@@ -126,6 +189,7 @@ class Binder:
             statements=bound_statements,
             root_scope=self._current_scope,
             functions=bound_functions,
+            structs=bound_structs,
         )
 
     def bind_statement(self, statement: Statement) -> BoundStatement | None:
@@ -182,8 +246,7 @@ class Binder:
             else:
                 var_type = TypeInt # default type
         else:
-            looked_up = lookup_type(type_token.text)
-            var_type = looked_up if looked_up is not None else TypeUnknown
+            var_type = self._resolve_type(type_token.text)
 
         # Check type compatibility
         if bound_init is not None and not can_convert(bound_init.type, var_type):
@@ -266,7 +329,45 @@ class Binder:
             return self._bind_index_expression(expression)
         if isinstance(expression, IndexAssignmentExpression):
             return self._bind_index_assignment_expression(expression)
+        if isinstance(expression, MemberAccessExpression):
+            return self._bind_member_access_expression(expression)
+        if isinstance(expression, MemberAssignmentExpression):
+            return self._bind_member_assignment_expression(expression)
         return BoundLiteralExpression(None, TypeUnknown)
+
+    def _bind_member_access_expression(self, expression: MemberAccessExpression) -> BoundExpression:
+        target = self.bind_expression(expression.target)
+        if not isinstance(target.type, StructTypeSymbol):
+            self.diagnostics.report(expression.target.span, f"Cannot access member of non-struct type '{target.type}'.")
+            return BoundLiteralExpression(None, TypeUnknown)
+
+        m_name = expression.member_token.text
+        m_type = target.type.get_field_type(m_name)
+        if m_type is None:
+            self.diagnostics.report(expression.member_token.span, f"Struct '{target.type.name}' has no field named '{m_name}'.")
+            return BoundLiteralExpression(None, TypeUnknown)
+
+        m_idx = target.type.get_field_index(m_name)
+        return BoundMemberAccessExpression(target, m_name, m_idx, m_type)
+
+    def _bind_member_assignment_expression(self, expression: MemberAssignmentExpression) -> BoundExpression:
+        target = self.bind_expression(expression.target)
+        if not isinstance(target.type, StructTypeSymbol):
+            self.diagnostics.report(expression.target.span, f"Cannot access member of non-struct type '{target.type}'.")
+            return BoundLiteralExpression(None, TypeUnknown)
+
+        m_name = expression.member_token.text
+        m_type = target.type.get_field_type(m_name)
+        if m_type is None:
+            self.diagnostics.report(expression.member_token.span, f"Struct '{target.type.name}' has no field named '{m_name}'.")
+            return BoundLiteralExpression(None, TypeUnknown)
+
+        m_idx = target.type.get_field_index(m_name)
+        value = self.bind_expression(expression.value)
+        if not can_convert(value.type, m_type):
+            self.diagnostics.report_cannot_convert(expression.value.span, str(value.type), str(m_type))
+
+        return BoundMemberAssignmentExpression(target, m_name, m_idx, m_type, value, expression.operator_token.text)
 
     def _bind_array_literal_expression(self, expression: ArrayLiteralExpression) -> BoundExpression:
         bound_elements = [self.bind_expression(elem) for elem in expression.elements]

@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
-from .types import TypeSymbol
+from .types import TypeSymbol, StructTypeSymbol
 from .symbols import VariableSymbol, FunctionSymbol
 from .scope import Scope
 
@@ -122,12 +122,40 @@ class BoundIndexAssignmentExpression(BoundExpression):
     def type(self) -> TypeSymbol:
         return self.value.type
 
+@dataclass(frozen=True)
+class BoundMemberAccessExpression(BoundExpression):
+    target: BoundExpression
+    member_name: str
+    member_index: int
+    member_type: TypeSymbol
+
+    @property
+    def type(self) -> TypeSymbol:
+        return self.member_type
+
+@dataclass(frozen=True)
+class BoundMemberAssignmentExpression(BoundExpression):
+    target: BoundExpression
+    member_name: str
+    member_index: int
+    member_type: TypeSymbol
+    value: BoundExpression
+    operator_kind: str = "="
+
+    @property
+    def type(self) -> TypeSymbol:
+        return self.member_type
+
 # ==========================================
 # Bound Statements
 # ==========================================
 
 class BoundStatement(BoundNode, ABC):
     pass
+
+@dataclass(frozen=True)
+class BoundStructDeclaration(BoundStatement):
+    struct_type: StructTypeSymbol
 
 @dataclass(frozen=True)
 class BoundBlockStatement(BoundStatement):
@@ -186,7 +214,10 @@ class BoundProgram(BoundNode):
     statements: list[BoundStatement]
     root_scope: Scope
     functions: list[BoundFunctionDeclaration] = None # type: ignore
+    structs: list[BoundStructDeclaration] = None # type: ignore
 
     def __post_init__(self):
         if self.functions is None:
             object.__setattr__(self, "functions", [])
+        if self.structs is None:
+            object.__setattr__(self, "structs", [])

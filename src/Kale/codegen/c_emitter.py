@@ -22,6 +22,9 @@ from ..binding.bound_nodes import (
     BoundArrayLiteralExpression,
     BoundIndexExpression,
     BoundIndexAssignmentExpression,
+    BoundMemberAccessExpression,
+    BoundMemberAssignmentExpression,
+    BoundStructDeclaration,
 )
 from ..binding.types import (
     TypeInt,
@@ -32,6 +35,7 @@ from ..binding.types import (
     TypeChar,
     TypeSymbol,
     ArrayTypeSymbol,
+    StructTypeSymbol,
 )
 
 class CEmitter:
@@ -50,6 +54,8 @@ class CEmitter:
             self._out.write("\n")
 
     def _map_type(self, t: TypeSymbol) -> str:
+        if isinstance(t, StructTypeSymbol):
+            return f"struct {t.name}"
         if isinstance(t, ArrayTypeSymbol):
             return f"{self._map_type(t.element_type)}*"
         if t == TypeInt:
@@ -84,6 +90,18 @@ class CEmitter:
         self._write_line("static inline void _kale_print_str(const char* x) { printf(\"%s\", x); }")
         self._write_line("static inline void _kale_println(void) { printf(\"\\n\"); }")
         self._write_line()
+
+        # Struct definitions
+        if program.structs:
+            self._write_line("// --- User Structs ---")
+            for st in program.structs:
+                self._write_line(f"struct {st.struct_type.name} {{")
+                self._indent_level += 1
+                for fname, ftype in st.struct_type.fields:
+                    self._write_line(f"{self._map_type(ftype)} {fname};")
+                self._indent_level -= 1
+                self._write_line("};")
+                self._write_line()
 
         # Forward declarations of user functions
         if program.functions:
@@ -250,4 +268,11 @@ class CEmitter:
             idx_str = self._emit_expression(expr.index)
             val_str = self._emit_expression(expr.value)
             return f"{t_str}[{idx_str}] {expr.operator_kind} {val_str}"
+        if isinstance(expr, BoundMemberAccessExpression):
+            t_str = self._emit_expression(expr.target)
+            return f"{t_str}.{expr.member_name}"
+        if isinstance(expr, BoundMemberAssignmentExpression):
+            t_str = self._emit_expression(expr.target)
+            val_str = self._emit_expression(expr.value)
+            return f"{t_str}.{expr.member_name} {expr.operator_kind} {val_str}"
         return ""

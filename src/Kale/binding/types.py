@@ -22,6 +22,30 @@ class ArrayTypeSymbol(TypeSymbol):
     def __repr__(self) -> str:
         return self.name
 
+@dataclass(frozen=True)
+class StructTypeSymbol(TypeSymbol):
+    fields: tuple[tuple[str, TypeSymbol], ...] = ()
+
+    def __init__(self, name: str, fields: tuple[tuple[str, TypeSymbol], ...] = ()):
+        object.__setattr__(self, "name", name)
+        object.__setattr__(self, "fields", fields)
+
+    def get_field_type(self, field_name: str) -> TypeSymbol | None:
+        for fname, ftype in self.fields:
+            if fname == field_name:
+                return ftype
+        return None
+
+    def get_field_index(self, field_name: str) -> int:
+        for idx, (fname, _) in enumerate(self.fields):
+            if fname == field_name:
+                return idx
+        return -1
+
+    def __repr__(self) -> str:
+        fields_str = ", ".join(f"{fname}: {ftype}" for fname, ftype in self.fields)
+        return f"struct {self.name} {{{fields_str}}}"
+
 # Built-in primitive types
 TypeInt = TypeSymbol("int")
 TypeFloat = TypeSymbol("float")
