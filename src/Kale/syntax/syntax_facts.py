@@ -9,6 +9,7 @@ KEYWORDS: dict[str, SyntaxKind] = {
     "enum": SyntaxKind.EnumKeyword,
     "extern": SyntaxKind.ExternKeyword,
     "fn": SyntaxKind.FnKeyword,
+    "operator": SyntaxKind.OperatorKeyword,
     "import": SyntaxKind.ImportKeyword,
     "from": SyntaxKind.FromKeyword,
     "as": SyntaxKind.AsKeyword,
@@ -126,3 +127,53 @@ def get_binary_operator_precedence(kind: SyntaxKind) -> int:
     if kind == SyntaxKind.PipePipeToken:
         return 1
     return 0
+
+OVERLOADABLE_OPERATORS: dict[SyntaxKind, str] = {
+    SyntaxKind.PlusToken: "+",
+    SyntaxKind.MinusToken: "-",
+    SyntaxKind.StarToken: "*",
+    SyntaxKind.SlashToken: "/",
+    SyntaxKind.PercentToken: "%",
+    SyntaxKind.DoubleStarToken: "**",
+    SyntaxKind.EqualsEqualsToken: "==",
+    SyntaxKind.BangEqualsToken: "!=",
+    SyntaxKind.LessToken: "<",
+    SyntaxKind.LessOrEqualsToken: "<=",
+    SyntaxKind.GreaterToken: ">",
+    SyntaxKind.GreaterOrEqualsToken: ">=",
+    SyntaxKind.AmpersandToken: "&",
+    SyntaxKind.PipeToken: "|",
+    SyntaxKind.HatToken: "^",
+    SyntaxKind.LeftShiftToken: "<<",
+    SyntaxKind.RightShiftToken: ">>",
+    SyntaxKind.BangToken: "!",
+    SyntaxKind.TildeToken: "~",
+}
+
+# String representation to mangling safe name
+OPERATOR_MANGLING_MAP: dict[str, str] = {
+    "+": "add",
+    "-": "sub",
+    "*": "mul",
+    "/": "div",
+    "%": "mod",
+    "**": "pow",
+    "==": "eq",
+    "!=": "ne",
+    "<": "lt",
+    "<=": "le",
+    ">": "gt",
+    ">=": "ge",
+    "&": "band",
+    "|": "bor",
+    "^": "bxor",
+    "<<": "shl",
+    ">>": "shr",
+    "!": "not",
+    "~": "bnot",
+    "[]": "index",
+}
+
+def is_overloadable_operator(kind: SyntaxKind) -> bool:
+    return kind in OVERLOADABLE_OPERATORS
+

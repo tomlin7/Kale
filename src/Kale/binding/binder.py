@@ -3,6 +3,7 @@ from typing import Any, Optional
 from ..diagnostics.diagnostic_bag import DiagnosticBag
 from ..syntax.syntax_kind import SyntaxKind
 from ..syntax.syntax_token import SyntaxToken
+from ..syntax.syntax_facts import OPERATOR_MANGLING_MAP, OVERLOADABLE_OPERATORS
 from ..ast.nodes import (
     CompilationUnit,
     Statement,
@@ -126,6 +127,8 @@ class Binder:
         self._imported_functions: list[BoundFunctionDeclaration] = []
         self._imported_structs: list[BoundStructDeclaration] = []
         self._imported_enums: list[BoundEnumDeclaration] = []
+        self._operator_functions: list[FunctionSymbol] = []
+        self._operator_counter: int = 0
 
     def _resolve_type(self, type_name: str) -> TypeSymbol:
         # Check qualified module types: e.g. geo.Point or math.Vec3 or math.Color
@@ -288,10 +291,20 @@ class Binder:
                 if struct_sym is None:
                     self.diagnostics.report(stmt.struct_name_token.span, f"Unknown struct '{s_name}' in method declaration.")
                 else:
-                    mangled_name = f"kale_{s_name}_{fn_name}"
+                    if fn_name.startswith("operator"):
+                        op_str = fn_name[len("operator"):]
+                        mangled_suffix = OPERATOR_MANGLING_MAP.get(op_str, op_str)
+                        mangled_name = f"kale_{s_name}_op_{mangled_suffix}"
+                    else:
+                        mangled_name = f"kale_{s_name}_{fn_name}"
                     # Auto-insert 'this' as first parameter (pointer to struct)
                     this_ptr_t = PointerTypeSymbol(base_type=struct_sym)
                     params.append(VariableSymbol(name="this", type=this_ptr_t))
+            elif fn_name.startswith("operator"):
+                op_str = fn_name[len("operator"):]
+                mangled_suffix = OPERATOR_MANGLING_MAP.get(op_str, op_str)
+                self._operator_counter += 1
+                mangled_name = f"kale_op_{mangled_suffix}_{self._operator_counter}"
 
             for p in stmt.parameters:
                 pt = self._resolve_type(p.type_token.text)
@@ -312,6 +325,8 @@ class Binder:
                     self.diagnostics.report(stmt.identifier_token.span, f"Method '{fn_name}' is already defined on struct '{struct_sym.name}'.")
                 else:
                     struct_sym.methods[fn_name] = fn_sym
+            elif fn_name.startswith("operator"):
+                self._operator_functions.append(fn_sym)
             else:
                 if not self._current_scope.try_declare(fn_sym):
                     self.diagnostics.report(stmt.identifier_token.span, f"Function '{fn_name}' is already declared in this scope.")
@@ -328,6 +343,15 @@ class Binder:
                 s_name = fn_stmt.struct_name_token.text
                 struct_sym = self._struct_types.get(s_name)
                 sym = struct_sym.get_method(fn_stmt.identifier_token.text) if struct_sym else None
+            elif fn_stmt.identifier_token.text.startswith("operator"):
+                fn_name = fn_stmt.identifier_token.text
+                stmt_param_types = [self._resolve_type(p.type_token.text) for p in fn_stmt.parameters]
+                sym = None
+                for op_fn in self._operator_functions:
+                    if op_fn.name == fn_name and len(op_fn.parameters) == len(stmt_param_types):
+                        if all(p.type == t for p, t in zip(op_fn.parameters, stmt_param_types)):
+                            sym = op_fn
+                            break
             else:
                 sym = self._current_scope.lookup(fn_stmt.identifier_token.text)
 
@@ -855,6 +879,23 @@ class Binder:
         target = self.bind_expression(expression.target)
         index = self.bind_expression(expression.index)
 
+        # Check operator[] on struct or struct pointer
+        st_sym = None
+        if isinstance(target.type, StructTypeSymbol):
+            st_sym = target.type
+        elif isinstance(target.type, PointerTypeSymbol) and isinstance(target.type.base_type, StructTypeSymbol):
+            st_sym = target.type.base_type
+
+        if st_sym is not None and st_sym.has_method("operator[]"):
+            method_sym = st_sym.get_method("operator[]")
+            receiver_arg = BoundAddressOfExpression(target, PointerTypeSymbol(target.type)) if isinstance(target.type, StructTypeSymbol) else target
+            # Validate index parameter
+            if len(method_sym.parameters) >= 2:
+                idx_param_t = method_sym.parameters[1].type
+                if not can_convert(index.type, idx_param_t):
+                    self.diagnostics.report_cannot_convert(expression.index.span, str(index.type), str(idx_param_t))
+            return BoundCallExpression(method_sym, [receiver_arg, index])
+
         if not isinstance(target.type, (ArrayTypeSymbol, PointerTypeSymbol)):
             self.diagnostics.report(expression.target.span, f"Cannot index a non-array type '{target.type}'.")
             return BoundLiteralExpression(None, TypeUnknown)
@@ -1023,6 +1064,30 @@ class Binder:
         operand = self.bind_expression(expression.operand)
         op_tok = expression.operator_token
 
+        # Check operator overload for struct types
+        op_fn_name = f"operator{op_tok.text}"
+        st_sym = None
+        if isinstance(operand.type, StructTypeSymbol):
+            st_sym = operand.type
+        elif isinstance(operand.type, PointerTypeSymbol) and isinstance(operand.type.base_type, StructTypeSymbol):
+            st_sym = operand.type.base_type
+
+        # 1. Struct method overload
+        if st_sym is not None and st_sym.has_method(op_fn_name):
+            m_sym = st_sym.get_method(op_fn_name)
+            first_arg = BoundAddressOfExpression(operand, PointerTypeSymbol(operand.type)) if isinstance(operand.type, StructTypeSymbol) else operand
+            return BoundCallExpression(m_sym, [first_arg])
+
+        # 2. Standalone operator overload
+        for fn_sym in self._operator_functions:
+            if fn_sym.name == op_fn_name and len(fn_sym.parameters) == 1:
+                p_type = fn_sym.parameters[0].type
+                if can_convert(operand.type, p_type):
+                    return BoundCallExpression(fn_sym, [operand])
+                elif isinstance(p_type, PointerTypeSymbol) and p_type.base_type == operand.type:
+                    addr_arg = BoundAddressOfExpression(operand, PointerTypeSymbol(operand.type))
+                    return BoundCallExpression(fn_sym, [addr_arg])
+
         # Increment / Decrement
         if op_tok.kind in (SyntaxKind.PlusPlusToken, SyntaxKind.MinusMinusToken):
             if not isinstance(operand, BoundVariableExpression):
@@ -1076,6 +1141,38 @@ class Binder:
         left = self.bind_expression(expression.left)
         right = self.bind_expression(expression.right)
         op_tok = expression.operator_token
+
+        # Check operator overload for struct types
+        op_fn_name = f"operator{op_tok.text}"
+
+        # 1. Struct method overload on left
+        left_st = None
+        if isinstance(left.type, StructTypeSymbol):
+            left_st = left.type
+        elif isinstance(left.type, PointerTypeSymbol) and isinstance(left.type.base_type, StructTypeSymbol):
+            left_st = left.type.base_type
+
+        if left_st is not None and left_st.has_method(op_fn_name):
+            m_sym = left_st.get_method(op_fn_name)
+            # Check right argument matches second parameter
+            if len(m_sym.parameters) >= 2:
+                param_t = m_sym.parameters[1].type
+                if can_convert(right.type, param_t) or (isinstance(param_t, PointerTypeSymbol) and param_t.base_type == right.type):
+                    first_arg = BoundAddressOfExpression(left, PointerTypeSymbol(left.type)) if isinstance(left.type, StructTypeSymbol) else left
+                    second_arg = BoundAddressOfExpression(right, PointerTypeSymbol(right.type)) if (isinstance(param_t, PointerTypeSymbol) and param_t.base_type == right.type) else right
+                    return BoundCallExpression(m_sym, [first_arg, second_arg])
+
+        # 2. Standalone operator function overload
+        for fn_sym in self._operator_functions:
+            if fn_sym.name == op_fn_name and len(fn_sym.parameters) == 2:
+                p1_t = fn_sym.parameters[0].type
+                p2_t = fn_sym.parameters[1].type
+                match_p1 = can_convert(left.type, p1_t) or (isinstance(p1_t, PointerTypeSymbol) and p1_t.base_type == left.type)
+                match_p2 = can_convert(right.type, p2_t) or (isinstance(p2_t, PointerTypeSymbol) and p2_t.base_type == right.type)
+                if match_p1 and match_p2:
+                    arg1 = BoundAddressOfExpression(left, PointerTypeSymbol(left.type)) if (isinstance(p1_t, PointerTypeSymbol) and p1_t.base_type == left.type) else left
+                    arg2 = BoundAddressOfExpression(right, PointerTypeSymbol(right.type)) if (isinstance(p2_t, PointerTypeSymbol) and p2_t.base_type == right.type) else right
+                    return BoundCallExpression(fn_sym, [arg1, arg2])
 
         # String concatenation
         if op_tok.kind == SyntaxKind.PlusToken and (left.type == TypeString or right.type == TypeString):

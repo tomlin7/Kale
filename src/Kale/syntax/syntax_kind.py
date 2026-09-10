@@ -29,6 +29,7 @@ class SyntaxKind(enum.Enum):
     EnumKeyword = enum.auto()
     ExternKeyword = enum.auto()
     FnKeyword = enum.auto()
+    OperatorKeyword = enum.auto()
     ImportKeyword = enum.auto()
     FromKeyword = enum.auto()
     AsKeyword = enum.auto()

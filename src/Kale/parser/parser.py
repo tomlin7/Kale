@@ -6,6 +6,8 @@ from ..syntax.syntax_token import SyntaxToken
 from ..syntax.syntax_facts import (
     is_type_keyword,
     is_assignment_operator,
+    is_overloadable_operator,
+    OVERLOADABLE_OPERATORS,
     get_unary_operator_precedence,
     get_binary_operator_precedence,
 )
@@ -191,12 +193,34 @@ class Parser:
                     return False
             else:
                 break
-        if self._peek(idx).kind != SyntaxKind.IdentifierToken:
+        # Check for function identifier or operator keyword
+        peek_tok = self._peek(idx)
+        if peek_tok.kind == SyntaxKind.OperatorKeyword:
+            idx += 1
+            # Next must be an overloadable operator, or [ followed by ]
+            if is_overloadable_operator(self._peek(idx).kind):
+                idx += 1
+            elif self._peek(idx).kind == SyntaxKind.OpenBracketToken and self._peek(idx + 1).kind == SyntaxKind.CloseBracketToken:
+                idx += 2
+            else:
+                return False
+            return self._peek(idx).kind == SyntaxKind.OpenParenthesisToken
+
+        if peek_tok.kind != SyntaxKind.IdentifierToken:
             return False
         idx += 1
-        # Check if struct method syntax: Type StructName.methodName(...)
-        if self._peek(idx).kind == SyntaxKind.DotToken and self._peek(idx + 1).kind == SyntaxKind.IdentifierToken:
-            idx += 2
+        # Check if struct method syntax: Type StructName.methodName(...) or Type StructName.operator+(...)
+        if self._peek(idx).kind == SyntaxKind.DotToken:
+            if self._peek(idx + 1).kind == SyntaxKind.IdentifierToken:
+                idx += 2
+            elif self._peek(idx + 1).kind == SyntaxKind.OperatorKeyword:
+                idx += 2
+                if is_overloadable_operator(self._peek(idx).kind):
+                    idx += 1
+                elif self._peek(idx).kind == SyntaxKind.OpenBracketToken and self._peek(idx + 1).kind == SyntaxKind.CloseBracketToken:
+                    idx += 2
+                else:
+                    return False
         return self._peek(idx).kind == SyntaxKind.OpenParenthesisToken
 
     def _is_declaration_start(self) -> bool:
@@ -363,12 +387,42 @@ class Parser:
         if self._check(SyntaxKind.FnKeyword):
             self._advance()
         return_type_token = self.parse_type_token()
-        identifier_token = self._match(SyntaxKind.IdentifierToken)
         struct_name_token = None
-        if self._check(SyntaxKind.DotToken):
-            self._advance()
-            struct_name_token = identifier_token
+        if self._check(SyntaxKind.OperatorKeyword):
+            op_kw = self._advance()
+            if is_overloadable_operator(self._cur_token.kind):
+                op_tok = self._advance()
+                op_name = f"operator{OVERLOADABLE_OPERATORS[op_tok.kind]}"
+                identifier_token = SyntaxToken(SyntaxKind.IdentifierToken, TextSpan.from_bounds(op_kw.span.start, op_tok.span.end), op_name, op_name)
+            elif self._check(SyntaxKind.OpenBracketToken) and self._peek(1).kind == SyntaxKind.CloseBracketToken:
+                b1 = self._advance()
+                b2 = self._advance()
+                op_name = "operator[]"
+                identifier_token = SyntaxToken(SyntaxKind.IdentifierToken, TextSpan.from_bounds(op_kw.span.start, b2.span.end), op_name, op_name)
+            else:
+                self.diagnostics.report(self._cur_token.span, f"Expected overloadable operator after 'operator', got '{self._cur_token.text}'.")
+                identifier_token = op_kw
+        else:
             identifier_token = self._match(SyntaxKind.IdentifierToken)
+            if self._check(SyntaxKind.DotToken):
+                self._advance()
+                struct_name_token = identifier_token
+                if self._check(SyntaxKind.OperatorKeyword):
+                    op_kw = self._advance()
+                    if is_overloadable_operator(self._cur_token.kind):
+                        op_tok = self._advance()
+                        op_name = f"operator{OVERLOADABLE_OPERATORS[op_tok.kind]}"
+                        identifier_token = SyntaxToken(SyntaxKind.IdentifierToken, TextSpan.from_bounds(op_kw.span.start, op_tok.span.end), op_name, op_name)
+                    elif self._check(SyntaxKind.OpenBracketToken) and self._peek(1).kind == SyntaxKind.CloseBracketToken:
+                        b1 = self._advance()
+                        b2 = self._advance()
+                        op_name = "operator[]"
+                        identifier_token = SyntaxToken(SyntaxKind.IdentifierToken, TextSpan.from_bounds(op_kw.span.start, b2.span.end), op_name, op_name)
+                    else:
+                        self.diagnostics.report(self._cur_token.span, f"Expected overloadable operator after 'operator', got '{self._cur_token.text}'.")
+                        identifier_token = op_kw
+                else:
+                    identifier_token = self._match(SyntaxKind.IdentifierToken)
         open_paren = self._match(SyntaxKind.OpenParenthesisToken)
 
         parameters: list[ParameterNode] = []
