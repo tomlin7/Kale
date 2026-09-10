@@ -1,0 +1,25 @@
+// packages/bindings/win32/user32.kl
+// Direct Win32 User32 and GDI bindings for Kale
+
+extern int GetSystemMetrics(int nIndex);
+extern void* GetDC(void* hWnd);
+extern int ReleaseDC(void* hWnd, void* hDC);
+extern int GetDeviceCaps(void* hdc, int nIndex);
+extern int MessageBeep(int uType);
+
+// System metrics constants
+int sm_cx_screen() {
+    return GetSystemMetrics(0); // SM_CXSCREEN
+}
+
+int sm_cy_screen() {
+    return GetSystemMetrics(1); // SM_CYSCREEN
+}
+
+int sm_cx_vscroll() {
+    return GetSystemMetrics(2); // SM_CXVSCROLL
+}
+
+int sm_cy_hscroll() {
+    return GetSystemMetrics(3); // SM_CYHSCROLL
+}
