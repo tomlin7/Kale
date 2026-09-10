@@ -149,6 +149,7 @@ class CallExpression(Expression):
     open_paren: SyntaxToken
     arguments: list[Expression]
     close_paren: SyntaxToken
+    type_arguments: list[SyntaxToken] | None = None
 
     @property
     def callee_token(self) -> SyntaxToken | None:
@@ -160,7 +161,11 @@ class CallExpression(Expression):
         return TextSpan.from_bounds(self.callee.span.start, self.close_paren.span.end)
 
     def children(self) -> list[SyntaxNode | SyntaxToken]:
-        return [self.callee, self.open_paren, *self.arguments, self.close_paren]
+        items: list[SyntaxNode | SyntaxToken] = [self.callee]
+        if self.type_arguments:
+            items.extend(self.type_arguments)
+        items.extend([self.open_paren, *self.arguments, self.close_paren])
+        return items
 
 @dataclass(frozen=True)
 class ArrayLiteralExpression(Expression):
@@ -333,13 +338,20 @@ class StructDeclarationStatement(Statement):
     open_brace: SyntaxToken
     fields: list[StructFieldNode]
     close_brace: SyntaxToken
+    type_parameters: list[SyntaxToken] | None = None
 
     @property
     def span(self) -> TextSpan:
         return TextSpan.from_bounds(self.struct_keyword.span.start, self.close_brace.span.end)
 
     def children(self) -> list[SyntaxNode | SyntaxToken]:
-        return [self.struct_keyword, self.identifier_token, self.open_brace, *self.fields, self.close_brace]
+        items: list[SyntaxNode | SyntaxToken] = [self.struct_keyword, self.identifier_token]
+        if self.type_parameters:
+            items.extend(self.type_parameters)
+        items.append(self.open_brace)
+        items.extend(self.fields)
+        items.append(self.close_brace)
+        return items
 
 @dataclass(frozen=True)
 class EnumMemberNode(SyntaxNode):
@@ -384,6 +396,7 @@ class FunctionDeclarationStatement(Statement):
     close_paren: SyntaxToken
     body: BlockStatement
     struct_name_token: SyntaxToken | None = None
+    type_parameters: list[SyntaxToken] | None = None
 
     @property
     def span(self) -> TextSpan:
@@ -393,8 +406,10 @@ class FunctionDeclarationStatement(Statement):
         items: list[SyntaxNode | SyntaxToken] = [self.return_type_token]
         if self.struct_name_token is not None:
             items.append(self.struct_name_token)
+        items.append(self.identifier_token)
+        if self.type_parameters:
+            items.extend(self.type_parameters)
         items.extend([
-            self.identifier_token,
             self.open_paren,
             *self.parameters,
             self.close_paren,

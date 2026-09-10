@@ -129,8 +129,229 @@ class Binder:
         self._imported_enums: list[BoundEnumDeclaration] = []
         self._operator_functions: list[FunctionSymbol] = []
         self._operator_counter: int = 0
+        self._generic_struct_templates: dict[str, StructDeclarationStatement] = {}
+        self._generic_func_templates: dict[str, FunctionDeclarationStatement] = {}
+        self._generic_methods: dict[str, list[FunctionDeclarationStatement]] = {}
+        self._bound_specialized_structs: dict[str, StructTypeSymbol] = {}
+        self._bound_specialized_functions: list[BoundFunctionDeclaration] = []
+        self._current_type_substitutions: dict[str, str] = {}
+
+    def _substitute_type_name(self, type_name: str) -> str:
+        if not self._current_type_substitutions:
+            return type_name
+        # Simple lookup
+        if type_name in self._current_type_substitutions:
+            return self._current_type_substitutions[type_name]
+        # Pointer
+        if type_name.endswith("*"):
+            base = type_name[:-1].strip()
+            return f"{self._substitute_type_name(base)}*"
+        # Array
+        if type_name.endswith("]"):
+            b_idx = type_name.find("[")
+            if b_idx != -1:
+                base = type_name[:b_idx].strip()
+                rest = type_name[b_idx:]
+                return f"{self._substitute_type_name(base)}{rest}"
+        # Generic instantiation e.g. Pair<T, int>
+        if "<" in type_name and type_name.endswith(">"):
+            b_idx = type_name.find("<")
+            base = type_name[:b_idx].strip()
+            args_str = type_name[b_idx + 1:-1]
+            # split top-level comma
+            args = [self._substitute_type_name(a.strip()) for a in self._split_type_args(args_str)]
+            return f"{base}<{', '.join(args)}>"
+        return type_name
+
+    def _split_type_args(self, s: str) -> list[str]:
+        res = []
+        cur = []
+        depth = 0
+        for ch in s:
+            if ch == '<':
+                depth += 1
+                cur.append(ch)
+            elif ch == '>':
+                depth -= 1
+                cur.append(ch)
+            elif ch == ',' and depth == 0:
+                res.append("".join(cur).strip())
+                cur = []
+            else:
+                cur.append(ch)
+        if cur:
+            res.append("".join(cur).strip())
+        return res
+
+    def _monomorphize_struct(self, base_name: str, type_args: list[str], span: Any) -> StructTypeSymbol | None:
+        template = self._generic_struct_templates.get(base_name)
+        if template is None or not template.type_parameters:
+            return None
+
+        if len(type_args) != len(template.type_parameters):
+            self.diagnostics.report(
+                span,
+                f"Generic struct '{base_name}' expects {len(template.type_parameters)} type arguments, but got {len(type_args)}."
+            )
+            return None
+
+        # Build mangled specialized name: Pair<int, string> -> Pair_int_string (strip * and [])
+        cleaned_args = [a.replace("*", "Ptr").replace("[", "_arr_").replace("]", "").replace(" ", "").replace(",", "_").replace("<", "_").replace(">", "_") for a in type_args]
+        specialized_name = f"{base_name}_{'_'.join(cleaned_args)}"
+
+        if specialized_name in self._struct_types:
+            return self._struct_types[specialized_name]
+
+        # Register forward declaration
+        new_struct_sym = StructTypeSymbol(name=specialized_name, fields=())
+        self._struct_types[specialized_name] = new_struct_sym
+
+        subst = {p.text: a for p, a in zip(template.type_parameters, type_args)}
+        old_subst = self._current_type_substitutions
+        self._current_type_substitutions = {**old_subst, **subst}
+
+        try:
+            field_list: list[tuple[str, TypeSymbol]] = []
+            for f in template.fields:
+                fname = f.identifier_token.text
+                subst_f_type_str = self._substitute_type_name(f.type_token.text)
+                ftype = self._resolve_type(subst_f_type_str)
+                field_list.append((fname, ftype))
+
+            # Update struct symbol with actual fields
+            object.__setattr__(new_struct_sym, "fields", tuple(field_list))
+
+            # Specialize methods declared on this generic struct
+            if base_name in self._generic_methods:
+                for method_decl in self._generic_methods[base_name]:
+                    self._monomorphize_method(base_name, type_args, new_struct_sym, method_decl)
+        finally:
+            self._current_type_substitutions = old_subst
+
+        self._bound_specialized_structs[specialized_name] = new_struct_sym
+        return new_struct_sym
+
+    def _monomorphize_method(
+        self,
+        base_name: str,
+        type_args: list[str],
+        specialized_struct: StructTypeSymbol,
+        method_decl: FunctionDeclarationStatement,
+    ):
+        fn_name = method_decl.identifier_token.text
+        m_name = fn_name
+        mangled_name = f"kale_{specialized_struct.name}_{fn_name}"
+        if fn_name.startswith("operator"):
+            op_str = fn_name[len("operator"):]
+            mangled_suffix = OPERATOR_MANGLING_MAP.get(op_str, op_str)
+            mangled_name = f"kale_{specialized_struct.name}_op_{mangled_suffix}"
+
+        subst_ret_str = self._substitute_type_name(method_decl.return_type_token.text)
+        ret_type = self._resolve_type(subst_ret_str)
+
+        params: list[VariableSymbol] = [
+            VariableSymbol(name="this", type=PointerTypeSymbol(base_type=specialized_struct))
+        ]
+        for p in method_decl.parameters:
+            subst_p_str = self._substitute_type_name(p.type_token.text)
+            pt = self._resolve_type(subst_p_str)
+            params.append(VariableSymbol(name=p.identifier_token.text, type=pt))
+
+        fn_sym = FunctionSymbol(
+            name=fn_name,
+            parameters=tuple(params),
+            return_type=ret_type,
+            mangled_name=mangled_name,
+            struct_type=specialized_struct,
+        )
+        specialized_struct.methods[fn_name] = fn_sym
+
+        # Bind method body
+        saved_fn = self._current_function
+        self._current_scope = Scope(parent=self._current_scope)
+        for p in params:
+            self._current_scope.try_declare(p)
+        self._current_function = fn_sym
+        bound_body = self._bind_block_statement(method_decl.body, new_scope=False)
+        self._current_function = saved_fn
+        self._current_scope = self._current_scope.parent # type: ignore
+
+        self._bound_specialized_functions.append(BoundFunctionDeclaration(fn_sym, bound_body))
+
+    def _monomorphize_function(
+        self,
+        func_name: str,
+        type_args: list[str],
+        span: Any,
+    ) -> FunctionSymbol | None:
+        template = self._generic_func_templates.get(func_name)
+        if template is None or not template.type_parameters:
+            return None
+
+        if len(type_args) != len(template.type_parameters):
+            self.diagnostics.report(
+                span,
+                f"Generic function '{func_name}' expects {len(template.type_parameters)} type arguments, but got {len(type_args)}."
+            )
+            return None
+
+        cleaned_args = [a.replace("*", "Ptr").replace("[", "_arr_").replace("]", "").replace(" ", "").replace(",", "_").replace("<", "_").replace(">", "_") for a in type_args]
+        mangled_name = f"kale_fn_{func_name}_{'_'.join(cleaned_args)}"
+
+        existing = self._current_scope.lookup(mangled_name)
+        if isinstance(existing, FunctionSymbol):
+            return existing
+
+        subst = {p.text: a for p, a in zip(template.type_parameters, type_args)}
+        old_subst = self._current_type_substitutions
+        self._current_type_substitutions = {**old_subst, **subst}
+
+        try:
+            subst_ret_str = self._substitute_type_name(template.return_type_token.text)
+            ret_type = self._resolve_type(subst_ret_str)
+            params: list[VariableSymbol] = []
+            for p in template.parameters:
+                subst_p_str = self._substitute_type_name(p.type_token.text)
+                pt = self._resolve_type(subst_p_str)
+                params.append(VariableSymbol(name=p.identifier_token.text, type=pt))
+
+            fn_sym = FunctionSymbol(
+                name=mangled_name,
+                parameters=tuple(params),
+                return_type=ret_type,
+                mangled_name=mangled_name,
+            )
+            self._current_scope.try_declare(fn_sym)
+
+            # Bind body
+            saved_fn = self._current_function
+            self._current_scope = Scope(parent=self._current_scope)
+            for p in params:
+                self._current_scope.try_declare(p)
+            self._current_function = fn_sym
+            bound_body = self._bind_block_statement(template.body, new_scope=False)
+            self._current_function = saved_fn
+            self._current_scope = self._current_scope.parent # type: ignore
+
+            self._bound_specialized_functions.append(BoundFunctionDeclaration(fn_sym, bound_body))
+            return fn_sym
+        finally:
+            self._current_type_substitutions = old_subst
 
     def _resolve_type(self, type_name: str) -> TypeSymbol:
+        # Check active type substitutions first (e.g. T -> int)
+        type_name = self._substitute_type_name(type_name)
+
+        # Check generic struct instantiation: e.g. List<int> or Pair<string, int>
+        if "<" in type_name and type_name.endswith(">"):
+            bracket_idx = type_name.find("<")
+            base_name = type_name[:bracket_idx].strip()
+            args_str = type_name[bracket_idx + 1:-1].strip()
+            type_args = [self._substitute_type_name(a.strip()) for a in self._split_type_args(args_str)]
+            st = self._monomorphize_struct(base_name, type_args, None)
+            if st is not None:
+                return st
+
         # Check qualified module types: e.g. geo.Point or math.Vec3 or math.Color
         if "." in type_name and not type_name.endswith("*") and not type_name.endswith("]"):
             parts = type_name.split(".", 1)
@@ -180,19 +401,30 @@ class Binder:
 
         for stmt in compilation_unit.statements:
             if isinstance(stmt, StructDeclarationStatement):
-                struct_decls.append(stmt)
                 s_name = stmt.identifier_token.text
-                if s_name in self._struct_types:
-                    self.diagnostics.report(stmt.identifier_token.span, f"Struct '{s_name}' is already defined.")
+                if stmt.type_parameters:
+                    # Generic struct template
+                    self._generic_struct_templates[s_name] = stmt
                 else:
-                    # Temporary empty struct symbol to allow self-referencing pointers if needed later
-                    self._struct_types[s_name] = StructTypeSymbol(name=s_name, fields=())
+                    struct_decls.append(stmt)
+                    if s_name in self._struct_types:
+                        self.diagnostics.report(stmt.identifier_token.span, f"Struct '{s_name}' is already defined.")
+                    else:
+                        # Temporary empty struct symbol to allow self-referencing pointers if needed later
+                        self._struct_types[s_name] = StructTypeSymbol(name=s_name, fields=())
             elif isinstance(stmt, EnumDeclarationStatement):
                 enum_decls.append(stmt)
             elif isinstance(stmt, ExternFunctionDeclarationStatement):
                 extern_decls.append(stmt)
             elif isinstance(stmt, FunctionDeclarationStatement):
-                function_decls.append(stmt)
+                if stmt.struct_name_token is not None and stmt.struct_name_token.text in self._generic_struct_templates:
+                    # Method on a generic struct template
+                    self._generic_methods.setdefault(stmt.struct_name_token.text, []).append(stmt)
+                elif stmt.type_parameters:
+                    # Generic function template
+                    self._generic_func_templates[stmt.identifier_token.text] = stmt
+                else:
+                    function_decls.append(stmt)
             elif isinstance(stmt, (ImportStatement, FromImportStatement)):
                 import_stmts.append(stmt)
             else:
@@ -372,11 +604,14 @@ class Binder:
             if bound_stmt is not None:
                 bound_statements.append(bound_stmt)
 
-        # Combine local structs and imported structs
+        # Combine local structs, imported structs, and monomorphized generic structs
         all_structs = list(self._imported_structs)
         for st in bound_structs:
             if not any(s.struct_type.name == st.struct_type.name for s in all_structs):
                 all_structs.append(st)
+        for s_sym in self._bound_specialized_structs.values():
+            if not any(s.struct_type.name == s_sym.name for s in all_structs):
+                all_structs.append(BoundStructDeclaration(s_sym))
 
         # Combine local enums and imported enums
         all_enums = list(self._imported_enums)
@@ -384,11 +619,14 @@ class Binder:
             if not any(e.enum_type.name == en.enum_type.name for e in all_enums):
                 all_enums.append(en)
 
-        # Combine local functions and imported functions
+        # Combine local functions, imported functions, and monomorphized generic functions
         all_functions = list(self._imported_functions)
         for fn in bound_functions:
             if not any(f.symbol.name == fn.symbol.name and f.symbol.mangled_name == fn.symbol.mangled_name for f in all_functions):
                 all_functions.append(fn)
+        for spec_fn in self._bound_specialized_functions:
+            if not any(f.symbol.mangled_name == spec_fn.symbol.mangled_name for f in all_functions):
+                all_functions.append(spec_fn)
 
         return BoundProgram(
             statements=bound_statements,
@@ -984,6 +1222,31 @@ class Binder:
             sym = self._current_scope.lookup(func_name)
             if isinstance(sym, FunctionSymbol):
                 symbol = sym
+            elif func_name in self._generic_func_templates:
+                template = self._generic_func_templates[func_name]
+                # If explicit type arguments given on call:
+                type_args = None
+                if expression.type_arguments:
+                    type_args = [t.text for t in expression.type_arguments]
+                elif template.type_parameters:
+                    # Type argument deduction from arguments
+                    bound_tentative_args = [self.bind_expression(a) for a in expression.arguments]
+                    deduced = {}
+                    for param, arg_b in zip(template.parameters, bound_tentative_args):
+                        p_tname = param.type_token.text
+                        for tp in template.type_parameters:
+                            if p_tname == tp.text:
+                                deduced[tp.text] = arg_b.type.name
+                            elif p_tname == f"{tp.text}*" and isinstance(arg_b.type, PointerTypeSymbol):
+                                deduced[tp.text] = arg_b.type.base_type.name
+                    if len(deduced) == len(template.type_parameters):
+                        type_args = [deduced[tp.text] for tp in template.type_parameters]
+
+                if type_args is not None:
+                    symbol = self._monomorphize_function(func_name, type_args, callee_span)
+                if symbol is None:
+                    self.diagnostics.report(callee_span, f"Could not deduce or specialize generic function '{func_name}'.")
+                    return BoundLiteralExpression(None, TypeUnknown)
             else:
                 self.diagnostics.report(callee_span, f"Function '{func_name}' is not defined.")
                 return BoundLiteralExpression(None, TypeUnknown)

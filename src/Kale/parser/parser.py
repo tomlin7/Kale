@@ -179,6 +179,19 @@ class Parser:
         # Advance through any dot qualifier e.g. geo.Point
         if self._peek(idx).kind == SyntaxKind.DotToken and self._peek(idx + 1).kind == SyntaxKind.IdentifierToken:
             idx += 2
+        # Advance through any generic type args e.g. List<int>
+        if self._peek(idx).kind == SyntaxKind.LessToken:
+            depth = 1
+            idx += 1
+            while depth > 0:
+                pk = self._peek(idx).kind
+                if pk == SyntaxKind.EndOfFileToken:
+                    return False
+                if pk == SyntaxKind.LessToken:
+                    depth += 1
+                elif pk == SyntaxKind.GreaterToken:
+                    depth -= 1
+                idx += 1
         # Advance through any '*' or '[...]' to check if ident followed by '('
         while True:
             if self._peek(idx).kind == SyntaxKind.StarToken:
@@ -221,17 +234,42 @@ class Parser:
                     idx += 2
                 else:
                     return False
+        # Optional generic function type parameters: fn T identity<T>(...)
+        if self._peek(idx).kind == SyntaxKind.LessToken:
+            depth = 1
+            idx += 1
+            while depth > 0:
+                pk = self._peek(idx).kind
+                if pk == SyntaxKind.EndOfFileToken:
+                    return False
+                if pk == SyntaxKind.LessToken:
+                    depth += 1
+                elif pk == SyntaxKind.GreaterToken:
+                    depth -= 1
+                idx += 1
         return self._peek(idx).kind == SyntaxKind.OpenParenthesisToken
 
     def _is_declaration_start(self) -> bool:
         k = self._cur_token.kind
         if is_type_keyword(k) or k in (SyntaxKind.LetKeyword, SyntaxKind.VarKeyword, SyntaxKind.ConstKeyword):
             return True
-        # Check if user-defined struct identifier as type: `Point p;`, `geo.Point p;`, `Point* p;`, or `Point[3] points;`
+        # Check if user-defined struct identifier as type: `Point p;`, `geo.Point p;`, `List<int> l;`, `Point* p;`, or `Point[3] points;`
         if k == SyntaxKind.IdentifierToken:
             idx = 1
             if self._peek(idx).kind == SyntaxKind.DotToken and self._peek(idx + 1).kind == SyntaxKind.IdentifierToken:
                 idx += 2
+            if self._peek(idx).kind == SyntaxKind.LessToken:
+                depth = 1
+                idx += 1
+                while depth > 0:
+                    pk = self._peek(idx).kind
+                    if pk == SyntaxKind.EndOfFileToken:
+                        return False
+                    if pk == SyntaxKind.LessToken:
+                        depth += 1
+                    elif pk == SyntaxKind.GreaterToken:
+                        depth -= 1
+                    idx += 1
             while True:
                 if self._peek(idx).kind == SyntaxKind.StarToken:
                     idx += 1
@@ -263,6 +301,19 @@ class Parser:
                 idx += 2
         else:
             return False
+
+        if self._peek(idx).kind == SyntaxKind.LessToken:
+            depth = 1
+            idx += 1
+            while depth > 0:
+                pk = self._peek(idx).kind
+                if pk == SyntaxKind.EndOfFileToken:
+                    return False
+                if pk == SyntaxKind.LessToken:
+                    depth += 1
+                elif pk == SyntaxKind.GreaterToken:
+                    depth -= 1
+                idx += 1
 
         # Scan any pointer stars or array brackets
         while True:
@@ -313,6 +364,14 @@ class Parser:
     def parse_struct_declaration(self) -> StructDeclarationStatement:
         struct_kw = self._match(SyntaxKind.StructKeyword)
         name_tok = self._match(SyntaxKind.IdentifierToken)
+        type_parameters = None
+        if self._check(SyntaxKind.LessToken):
+            self._advance()
+            type_parameters = [self._match(SyntaxKind.IdentifierToken)]
+            while self._check(SyntaxKind.CommaToken):
+                self._advance()
+                type_parameters.append(self._match(SyntaxKind.IdentifierToken))
+            self._match(SyntaxKind.GreaterToken)
         open_brace = self._match(SyntaxKind.OpenBraceToken)
         fields: list[StructFieldNode] = []
         while not self._check(SyntaxKind.CloseBraceToken) and not self._check(SyntaxKind.EndOfFileToken):
@@ -324,7 +383,7 @@ class Parser:
         # Optional trailing semicolon on struct declaration `struct Foo { ... };`
         if self._check(SyntaxKind.SemicolonToken):
             self._advance()
-        return StructDeclarationStatement(struct_kw, name_tok, open_brace, fields, close_brace)
+        return StructDeclarationStatement(struct_kw, name_tok, open_brace, fields, close_brace, type_parameters=type_parameters)
 
     def parse_enum_declaration(self) -> EnumDeclarationStatement:
         enum_kw = self._match(SyntaxKind.EnumKeyword)
@@ -361,6 +420,20 @@ class Parser:
             full_span = TextSpan.from_bounds(base_type_token.span.start, member_tok.span.end)
             base_type_token = SyntaxToken(SyntaxKind.IdentifierToken, full_span, value=comp_text, text=comp_text)
 
+        # Handle generic type arguments (e.g. List<int>, Pair<string, int>)
+        if self._check(SyntaxKind.LessToken):
+            less_tok = self._advance()
+            arg_type = self.parse_type_token()
+            arg_types = [arg_type.text]
+            while self._check(SyntaxKind.CommaToken):
+                self._advance()
+                arg_types.append(self.parse_type_token().text)
+            greater_tok = self._match(SyntaxKind.GreaterToken)
+            type_args_str = ", ".join(arg_types)
+            comp_text = f"{comp_text}<{type_args_str}>"
+            full_span = TextSpan.from_bounds(base_type_token.span.start, greater_tok.span.end)
+            base_type_token = SyntaxToken(SyntaxKind.IdentifierToken, full_span, value=comp_text, text=comp_text)
+
         # Handle pointer suffixes (int*, int**, Point*) and array brackets in sequence
         while True:
             if self._check(SyntaxKind.StarToken):
@@ -391,6 +464,7 @@ class Parser:
             self._advance()
         return_type_token = self.parse_type_token()
         struct_name_token = None
+        type_parameters = None
         if self._check(SyntaxKind.OperatorKeyword):
             op_kw = self._advance()
             if is_overloadable_operator(self._cur_token.kind):
@@ -426,6 +500,16 @@ class Parser:
                         identifier_token = op_kw
                 else:
                     identifier_token = self._match(SyntaxKind.IdentifierToken)
+
+        # Parse function type parameters: fn T identity<T>(T val) { ... }
+        if self._check(SyntaxKind.LessToken):
+            self._advance()
+            type_parameters = [self._match(SyntaxKind.IdentifierToken)]
+            while self._check(SyntaxKind.CommaToken):
+                self._advance()
+                type_parameters.append(self._match(SyntaxKind.IdentifierToken))
+            self._match(SyntaxKind.GreaterToken)
+
         open_paren = self._match(SyntaxKind.OpenParenthesisToken)
 
         parameters: list[ParameterNode] = []
@@ -450,6 +534,7 @@ class Parser:
             close_paren,
             body,
             struct_name_token=struct_name_token,
+            type_parameters=type_parameters,
         )
 
     def parse_extern_function_declaration(self) -> ExternFunctionDeclarationStatement:
