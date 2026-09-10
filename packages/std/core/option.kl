@@ -1,0 +1,48 @@
+// packages/std/core/option.kl
+// Standard Option<T> and Result<T, E> types for Kale
+
+struct Option<T> {
+    bool has_value;
+    T value;
+}
+
+fn bool Option.is_some() {
+    return this->has_value;
+}
+
+fn bool Option.is_none() {
+    return !this->has_value;
+}
+
+fn T Option.unwrap() {
+    return this->value;
+}
+
+fn T Option.unwrap_or(T default_value) {
+    if (this->has_value) {
+        return this->value;
+    }
+    return default_value;
+}
+
+struct Result<T, E> {
+    bool is_ok;
+    T value;
+    E error;
+}
+
+fn bool Result.ok() {
+    return this->is_ok;
+}
+
+fn bool Result.err() {
+    return !this->is_ok;
+}
+
+fn T Result.unwrap() {
+    return this->value;
+}
+
+fn E Result.unwrap_err() {
+    return this->error;
+}

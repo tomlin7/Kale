@@ -722,6 +722,7 @@ class Binder:
                 mangled = fn_sym.mangled_name
             else:
                 mangled = f"kale_{mod_base_name}_{fn_sym.name}"
+
             mangled_fn_sym = FunctionSymbol(
                 name=fn_sym.name,
                 parameters=fn_sym.parameters,
@@ -735,6 +736,16 @@ class Binder:
             mangled_fn_decl = BoundFunctionDeclaration(mangled_fn_sym, fn.body)
             if not any(f.symbol.mangled_name == mangled for f in self._imported_functions):
                 self._imported_functions.append(mangled_fn_decl)
+
+        # Import generic templates and their methods from sub_binder
+        for tname, template in sub_binder._generic_struct_templates.items():
+            if tname not in self._generic_struct_templates:
+                self._generic_struct_templates[tname] = template
+        for tname, meth_list in sub_binder._generic_methods.items():
+            self._generic_methods.setdefault(tname, []).extend([m for m in meth_list if m not in self._generic_methods.get(tname, [])])
+        for fname, template in sub_binder._generic_func_templates.items():
+            if fname not in self._generic_func_templates:
+                self._generic_func_templates[fname] = template
 
         mod_type = ModuleTypeSymbol(module_name=mod_base_name, file_path=norm_path, symbols=symbols, structs=structs, enums=enums)
         self._module_loader._bound_modules[norm_path] = (mod_base_name, mod_type)

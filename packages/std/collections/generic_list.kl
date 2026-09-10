@@ -1,0 +1,70 @@
+// packages/std/collections/generic_list.kl
+// Standard generic dynamic List<T> collection for Kale
+
+struct List<T> {
+    T* data;
+    int length;
+    int capacity;
+}
+
+fn int List.size() {
+    return this->length;
+}
+
+fn int List.cap() {
+    return this->capacity;
+}
+
+fn void List.init(int initial_cap) {
+    if (initial_cap <= 0) {
+        initial_cap = 8;
+    }
+    this->data = alloc(T, initial_cap);
+    this->length = 0;
+    this->capacity = initial_cap;
+}
+
+fn void List.push(T val) {
+    if (this->length >= this->capacity) {
+        int new_cap = this->capacity * 2;
+        if (new_cap <= 0) {
+            new_cap = 8;
+        }
+        T* new_data = alloc(T, new_cap);
+        for (int i = 0; i < this->length; i++) {
+            new_data[i] = this->data[i];
+        }
+        free(this->data);
+        this->data = new_data;
+        this->capacity = new_cap;
+    }
+    this->data[this->length] = val;
+    this->length++;
+}
+
+fn T List.get(int index) {
+    return this->data[index];
+}
+
+fn void List.set(int index, T val) {
+    if (index >= 0 && index < this->length) {
+        this->data[index] = val;
+    }
+}
+
+fn T List.operator[](int index) {
+    return this->data[index];
+}
+
+fn void List.clear() {
+    this->length = 0;
+}
+
+fn void List.destroy() {
+    if (this->data != (T*)0) {
+        free(this->data);
+        this->data = (T*)0;
+    }
+    this->length = 0;
+    this->capacity = 0;
+}
