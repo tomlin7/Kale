@@ -1,0 +1,13 @@
+// packages/std/core/string.kl
+// Standard string utilities for Kale
+
+extern int strlen(string s);
+extern int strcmp(string s1, string s2);
+
+int length(string s) {
+    return strlen(s);
+}
+
+bool equals(string s1, string s2) {
+    return strcmp(s1, s2) == 0;
+}

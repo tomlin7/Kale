@@ -261,6 +261,10 @@ class Lexer:
             return SyntaxToken(SyntaxKind.BadToken, TextSpan(start, length), None, raw_text)
 
         value = "".join(chars)
+        if quote_char == "'" and len(value) == 1:
+            # Single character literal
+            char_val = ord(value[0])
+            return SyntaxToken(SyntaxKind.CharToken, TextSpan(start, length), char_val, raw_text)
         return SyntaxToken(SyntaxKind.StringToken, TextSpan(start, length), value, raw_text)
 
     def lex_all(self, include_trivia: bool = False) -> list[SyntaxToken]:

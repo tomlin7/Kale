@@ -170,6 +170,7 @@ class LLVMEmitter:
             fn_key = fn_decl.symbol.mangled_name or fn_decl.symbol.name
             llvm_func = self._functions[fn_key]
             self._current_func = llvm_func
+            self._current_fn_sym = fn_decl.symbol
             entry_block = llvm_func.append_basic_block(name="entry")
             self._builder = ir.IRBuilder(entry_block)
             self._scopes = [{}]
@@ -190,7 +191,7 @@ class LLVMEmitter:
                 if fn_decl.symbol.return_type == TypeVoid or llvm_func.function_type.return_type == ir.VoidType():
                     self._builder.ret_void()
                 else:
-                    self._builder.ret(ir.Constant(to_llvm_type(fn_decl.symbol.return_type), 0))
+                    self._builder.ret(ir.Constant(to_llvm_type(fn_decl.symbol.return_type, self._struct_types), 0))
 
         # Pass 3: Create main() function for top-level statements
         func_type = ir.FunctionType(ir.IntType(32), [])
@@ -388,12 +389,19 @@ class LLVMEmitter:
             if statement.expression:
                 ret_val = self._emit_expression(statement.expression)
                 if ret_val.type != ret_t:
-                    if ret_t == ir.DoubleType() and ret_val.type == ir.IntType(64):
-                        ret_val = self._builder.sitofp(ret_val, ir.DoubleType())
-                    elif ret_t == ir.IntType(64) and ret_val.type == ir.DoubleType():
-                        ret_val = self._builder.fptosi(ret_val, ir.IntType(64))
-                    elif ret_t == ir.IntType(32) and ret_val.type == ir.IntType(64):
-                        ret_val = self._builder.trunc(ret_val, ir.IntType(32))
+                    ret_val = self._coerce_type(ret_val, statement.expression.type, getattr(getattr(self, "_current_fn_sym", None), "return_type", None) or TypeInt)
+                    if ret_val.type != ret_t:
+                        if ret_t == ir.DoubleType() and ret_val.type == ir.IntType(64):
+                            ret_val = self._builder.sitofp(ret_val, ir.DoubleType())
+                        elif ret_t == ir.IntType(64) and ret_val.type == ir.DoubleType():
+                            ret_val = self._builder.fptosi(ret_val, ir.IntType(64))
+                        elif ret_t.is_pointer and ret_val.type.is_pointer:
+                            ret_val = self._builder.bitcast(ret_val, ret_t)
+                        elif isinstance(ret_t, ir.IntType) and isinstance(ret_val.type, ir.IntType):
+                            if ret_val.type.width > ret_t.width:
+                                ret_val = self._builder.trunc(ret_val, ret_t)
+                            elif ret_val.type.width < ret_t.width:
+                                ret_val = self._builder.sext(ret_val, ret_t)
                 self._builder.ret(ret_val)
             else:
                 if ret_t == ir.VoidType():
@@ -449,6 +457,14 @@ class LLVMEmitter:
             return self._builder.sitofp(value, ir.DoubleType())
         if from_t in (TypeFloat, TypeDouble) and to_t == TypeInt:
             return self._builder.fptosi(value, ir.IntType(64))
+        if from_t == TypeInt and to_t == TypeChar:
+            return self._builder.trunc(value, ir.IntType(8))
+        if from_t == TypeChar and to_t == TypeInt:
+            return self._builder.sext(value, ir.IntType(64))
+        if from_t == TypeString and isinstance(to_t, PointerTypeSymbol) and to_t.base_type in (TypeChar, TypeVoid):
+            return self._builder.bitcast(value, ir.PointerType(ir.IntType(8)))
+        if isinstance(from_t, PointerTypeSymbol) and from_t.base_type in (TypeChar, TypeVoid) and to_t == TypeString:
+            return self._builder.bitcast(value, ir.PointerType(ir.IntType(8)))
         return value
 
     def _apply_compound_op(self, op: str, old_val: ir.Value, rhs_val: ir.Value, target_t: Any) -> ir.Value:
@@ -504,6 +520,9 @@ class LLVMEmitter:
         if isinstance(expr, BoundLiteralExpression):
             if expr.value is None:
                 return ir.Constant(ir.IntType(64), 0)
+            if expr.type == TypeChar:
+                char_int = expr.value if isinstance(expr.value, int) else (ord(expr.value[0]) if expr.value else 0)
+                return ir.Constant(ir.IntType(8), char_int)
             if isinstance(expr.value, bool):
                 return ir.Constant(ir.IntType(1), 1 if expr.value else 0)
             if isinstance(expr.value, int):
@@ -726,16 +745,14 @@ class LLVMEmitter:
             is_flt = (expr.operand.type in (TypeFloat, TypeDouble))
 
             if op_kind in ("++", "--"):
-                if isinstance(expr.operand, BoundVariableExpression):
-                    alloca = self._lookup_var(expr.operand.variable.name)
-                    one = ir.Constant(ir.DoubleType(), 1.0) if is_flt else ir.Constant(ir.IntType(64), 1)
-                    if op_kind == "++":
-                        new_val = self._builder.fadd(operand_val, one) if is_flt else self._builder.add(operand_val, one)
-                    else:
-                        new_val = self._builder.fsub(operand_val, one) if is_flt else self._builder.sub(operand_val, one)
-                    self._builder.store(new_val, alloca)
-                    return operand_val if expr.is_postfix else new_val
-                return operand_val
+                lval_ptr = self._get_lvalue_ptr(expr.operand)
+                one = ir.Constant(ir.DoubleType(), 1.0) if is_flt else ir.Constant(to_llvm_type(expr.operand.type, self._struct_types), 1)
+                if op_kind == "++":
+                    new_val = self._builder.fadd(operand_val, one) if is_flt else self._builder.add(operand_val, one)
+                else:
+                    new_val = self._builder.fsub(operand_val, one) if is_flt else self._builder.sub(operand_val, one)
+                self._builder.store(new_val, lval_ptr)
+                return operand_val if expr.is_postfix else new_val
 
             if op_kind == "-":
                 return self._builder.fneg(operand_val) if is_flt else self._builder.neg(operand_val)

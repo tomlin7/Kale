@@ -191,6 +191,11 @@ def can_convert(from_type: TypeSymbol, to_type: TypeSymbol) -> bool:
         return True
     if from_type == TypeInt and isinstance(to_type, EnumTypeSymbol):
         return True
+    # char <-> int conversion
+    if from_type == TypeChar and to_type == TypeInt:
+        return True
+    if from_type == TypeInt and to_type == TypeChar:
+        return True
     return False
 
 def can_explicit_cast(from_type: TypeSymbol, to_type: TypeSymbol) -> bool:
@@ -216,6 +221,11 @@ def can_explicit_cast(from_type: TypeSymbol, to_type: TypeSymbol) -> bool:
     if isinstance(from_type, PointerTypeSymbol) and to_type == TypeInt:
         return True
     if from_type == TypeInt and isinstance(to_type, PointerTypeSymbol):
+        return True
+    # String <-> char* or void*
+    if from_type == TypeString and isinstance(to_type, PointerTypeSymbol) and to_type.base_type in (TypeChar, TypeVoid):
+        return True
+    if isinstance(from_type, PointerTypeSymbol) and from_type.base_type in (TypeChar, TypeVoid) and to_type == TypeString:
         return True
     # Array <-> Pointer
     if isinstance(from_type, ArrayTypeSymbol) and isinstance(to_type, PointerTypeSymbol):

@@ -242,7 +242,7 @@ class Parser:
                     if self._peek(idx).kind == SyntaxKind.CloseBracketToken:
                         idx += 1
                     else:
-                        break
+                        return False
                 else:
                     break
             if self._peek(idx).kind == SyntaxKind.IdentifierToken:
@@ -369,6 +369,9 @@ class Parser:
                 full_span = TextSpan.from_bounds(base_type_token.span.start, star_tok.span.end)
                 base_type_token = SyntaxToken(base_type_token.kind, full_span, value=comp_text, text=comp_text)
             elif self._check(SyntaxKind.OpenBracketToken):
+                if self._peek(1).kind == SyntaxKind.CloseBracketToken and self._peek(2).kind == SyntaxKind.OpenParenthesisToken:
+                    # This is `operator [](...)`, not a type suffix!
+                    break
                 open_b = self._advance()
                 sz_str = ""
                 if self._check(SyntaxKind.NumberToken):
@@ -806,6 +809,10 @@ class Parser:
             return LiteralExpression(tok, tok.value)
 
         if cur.kind == SyntaxKind.StringToken:
+            tok = self._advance()
+            return LiteralExpression(tok, tok.value)
+
+        if cur.kind == SyntaxKind.CharToken:
             tok = self._advance()
             return LiteralExpression(tok, tok.value)
 

@@ -1024,6 +1024,8 @@ class Binder:
 
     def _bind_literal_expression(self, expression: LiteralExpression) -> BoundLiteralExpression:
         val = expression.value
+        if expression.literal_token.kind == SyntaxKind.CharToken:
+            return BoundLiteralExpression(val, TypeChar)
         if isinstance(val, bool):
             return BoundLiteralExpression(val, TypeBool)
         if isinstance(val, int):
@@ -1090,8 +1092,14 @@ class Binder:
 
         # Increment / Decrement
         if op_tok.kind in (SyntaxKind.PlusPlusToken, SyntaxKind.MinusMinusToken):
-            if not isinstance(operand, BoundVariableExpression):
-                self.diagnostics.report(expression.span, "Increment/decrement operand must be a variable.")
+            lvalue_nodes = (
+                BoundVariableExpression,
+                BoundIndexExpression,
+                BoundMemberAccessExpression,
+                BoundDereferenceExpression,
+            )
+            if not isinstance(operand, lvalue_nodes):
+                self.diagnostics.report(expression.span, "Increment/decrement operand must be an lvalue (variable, field, array index, or dereference).")
                 return operand
             if not is_numeric(operand.type):
                 self.diagnostics.report_undefined_unary_operator(op_tok.span, op_tok.text, str(operand.type))

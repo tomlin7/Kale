@@ -1,0 +1,85 @@
+// packages/std/collections/buffer.kl
+// Standard byte/character buffer for Kale
+
+extern int strlen(string s);
+
+struct ByteBuffer {
+    char* data;
+    int length;
+    int capacity;
+}
+
+ByteBuffer create_buffer(int initial_cap) {
+    ByteBuffer buf;
+    if (initial_cap <= 0) {
+        initial_cap = 16;
+    }
+    buf.data = alloc(char, initial_cap);
+    buf.length = 0;
+    buf.capacity = initial_cap;
+    return buf;
+}
+
+fn int ByteBuffer.size() {
+    return this->length;
+}
+
+fn int ByteBuffer.cap() {
+    return this->capacity;
+}
+
+fn void ByteBuffer.append_char(char c) {
+    if (this->length + 1 >= this->capacity) {
+        int new_cap = this->capacity * 2;
+        char* new_data = alloc(char, new_cap);
+        for (int i = 0; i < this->length; i++) {
+            new_data[i] = this->data[i];
+        }
+        free(this->data);
+        this->data = new_data;
+        this->capacity = new_cap;
+    }
+    this->data[this->length] = c;
+    this->length++;
+    this->data[this->length] = 0;
+}
+
+fn void ByteBuffer.append_str(string str) {
+    int str_len = strlen(str);
+    while (this->length + str_len + 1 >= this->capacity) {
+        int new_cap = this->capacity * 2;
+        char* new_data = alloc(char, new_cap);
+        for (int i = 0; i < this->length; i++) {
+            new_data[i] = this->data[i];
+        }
+        free(this->data);
+        this->data = new_data;
+        this->capacity = new_cap;
+    }
+    char* s_ptr = (char*)str;
+    for (int i = 0; i < str_len; i++) {
+        this->data[this->length + i] = s_ptr[i];
+    }
+    this->length += str_len;
+    this->data[this->length] = 0;
+}
+
+fn string ByteBuffer.to_string() {
+    return (string)this->data;
+}
+
+fn char ByteBuffer.operator[](int index) {
+    if (index < 0 || index >= this->length) {
+        return 0;
+    }
+    return this->data[index];
+}
+
+fn void ByteBuffer.destroy() {
+    if (this->data != (char*)0) {
+        free(this->data);
+        this->data = (char*)0;
+    }
+    this->length = 0;
+    this->capacity = 0;
+}

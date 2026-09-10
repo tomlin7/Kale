@@ -1,0 +1,83 @@
+// packages/std/collections/list.kl
+// Standard dynamic IntList collection for Kale
+
+struct IntList {
+    int* data;
+    int length;
+    int capacity;
+}
+
+IntList create_list(int initial_cap) {
+    IntList list;
+    if (initial_cap <= 0) {
+        initial_cap = 8;
+    }
+    list.data = alloc(int, initial_cap);
+    list.length = 0;
+    list.capacity = initial_cap;
+    return list;
+}
+
+fn int IntList.size() {
+    return this->length;
+}
+
+fn int IntList.cap() {
+    return this->capacity;
+}
+
+fn void IntList.push(int value) {
+    if (this->length >= this->capacity) {
+        int new_cap = this->capacity * 2;
+        if (new_cap == 0) {
+            new_cap = 8;
+        }
+        int* new_data = alloc(int, new_cap);
+        for (int i = 0; i < this->length; i++) {
+            new_data[i] = this->data[i];
+        }
+        free(this->data);
+        this->data = new_data;
+        this->capacity = new_cap;
+    }
+    this->data[this->length] = value;
+    this->length++;
+}
+
+fn int IntList.get(int index) {
+    if (index < 0 || index >= this->length) {
+        return 0;
+    }
+    return this->data[index];
+}
+
+fn void IntList.set(int index, int value) {
+    if (index >= 0 && index < this->length) {
+        this->data[index] = value;
+    }
+}
+
+fn int IntList.pop() {
+    if (this->length <= 0) {
+        return 0;
+    }
+    this->length--;
+    return this->data[this->length];
+}
+
+fn int IntList.operator[](int index) {
+    return this->get(index);
+}
+
+fn void IntList.clear() {
+    this->length = 0;
+}
+
+fn void IntList.destroy() {
+    if (this->data != (int*)0) {
+        free(this->data);
+        this->data = (int*)0;
+    }
+    this->length = 0;
+    this->capacity = 0;
+}

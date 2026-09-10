@@ -285,6 +285,9 @@ class CEmitter:
         if isinstance(expr, BoundLiteralExpression):
             if expr.value is None:
                 return "NULL"
+            if expr.type == TypeChar:
+                char_int = expr.value if isinstance(expr.value, int) else (ord(expr.value[0]) if expr.value else 0)
+                return str(char_int)
             if isinstance(expr.value, bool):
                 return "true" if expr.value else "false"
             if isinstance(expr.value, str):
