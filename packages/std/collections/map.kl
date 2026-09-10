@@ -1,0 +1,301 @@
+// packages/std/collections/map.kl
+// Specialized IntMap<V> and StringMap<V> for Kale
+
+import "packages/std/core/option.kl" as opt;
+
+extern void* malloc(int size);
+extern int strlen(string s);
+extern int strcmp(string s1, string s2);
+
+struct IntMapEntry<V> {
+    int key;
+    V value;
+    bool is_occupied;
+}
+
+struct IntMap<V> {
+    IntMapEntry<V>* entries;
+    int capacity;
+    int count;
+}
+
+fn void IntMap.init(int initial_cap) {
+    int cap = 16;
+    if (initial_cap > 16) {
+        cap = initial_cap;
+    }
+    this->capacity = cap;
+    this->count = 0;
+    this->entries = alloc(IntMapEntry<V>, cap);
+
+    int i = 0;
+    while (i < cap) {
+        this->entries[i].is_occupied = false;
+        i = i + 1;
+    }
+}
+
+fn int IntMap.size() {
+    return this->count;
+}
+
+fn int IntMap.cap() {
+    return this->capacity;
+}
+
+fn void IntMap.put(int key, V value) {
+    if (this->count * 2 >= this->capacity) {
+        int old_cap = this->capacity;
+        IntMapEntry<V>* old_entries = this->entries;
+
+        int new_cap = old_cap * 2;
+        this->capacity = new_cap;
+        this->count = 0;
+        this->entries = alloc(IntMapEntry<V>, new_cap);
+
+        int k = 0;
+        while (k < new_cap) {
+            this->entries[k].is_occupied = false;
+            k = k + 1;
+        }
+
+        int j = 0;
+        while (j < old_cap) {
+            if (old_entries[j].is_occupied) {
+                this->put(old_entries[j].key, old_entries[j].value);
+            }
+            j = j + 1;
+        }
+        free(old_entries);
+    }
+
+    int h = key ^ (key >> 16);
+    h = h * 73244475;
+    h = h ^ (h >> 15);
+    if (h < 0) {
+        h = 0 - h;
+    }
+    int idx = h % this->capacity;
+
+    while (this->entries[idx].is_occupied) {
+        if (this->entries[idx].key == key) {
+            this->entries[idx].value = value;
+            return;
+        }
+        idx = (idx + 1) % this->capacity;
+    }
+
+    this->entries[idx].key = key;
+    this->entries[idx].value = value;
+    this->entries[idx].is_occupied = true;
+    this->count = this->count + 1;
+}
+
+fn Option<V> IntMap.get(int key) {
+    Option<V> res;
+    res.has_value = false;
+
+    if (this->count == 0) {
+        return res;
+    }
+
+    int h = key ^ (key >> 16);
+    h = h * 73244475;
+    h = h ^ (h >> 15);
+    if (h < 0) {
+        h = 0 - h;
+    }
+    int idx = h % this->capacity;
+    int start_idx = idx;
+
+    while (this->entries[idx].is_occupied) {
+        if (this->entries[idx].key == key) {
+            res.has_value = true;
+            res.value = this->entries[idx].value;
+            return res;
+        }
+        idx = (idx + 1) % this->capacity;
+        if (idx == start_idx) {
+            break;
+        }
+    }
+    return res;
+}
+
+fn bool IntMap.contains(int key) {
+    Option<V> res = this->get(key);
+    return res.has_value;
+}
+
+fn void IntMap.destroy() {
+    if (this->entries != (IntMapEntry<V>*)0) {
+        free(this->entries);
+        this->entries = (IntMapEntry<V>*)0;
+    }
+    this->count = 0;
+    this->capacity = 0;
+}
+
+// ----------------------------------------------------
+// StringMap<V>
+// ----------------------------------------------------
+
+struct StringMapEntry<V> {
+    string key;
+    V value;
+    bool is_occupied;
+}
+
+struct StringMap<V> {
+    StringMapEntry<V>* entries;
+    int capacity;
+    int count;
+}
+
+fn void StringMap.init(int initial_cap) {
+    int cap = 16;
+    if (initial_cap > 16) {
+        cap = initial_cap;
+    }
+    this->capacity = cap;
+    this->count = 0;
+    this->entries = alloc(StringMapEntry<V>, cap);
+
+    int i = 0;
+    while (i < cap) {
+        this->entries[i].is_occupied = false;
+        i = i + 1;
+    }
+}
+
+fn int StringMap.size() {
+    return this->count;
+}
+
+fn int StringMap.cap() {
+    return this->capacity;
+}
+
+fn void StringMap.put(string key, V value) {
+    if (this->count * 2 >= this->capacity) {
+        int old_cap = this->capacity;
+        StringMapEntry<V>* old_entries = this->entries;
+
+        int new_cap = old_cap * 2;
+        this->capacity = new_cap;
+        this->count = 0;
+        this->entries = alloc(StringMapEntry<V>, new_cap);
+
+        int k = 0;
+        while (k < new_cap) {
+            this->entries[k].is_occupied = false;
+            k = k + 1;
+        }
+
+        int j = 0;
+        while (j < old_cap) {
+            if (old_entries[j].is_occupied) {
+                this->put(old_entries[j].key, old_entries[j].value);
+            }
+            j = j + 1;
+        }
+        free(old_entries);
+    }
+
+    // FNV-1a hash
+    int h = 2166136261;
+    int len = 0;
+    char* b = (char*)key;
+    while ((int)b[len] != 0) {
+        h = h ^ (int)b[len];
+        h = h * 16777619;
+        len = len + 1;
+    }
+    if (h < 0) {
+        h = 0 - h;
+    }
+    int idx = h % this->capacity;
+
+    while (this->entries[idx].is_occupied) {
+        char* k1 = (char*)this->entries[idx].key;
+        char* k2 = (char*)key;
+        int m = 0;
+        bool is_same = true;
+        while (is_same) {
+            if (k1[m] != k2[m]) {
+                is_same = false;
+            } else if ((int)k1[m] == 0) {
+                // reached null terminator on both
+                this->entries[idx].value = value;
+                return;
+            }
+            m = m + 1;
+        }
+        idx = (idx + 1) % this->capacity;
+    }
+
+    this->entries[idx].key = key;
+    this->entries[idx].value = value;
+    this->entries[idx].is_occupied = true;
+    this->count = this->count + 1;
+}
+
+fn Option<V> StringMap.get(string key) {
+    Option<V> res;
+    res.has_value = false;
+
+    if (this->count == 0) {
+        return res;
+    }
+
+    // FNV-1a hash
+    int h = 2166136261;
+    int len = 0;
+    char* b = (char*)key;
+    while ((int)b[len] != 0) {
+        h = h ^ (int)b[len];
+        h = h * 16777619;
+        len = len + 1;
+    }
+    if (h < 0) {
+        h = 0 - h;
+    }
+    int idx = h % this->capacity;
+    int start_idx = idx;
+
+    while (this->entries[idx].is_occupied) {
+        char* k1 = (char*)this->entries[idx].key;
+        char* k2 = (char*)key;
+        int m = 0;
+        bool is_same = true;
+        while (is_same) {
+            if (k1[m] != k2[m]) {
+                is_same = false;
+            } else if ((int)k1[m] == 0) {
+                res.has_value = true;
+                res.value = this->entries[idx].value;
+                return res;
+            }
+            m = m + 1;
+        }
+        idx = (idx + 1) % this->capacity;
+        if (idx == start_idx) {
+            break;
+        }
+    }
+    return res;
+}
+
+fn bool StringMap.contains(string key) {
+    Option<V> res = this->get(key);
+    return res.has_value;
+}
+
+fn void StringMap.destroy() {
+    if (this->entries != (StringMapEntry<V>*)0) {
+        free(this->entries);
+        this->entries = (StringMapEntry<V>*)0;
+    }
+    this->count = 0;
+    this->capacity = 0;
+}

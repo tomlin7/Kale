@@ -86,5 +86,35 @@ class TestStdText(unittest.TestCase):
         res = self.run_kale_jit(code)
         self.assertEqual(res, 43)
 
+    def test_piece_table_lines(self):
+        code = r"""
+        import "packages/std/text/piece_table.kl" as pt;
+        extern int strlen(string s);
+
+        pt.PieceTable buf;
+        buf.init("line 0\nline 1\nline 2");
+
+        int count = buf.line_count();
+        string l0 = buf.get_line(0);
+        string l1 = buf.get_line(1);
+        string l2 = buf.get_line(2);
+
+        int len0 = strlen(l0);
+        int len1 = strlen(l1);
+        int len2 = strlen(l2);
+
+        buf.destroy();
+
+        if (count != 3) {
+            return 1;
+        }
+        if (len0 != 6 || len1 != 6 || len2 != 6) {
+            return 2;
+        }
+        return 77;
+        """
+        res = self.run_kale_jit(code)
+        self.assertEqual(res, 77)
+
 if __name__ == "__main__":
     unittest.main()
