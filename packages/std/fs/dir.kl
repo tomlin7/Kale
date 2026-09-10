@@ -4,7 +4,6 @@
 import "packages/std/collections/generic_list.kl" as gl;
 
 extern void* malloc(int size);
-extern void free(void* ptr);
 extern int strlen(string s);
 
 // Windows _findfirst / _findnext CRT bindings

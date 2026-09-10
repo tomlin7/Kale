@@ -1,5 +1,5 @@
 import os
-from typing import Dict, List, Set, Optional, Tuple
+from typing import Dict, List, Set, Optional, Tuple, Any
 from ..diagnostics.source_text import SourceText
 from ..diagnostics.diagnostic_bag import DiagnosticBag
 from ..diagnostics.text_span import TextSpan
@@ -8,9 +8,17 @@ from ..ast.nodes import CompilationUnit, ImportStatement, FromImportStatement
 
 class ModuleLoader:
     """Manages file path resolution, cycle detection, and parsing across multiple Kale source modules."""
-    def __init__(self, diagnostics: DiagnosticBag, search_paths: Optional[List[str]] = None):
-        self.diagnostics = diagnostics
-        self.search_paths: List[str] = [os.path.abspath(p) for p in (search_paths or [])]
+    def __init__(self, diagnostics: Any = None, search_paths: Optional[List[str]] = None):
+        if isinstance(diagnostics, (list, tuple)):
+            # Handle search_paths passed as first argument
+            actual_search_paths = diagnostics
+            actual_diag = search_paths if isinstance(search_paths, DiagnosticBag) else DiagnosticBag()
+        else:
+            actual_diag = diagnostics if isinstance(diagnostics, DiagnosticBag) else DiagnosticBag()
+            actual_search_paths = search_paths
+
+        self.diagnostics = actual_diag
+        self.search_paths: List[str] = [os.path.abspath(p) for p in (actual_search_paths or [])]
 
         # Auto-discover monorepo packages and libs paths relative to this package installation
         repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # src/Kale/binding -> src/Kale -> src -> repo_root

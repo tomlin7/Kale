@@ -1,0 +1,236 @@
+// packages/std/text/piece_table.kl
+// High-performance Piece Table text buffer for Kale code editor
+
+import "packages/std/collections/generic_list.kl" as gl;
+
+extern void* malloc(int size);
+extern int strlen(string s);
+
+struct Piece {
+    int buffer_type; // 0 = original, 1 = add
+    int start;       // byte offset in source buffer
+    int length;      // length of this piece
+}
+
+struct PieceTable {
+    string original_buf;
+    int original_len;
+    char* add_buf;
+    int add_len;
+    int add_cap;
+    List<Piece> pieces;
+}
+
+fn void PieceTable.init(string initial_text) {
+    this->original_buf = initial_text;
+    this->original_len = strlen(initial_text);
+
+    this->add_cap = 1024;
+    this->add_len = 0;
+    this->add_buf = (char*)malloc(this->add_cap);
+
+    this->pieces.init(16);
+    if (this->original_len > 0) {
+        Piece initial_piece;
+        initial_piece.buffer_type = 0; // original
+        initial_piece.start = 0;
+        initial_piece.length = this->original_len;
+        this->pieces.push(initial_piece);
+    }
+}
+
+fn int PieceTable.total_length() {
+    int total = 0;
+    int i = 0;
+    int count = this->pieces.size();
+    while (i < count) {
+        Piece p = this->pieces.get(i);
+        total = total + p.length;
+        i = i + 1;
+    }
+    return total;
+}
+
+fn void PieceTable.insert(int offset, string text) {
+    int text_len = strlen(text);
+    if (text_len == 0) {
+        return;
+    }
+
+    // Append text to add_buf
+    while (this->add_len + text_len + 1 > this->add_cap) {
+        int new_cap = this->add_cap * 2;
+        char* new_buf = (char*)malloc(new_cap);
+        int k = 0;
+        while (k < this->add_len) {
+            new_buf[k] = this->add_buf[k];
+            k = k + 1;
+        }
+        free(this->add_buf);
+        this->add_buf = new_buf;
+        this->add_cap = new_cap;
+    }
+
+    int add_start = this->add_len;
+    char* src = (char*)text;
+    int m = 0;
+    while (m < text_len) {
+        this->add_buf[this->add_len] = src[m];
+        this->add_len = this->add_len + 1;
+        m = m + 1;
+    }
+
+    Piece new_p;
+    new_p.buffer_type = 1; // add buffer
+    new_p.start = add_start;
+    new_p.length = text_len;
+
+    // If pieces list is empty
+    if (this->pieces.size() == 0) {
+        this->pieces.push(new_p);
+        return;
+    }
+
+    // Find piece to split
+    List<Piece> new_pieces;
+    new_pieces.init(this->pieces.size() + 2);
+
+    int curr_pos = 0;
+    int i = 0;
+    int count = this->pieces.size();
+    bool inserted = false;
+
+    while (i < count) {
+        Piece p = this->pieces.get(i);
+        int piece_end = curr_pos + p.length;
+
+        if (!inserted && offset <= piece_end) {
+            int split_offset = offset - curr_pos;
+            if (split_offset == 0) {
+                // Insert right before piece
+                new_pieces.push(new_p);
+                new_pieces.push(p);
+            } else if (split_offset == p.length) {
+                // Insert right after piece
+                new_pieces.push(p);
+                new_pieces.push(new_p);
+            } else {
+                // Split piece in two
+                Piece left;
+                left.buffer_type = p.buffer_type;
+                left.start = p.start;
+                left.length = split_offset;
+
+                Piece right;
+                right.buffer_type = p.buffer_type;
+                right.start = p.start + split_offset;
+                right.length = p.length - split_offset;
+
+                new_pieces.push(left);
+                new_pieces.push(new_p);
+                new_pieces.push(right);
+            }
+            inserted = true;
+        } else {
+            new_pieces.push(p);
+        }
+
+        curr_pos = piece_end;
+        i = i + 1;
+    }
+
+    if (!inserted) {
+        new_pieces.push(new_p);
+    }
+
+    this->pieces.destroy();
+    this->pieces = new_pieces;
+}
+
+fn void PieceTable.delete(int offset, int length) {
+    if (length <= 0) {
+        return;
+    }
+
+    List<Piece> new_pieces;
+    new_pieces.init(this->pieces.size() + 2);
+
+    int del_start = offset;
+    int del_end = offset + length;
+
+    int curr_pos = 0;
+    int i = 0;
+    int count = this->pieces.size();
+
+    while (i < count) {
+        Piece p = this->pieces.get(i);
+        int piece_end = curr_pos + p.length;
+
+        if (piece_end <= del_start || curr_pos >= del_end) {
+            // Entirely outside deletion range
+            new_pieces.push(p);
+        } else {
+            // Overlaps with deletion range
+            // Keep left part if any
+            if (curr_pos < del_start) {
+                Piece left;
+                left.buffer_type = p.buffer_type;
+                left.start = p.start;
+                left.length = del_start - curr_pos;
+                new_pieces.push(left);
+            }
+            // Keep right part if any
+            if (piece_end > del_end) {
+                Piece right;
+                right.buffer_type = p.buffer_type;
+                right.start = p.start + (del_end - curr_pos);
+                right.length = piece_end - del_end;
+                new_pieces.push(right);
+            }
+        }
+
+        curr_pos = piece_end;
+        i = i + 1;
+    }
+
+    this->pieces.destroy();
+    this->pieces = new_pieces;
+}
+
+fn string PieceTable.get_text() {
+    int total_len = this->total_length();
+    string res = (string)malloc(total_len + 1);
+    char* dst = (char*)res;
+    int dst_idx = 0;
+
+    int i = 0;
+    int count = this->pieces.size();
+    while (i < count) {
+        Piece p = this->pieces.get(i);
+        char* src = (char*)0;
+        if (p.buffer_type == 0) {
+            src = (char*)this->original_buf;
+        } else {
+            src = this->add_buf;
+        }
+
+        int k = 0;
+        while (k < p.length) {
+            dst[dst_idx] = src[p.start + k];
+            dst_idx = dst_idx + 1;
+            k = k + 1;
+        }
+        i = i + 1;
+    }
+
+    dst[total_len] = (char)0;
+    return res;
+}
+
+fn void PieceTable.destroy() {
+    this->pieces.destroy();
+    if (this->add_buf != (char*)0) {
+        free(this->add_buf);
+        this->add_buf = (char*)0;
+    }
+}

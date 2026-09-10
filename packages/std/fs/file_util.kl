@@ -3,7 +3,6 @@
 
 import "packages/std/io/file.kl" as file_io;
 extern void* malloc(int size);
-extern void free(void* ptr);
 extern void* fopen(string filename, string mode);
 extern int fclose(void* stream);
 extern int fseek(void* stream, int offset, int whence);
