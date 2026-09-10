@@ -537,6 +537,9 @@ class Binder:
                 mangled_suffix = OPERATOR_MANGLING_MAP.get(op_str, op_str)
                 self._operator_counter += 1
                 mangled_name = f"kale_op_{mangled_suffix}_{self._operator_counter}"
+            elif self._current_file is not None and fn_name != "main":
+                mod_name = os.path.splitext(os.path.basename(self._current_file))[0]
+                mangled_name = f"kale_{mod_name}_{fn_name}"
 
             for p in stmt.parameters:
                 pt = self._resolve_type(p.type_token.text)
@@ -717,8 +720,8 @@ class Binder:
             # Keep extern functions un-mangled so they resolve to their actual C symbols
             if fn_sym.is_extern:
                 mangled = fn_sym.name
-            elif fn_sym.is_method:
-                # Struct methods already have their canonical mangled name (kale_{Struct}_{method})
+            elif fn_sym.is_method or fn_sym.mangled_name:
+                # Struct methods and already-mangled imported functions preserve their mangled name
                 mangled = fn_sym.mangled_name
             else:
                 mangled = f"kale_{mod_base_name}_{fn_sym.name}"
@@ -1474,6 +1477,18 @@ class Binder:
                 res_type = get_promoted_numeric_type(left.type, right.type)
                 op = BoundBinaryOperator(op_tok.text, left.type, right.type, res_type)
                 return BoundBinaryExpression(left, op, right)
+            # Pointer arithmetic: ptr + int, int + ptr, ptr - int
+            if op_tok.kind == SyntaxKind.PlusToken:
+                if isinstance(left.type, PointerTypeSymbol) and right.type == TypeInt:
+                    op = BoundBinaryOperator("+", left.type, right.type, left.type)
+                    return BoundBinaryExpression(left, op, right)
+                elif left.type == TypeInt and isinstance(right.type, PointerTypeSymbol):
+                    op = BoundBinaryOperator("+", left.type, right.type, right.type)
+                    return BoundBinaryExpression(left, op, right)
+            elif op_tok.kind == SyntaxKind.MinusToken:
+                if isinstance(left.type, PointerTypeSymbol) and right.type == TypeInt:
+                    op = BoundBinaryOperator("-", left.type, right.type, left.type)
+                    return BoundBinaryExpression(left, op, right)
             self.diagnostics.report_undefined_binary_operator(op_tok.span, op_tok.text, str(left.type), str(right.type))
             return left
 

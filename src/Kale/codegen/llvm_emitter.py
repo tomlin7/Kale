@@ -81,6 +81,10 @@ class LLVMEmitter:
         self._pow = self._declare_pow()
         self._malloc = self._declare_malloc()
         self._free = self._declare_free()
+        self._functions["printf"] = self._printf
+        self._functions["pow"] = self._pow
+        self._functions["malloc"] = self._malloc
+        self._functions["free"] = self._free
 
     def _declare_printf(self) -> ir.Function:
         func_type = ir.FunctionType(ir.IntType(32), [ir.PointerType()], var_arg=True)
@@ -136,7 +140,12 @@ class LLVMEmitter:
         return b.is_terminated
 
     def emit_module(self, program: BoundProgram) -> ir.Module:
-        self._functions = {}
+        self._functions = {
+            "printf": self._printf,
+            "pow": self._pow,
+            "malloc": self._malloc,
+            "free": self._free,
+        }
         self._struct_types = {}
 
         # Pass 0: Register identified struct types
@@ -779,6 +788,16 @@ class LLVMEmitter:
                 right_val = self._builder.sitofp(right_val, ir.DoubleType())
 
             is_flt = (left_val.type == ir.DoubleType() or right_val.type == ir.DoubleType())
+
+            # Pointer arithmetic
+            if isinstance(left_val.type, ir.PointerType) and isinstance(right_val.type, ir.IntType):
+                if op == "+":
+                    return self._builder.gep(left_val, [right_val], inbounds=True, name="ptr_add")
+                elif op == "-":
+                    neg_idx = self._builder.neg(right_val, name="ptr_neg_idx")
+                    return self._builder.gep(left_val, [neg_idx], inbounds=True, name="ptr_sub")
+            elif isinstance(right_val.type, ir.PointerType) and isinstance(left_val.type, ir.IntType) and op == "+":
+                return self._builder.gep(right_val, [left_val], inbounds=True, name="ptr_add")
 
             # Arithmetic
             if op == "+":

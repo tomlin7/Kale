@@ -68,6 +68,14 @@ class StructTypeSymbol(TypeSymbol):
     def has_method(self, method_name: str) -> bool:
         return method_name in self.methods
 
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, StructTypeSymbol):
+            return self.name == other.name
+        return False
+
+    def __hash__(self) -> int:
+        return hash(self.name)
+
     def __repr__(self) -> str:
         fields_str = ", ".join(f"{fname}: {ftype}" for fname, ftype in self.fields)
         return f"struct {self.name} {{{fields_str}}}"

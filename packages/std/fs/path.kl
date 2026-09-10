@@ -1,0 +1,176 @@
+// packages/std/fs/path.kl
+// Path manipulation utilities for Kale
+
+extern void* malloc(int size);
+extern int strlen(string s);
+
+bool is_sep(int ch) {
+    return ch == 47 || ch == 92; // '/' or '\'
+}
+
+int find_last_sep(string p) {
+    int len = strlen(p);
+    int idx = len - 1;
+    char* b = (char*)p;
+    while (idx >= 0) {
+        int ch = (int)b[idx];
+        if (ch == 47 || ch == 92) {
+            return idx;
+        }
+        idx = idx - 1;
+    }
+    return -1;
+}
+
+int find_last_dot(string p) {
+    int len = strlen(p);
+    int idx = len - 1;
+    char* b = (char*)p;
+    while (idx >= 0) {
+        int ch = (int)b[idx];
+        if (ch == 47 || ch == 92) {
+            return -1;
+        }
+        if (ch == 46) { // '.'
+            return idx;
+        }
+        idx = idx - 1;
+    }
+    return -1;
+}
+
+string dirname(string p) {
+    int sep_idx = find_last_sep(p);
+    if (sep_idx < 0) {
+        return ".";
+    }
+    if (sep_idx == 0) {
+        // Root '/' or '\'
+        string res = (string)malloc(2);
+        char* b = (char*)res;
+        b[0] = ((char*)p)[0];
+        b[1] = (char)0;
+        return res;
+    }
+    string res = (string)malloc(sep_idx + 1);
+    char* src_b = (char*)p;
+    char* dst_b = (char*)res;
+    int i = 0;
+    while (i < sep_idx) {
+        dst_b[i] = src_b[i];
+        i = i + 1;
+    }
+    dst_b[sep_idx] = (char)0;
+    return res;
+}
+
+string basename(string p) {
+    int sep_idx = find_last_sep(p);
+    int len = strlen(p);
+    int start = sep_idx + 1;
+    int sub_len = len - start;
+    if (sub_len <= 0) {
+        return "";
+    }
+    string res = (string)malloc(sub_len + 1);
+    char* src_b = (char*)p;
+    char* dst_b = (char*)res;
+    int i = 0;
+    while (i < sub_len) {
+        dst_b[i] = src_b[start + i];
+        i = i + 1;
+    }
+    dst_b[sub_len] = (char)0;
+    return res;
+}
+
+string ext(string p) {
+    int dot_idx = find_last_dot(p);
+    if (dot_idx < 0) {
+        return "";
+    }
+    int len = strlen(p);
+    int sub_len = len - dot_idx;
+    string res = (string)malloc(sub_len + 1);
+    char* src_b = (char*)p;
+    char* dst_b = (char*)res;
+    int i = 0;
+    while (i < sub_len) {
+        dst_b[i] = src_b[dot_idx + i];
+        i = i + 1;
+    }
+    dst_b[sub_len] = (char)0;
+    return res;
+}
+
+string join(string a, string b) {
+    int len_a = strlen(a);
+    int len_b = strlen(b);
+    if (len_a == 0) {
+        return b;
+    }
+    if (len_b == 0) {
+        return a;
+    }
+
+    char* a_bytes = (char*)a;
+    int last_a = (int)a_bytes[len_a - 1];
+    bool has_trailing_sep = (last_a == 47 || last_a == 92);
+
+    char* b_bytes = (char*)b;
+    int first_b = (int)b_bytes[0];
+    bool has_leading_sep = (first_b == 47 || first_b == 92);
+
+    if (has_trailing_sep && has_leading_sep) {
+        int total = (len_a - 1) + len_b;
+        string res = (string)malloc(total + 1);
+        char* dst = (char*)res;
+        int i = 0;
+        while (i < len_a) {
+            dst[i] = a_bytes[i];
+            i = i + 1;
+        }
+        int j = 1;
+        while (j < len_b) {
+            dst[len_a - 1 + j] = b_bytes[j];
+            j = j + 1;
+        }
+        dst[total] = (char)0;
+        return res;
+    }
+
+    if (!has_trailing_sep && !has_leading_sep) {
+        int total = len_a + 1 + len_b;
+        string res = (string)malloc(total + 1);
+        char* dst = (char*)res;
+        int i = 0;
+        while (i < len_a) {
+            dst[i] = a_bytes[i];
+            i = i + 1;
+        }
+        dst[len_a] = (char)47; // '/'
+        int j = 0;
+        while (j < len_b) {
+            dst[len_a + 1 + j] = b_bytes[j];
+            j = j + 1;
+        }
+        dst[total] = (char)0;
+        return res;
+    }
+
+    int total = len_a + len_b;
+    string res = (string)malloc(total + 1);
+    char* dst = (char*)res;
+    int i = 0;
+    while (i < len_a) {
+        dst[i] = a_bytes[i];
+        i = i + 1;
+    }
+    int j = 0;
+    while (j < len_b) {
+        dst[len_a + j] = b_bytes[j];
+        j = j + 1;
+    }
+    dst[total] = (char)0;
+    return res;
+}

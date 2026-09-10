@@ -1,0 +1,57 @@
+// packages/std/fs/dir.kl
+// Directory reading utilities for Windows and POSIX
+
+import "packages/std/collections/generic_list.kl" as gl;
+
+extern void* malloc(int size);
+extern void free(void* ptr);
+extern int strlen(string s);
+
+// Windows _findfirst / _findnext CRT bindings
+// struct _finddata64i32_t on MSVC CRT:
+// attrib (unsigned int 4 bytes)
+// time_create (int64 8 bytes)
+// time_access (int64 8 bytes)
+// time_write (int64 8 bytes)
+// size (int64 8 bytes)
+// name (char[260])
+// total size: 4 + 4(padding) + 8 + 8 + 8 + 8 + 260 = 300 bytes
+
+extern void* _findfirst64i32(string pattern, void* data);
+extern int _findnext64i32(void* handle, void* data);
+extern int _findclose(void* handle);
+
+List<string> list_dir(string pattern) {
+    List<string> res;
+    res.init(16);
+    void* data = malloc(320);
+
+    void* handle = _findfirst64i32(pattern, data);
+    if ((int)handle == -1) {
+        free(data);
+        return res;
+    }
+
+    int has_next = 0;
+    while (has_next == 0) {
+        // Filename is at byte offset 36 in _finddata64i32_t
+        char* name_ptr = (char*)data + 36;
+        int len = strlen((string)name_ptr);
+        if (len > 0) {
+            string copy = (string)malloc(len + 1);
+            char* copy_b = (char*)copy;
+            int i = 0;
+            while (i < len) {
+                copy_b[i] = name_ptr[i];
+                i = i + 1;
+            }
+            copy_b[len] = (char)0;
+            res.push(copy);
+        }
+        has_next = _findnext64i32(handle, data);
+    }
+
+    _findclose(handle);
+    free(data);
+    return res;
+}

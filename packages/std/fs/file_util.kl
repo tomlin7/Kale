@@ -1,0 +1,64 @@
+// packages/std/fs/file_util.kl
+// Higher-level file utilities for Kale
+
+import "packages/std/io/file.kl" as file_io;
+extern void* malloc(int size);
+extern void free(void* ptr);
+extern void* fopen(string filename, string mode);
+extern int fclose(void* stream);
+extern int fseek(void* stream, int offset, int whence);
+extern int ftell(void* stream);
+extern void* fread(void* ptr, int size, int nmemb, void* stream);
+extern int remove(string filename);
+
+bool exists(string path) {
+    void* handle = fopen(path, "rb");
+    if (handle != (void*)0) {
+        fclose(handle);
+        return true;
+    }
+    return false;
+}
+
+int file_size(string path) {
+    void* handle = fopen(path, "rb");
+    if (handle == (void*)0) {
+        return -1;
+    }
+    // SEEK_END is 2
+    fseek(handle, 0, 2);
+    int size = ftell(handle);
+    fclose(handle);
+    return size;
+}
+
+string read_to_string(string path) {
+    int sz = file_size(path);
+    if (sz < 0) {
+        return "";
+    }
+    void* handle = fopen(path, "rb");
+    if (handle == (void*)0) {
+        return "";
+    }
+    string buf = (string)malloc(sz + 1);
+    fread((void*)buf, 1, sz, handle);
+    char* b = (char*)buf;
+    b[sz] = (char)0;
+    fclose(handle);
+    return buf;
+}
+
+bool write_string(string path, string content) {
+    file_io.File f = file_io.open(path, "w");
+    if (!f.is_open) {
+        return false;
+    }
+    f.write(content);
+    f.close();
+    return true;
+}
+
+bool delete_file(string path) {
+    return remove(path) == 0;
+}
