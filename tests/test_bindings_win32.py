@@ -47,5 +47,25 @@ class TestWin32Bindings(unittest.TestCase):
         res = self.run_kale_jit(code)
         self.assertEqual(res, 42)
 
+    def test_win32_window_abstraction(self):
+        code = """
+        import "packages/bindings/win32/window.kl" as win;
+
+        win.Window w;
+        w.init(800, 600);
+
+        if (w.width != 800 || w.height != 600 || !w.is_open) {
+            return 1;
+        }
+
+        w.close();
+        if (w.is_open) {
+            return 2;
+        }
+        return 42;
+        """
+        res = self.run_kale_jit(code)
+        self.assertEqual(res, 42)
+
 if __name__ == "__main__":
     unittest.main()

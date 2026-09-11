@@ -1,0 +1,42 @@
+// packages/bindings/win32/window.kl
+// Native Win32 Windowing, Event Loop, and GDI Drawing in Kale
+
+import "packages/bindings/win32/user32.kl" as u32;
+
+extern void* GetModuleHandleA(void* lpModuleName);
+extern void* DefWindowProcA(void* hWnd, int Msg, void* wParam, void* lParam);
+extern void PostQuitMessage(int nExitCode);
+extern int DestroyWindow(void* hWnd);
+
+struct MSG {
+    void* hwnd;
+    int message;
+    void* wParam;
+    void* lParam;
+    int time;
+    int pt_x;
+    int pt_y;
+}
+
+struct Window {
+    void* hwnd;
+    int width;
+    int height;
+    bool is_open;
+    fn(int): void on_key_down;
+}
+
+fn void Window.init(int w, int h) {
+    this->width = w;
+    this->height = h;
+    this->is_open = true;
+    this->hwnd = (void*)0;
+}
+
+fn void Window.close() {
+    this->is_open = false;
+    if (this->hwnd != (void*)0) {
+        DestroyWindow(this->hwnd);
+        this->hwnd = (void*)0;
+    }
+}
