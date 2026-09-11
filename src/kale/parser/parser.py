@@ -253,6 +253,9 @@ class Parser:
         k = self._cur_token.kind
         if is_type_keyword(k) or k in (SyntaxKind.LetKeyword, SyntaxKind.VarKeyword, SyntaxKind.ConstKeyword):
             return True
+        # Check if function pointer type: fn(...)
+        if k == SyntaxKind.FnKeyword and self._peek(1).kind == SyntaxKind.OpenParenthesisToken:
+            return True
         # Check if user-defined struct identifier as type: `Point p;`, `geo.Point p;`, `List<int> l;`, `Point* p;`, or `Point[3] points;`
         if k == SyntaxKind.IdentifierToken:
             idx = 1
@@ -408,7 +411,29 @@ class Parser:
         return EnumDeclarationStatement(enum_kw, name_tok, open_brace, members, close_brace)
 
     def parse_type_token(self) -> SyntaxToken:
-        """Parses a type token, which may be a primitive (e.g. 'int'), pointer ('int*', 'Point**'), or array ('int[]', 'int[5]')."""
+        """Parses a type token, which may be a primitive (e.g. 'int'), pointer ('int*', 'Point**'), array ('int[]', 'int[5]'), or function type ('fn(int, int): int')."""
+        # Handle function pointer type: fn(T1, T2): RetType
+        if self._check(SyntaxKind.FnKeyword):
+            fn_tok = self._advance()
+            open_p = self._match(SyntaxKind.OpenParenthesisToken)
+            param_types: list[str] = []
+            if not self._check(SyntaxKind.CloseParenthesisToken):
+                param_types.append(self.parse_type_token().text)
+                while self._check(SyntaxKind.CommaToken):
+                    self._advance()
+                    param_types.append(self.parse_type_token().text)
+            close_p = self._match(SyntaxKind.CloseParenthesisToken)
+            ret_type_str = "void"
+            end_span = close_p.span
+            if self._check(SyntaxKind.ColonToken):
+                self._advance()
+                ret_tok = self.parse_type_token()
+                ret_type_str = ret_tok.text
+                end_span = ret_tok.span
+            comp_text = f"fn({', '.join(param_types)}): {ret_type_str}"
+            full_span = TextSpan.from_bounds(fn_tok.span.start, end_span.end)
+            return SyntaxToken(SyntaxKind.IdentifierToken, full_span, value=comp_text, text=comp_text)
+
         base_type_token = self._advance()
         comp_text = base_type_token.text
 

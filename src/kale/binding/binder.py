@@ -61,6 +61,7 @@ from .types import (
     TypeUnknown,
     ArrayTypeSymbol,
     PointerTypeSymbol,
+    FunctionTypeSymbol,
     StructTypeSymbol,
     EnumTypeSymbol,
     ModuleTypeSymbol,
@@ -104,6 +105,9 @@ from .bound_nodes import (
     BoundAddressOfExpression,
     BoundDereferenceExpression,
     BoundDereferenceAssignmentExpression,
+    BoundCallExpression,
+    BoundIndirectCallExpression,
+    BoundFunctionPointerExpression,
     BoundAllocExpression,
     BoundCastExpression,
     BoundAssignmentExpression,
@@ -341,6 +345,18 @@ class Binder:
     def _resolve_type(self, type_name: str) -> TypeSymbol:
         # Check active type substitutions first (e.g. T -> int)
         type_name = self._substitute_type_name(type_name)
+
+        # Check function pointer type: fn(T1, T2): RetType
+        if type_name.startswith("fn(") and "):" in type_name:
+            close_paren = type_name.find("):")
+            param_str = type_name[3:close_paren].strip()
+            ret_str = type_name[close_paren + 2:].strip()
+            param_types: list[TypeSymbol] = []
+            if param_str:
+                for p in self._split_type_args(param_str):
+                    param_types.append(self._resolve_type(p.strip()))
+            ret_type = self._resolve_type(ret_str)
+            return FunctionTypeSymbol(tuple(param_types), ret_type)
 
         # Check generic struct instantiation: e.g. List<int> or Pair<string, int>
         if "<" in type_name and type_name.endswith(">"):
@@ -1236,6 +1252,18 @@ class Binder:
             sym = self._current_scope.lookup(func_name)
             if isinstance(sym, FunctionSymbol):
                 symbol = sym
+            elif isinstance(sym, VariableSymbol) and isinstance(sym.type, FunctionTypeSymbol):
+                # Calling a function pointer variable!
+                fn_t = sym.type
+                callee_expr = BoundVariableExpression(sym)
+                bound_args = []
+                for i, arg in enumerate(expression.arguments):
+                    b_arg = self.bind_expression(arg)
+                    if i < len(fn_t.parameter_types):
+                        if not can_convert(b_arg.type, fn_t.parameter_types[i]):
+                            self.diagnostics.report_cannot_convert(arg.span, str(b_arg.type), str(fn_t.parameter_types[i]))
+                    bound_args.append(b_arg)
+                return BoundIndirectCallExpression(callee_expr, bound_args, fn_t.return_type)
             elif func_name in self._generic_func_templates:
                 template = self._generic_func_templates[func_name]
                 # If explicit type arguments given on call:
@@ -1263,6 +1291,22 @@ class Binder:
                     return BoundLiteralExpression(None, TypeUnknown)
             else:
                 self.diagnostics.report(callee_span, f"Function '{func_name}' is not defined.")
+                return BoundLiteralExpression(None, TypeUnknown)
+        elif isinstance(expression.callee, Expression):
+            # Arbitrary callee expression, e.g. struct_field() or array_elem()
+            callee_expr = self.bind_expression(expression.callee)
+            if isinstance(callee_expr.type, FunctionTypeSymbol):
+                fn_t = callee_expr.type
+                bound_args = []
+                for i, arg in enumerate(expression.arguments):
+                    b_arg = self.bind_expression(arg)
+                    if i < len(fn_t.parameter_types):
+                        if not can_convert(b_arg.type, fn_t.parameter_types[i]):
+                            self.diagnostics.report_cannot_convert(arg.span, str(b_arg.type), str(fn_t.parameter_types[i]))
+                    bound_args.append(b_arg)
+                return BoundIndirectCallExpression(callee_expr, bound_args, fn_t.return_type)
+            else:
+                self.diagnostics.report(expression.span, f"Expression of type '{callee_expr.type}' cannot be called as a function.")
                 return BoundLiteralExpression(None, TypeUnknown)
         else:
             self.diagnostics.report(expression.span, "Invalid function call target.")
@@ -1318,6 +1362,11 @@ class Binder:
     def _bind_variable_expression(self, expression: VariableExpression) -> BoundExpression:
         name = expression.identifier_token.text
         symbol = self._current_scope.lookup(name)
+        if isinstance(symbol, FunctionSymbol):
+            param_types = tuple(p.type for p in symbol.parameters)
+            ret_type = symbol.return_type or TypeVoid
+            fn_t = FunctionTypeSymbol(param_types, ret_type)
+            return BoundFunctionPointerExpression(symbol, fn_t)
         if symbol is None or not (isinstance(symbol, VariableSymbol) or isinstance(symbol, ModuleSymbol)):
             self.diagnostics.report_undefined_variable(expression.identifier_token.span, name)
             return BoundLiteralExpression(None, TypeUnknown)

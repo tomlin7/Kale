@@ -36,6 +36,21 @@ class PointerTypeSymbol(TypeSymbol):
         return self.name
 
 @dataclass(frozen=True)
+class FunctionTypeSymbol(TypeSymbol):
+    parameter_types: tuple[TypeSymbol, ...] = ()
+    return_type: TypeSymbol = None # type: ignore
+
+    def __init__(self, parameter_types: tuple[TypeSymbol, ...], return_type: TypeSymbol):
+        param_str = ", ".join(p.name for p in parameter_types)
+        name = f"fn({param_str}): {return_type.name}"
+        object.__setattr__(self, "name", name)
+        object.__setattr__(self, "parameter_types", parameter_types)
+        object.__setattr__(self, "return_type", return_type)
+
+    def __repr__(self) -> str:
+        return self.name
+
+@dataclass(frozen=True)
 class StructTypeSymbol(TypeSymbol):
     fields: tuple[tuple[str, TypeSymbol], ...] = ()
     methods: dict[str, Any] = None  # type: ignore
@@ -179,6 +194,20 @@ def can_convert(from_type: TypeSymbol, to_type: TypeSymbol) -> bool:
         return True
     if from_type == TypeUnknown or to_type == TypeUnknown:
         return True
+    # Function pointer conversions: exact matching parameter types and return type
+    if isinstance(from_type, FunctionTypeSymbol) and isinstance(to_type, FunctionTypeSymbol):
+        if len(from_type.parameter_types) != len(to_type.parameter_types):
+            return False
+        if not can_convert(from_type.return_type, to_type.return_type):
+            return False
+        for p1, p2 in zip(from_type.parameter_types, to_type.parameter_types):
+            if not can_convert(p2, p1): # Contravariant parameters
+                return False
+        return True
+    # Function type decaying or converting to void*
+    if isinstance(from_type, FunctionTypeSymbol) and isinstance(to_type, PointerTypeSymbol):
+        if to_type.base_type == TypeVoid:
+            return True
     # Pointer conversions (int* to int*, or array decaying to pointer int[] -> int*)
     if isinstance(from_type, PointerTypeSymbol) and isinstance(to_type, PointerTypeSymbol):
         return can_convert(from_type.base_type, to_type.base_type)

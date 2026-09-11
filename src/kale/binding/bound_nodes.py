@@ -93,6 +93,25 @@ class BoundCallExpression(BoundExpression):
         return self.function.type
 
 @dataclass(frozen=True)
+class BoundIndirectCallExpression(BoundExpression):
+    callee: BoundExpression
+    arguments: list[BoundExpression]
+    return_type: TypeSymbol
+
+    @property
+    def type(self) -> TypeSymbol:
+        return self.return_type
+
+@dataclass(frozen=True)
+class BoundFunctionPointerExpression(BoundExpression):
+    function: FunctionSymbol
+    fn_type: TypeSymbol
+
+    @property
+    def type(self) -> TypeSymbol:
+        return self.fn_type
+
+@dataclass(frozen=True)
 class BoundArrayLiteralExpression(BoundExpression):
     elements: list[BoundExpression]
     array_type: TypeSymbol

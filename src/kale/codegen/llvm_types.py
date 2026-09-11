@@ -10,6 +10,7 @@ from ..binding.types import (
     TypeVoid,
     ArrayTypeSymbol,
     PointerTypeSymbol,
+    FunctionTypeSymbol,
     StructTypeSymbol,
     EnumTypeSymbol,
 )
@@ -21,6 +22,11 @@ def to_llvm_type(type_symbol: TypeSymbol, struct_map: dict[str, ir.Type] | None 
             return ir.PointerType(ir.IntType(8))
         base_t = to_llvm_type(type_symbol.base_type, struct_map)
         return ir.PointerType(base_t)
+    if isinstance(type_symbol, FunctionTypeSymbol):
+        param_types = [to_llvm_type(p, struct_map) for p in type_symbol.parameter_types]
+        ret_t = to_llvm_type(type_symbol.return_type, struct_map)
+        fn_type = ir.FunctionType(ret_t, param_types)
+        return ir.PointerType(fn_type)
     if isinstance(type_symbol, StructTypeSymbol):
         if struct_map and type_symbol.name in struct_map:
             return struct_map[type_symbol.name]

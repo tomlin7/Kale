@@ -22,7 +22,10 @@ from ..binding.bound_nodes import (
     BoundVariableExpression,
     BoundAssignmentExpression,
     BoundCallExpression,
+    BoundIndirectCallExpression,
+    BoundFunctionPointerExpression,
     BoundUnaryExpression,
+    BoundCastExpression,
     BoundBinaryExpression,
     BoundFunctionDeclaration,
     BoundArrayLiteralExpression,
@@ -563,6 +566,39 @@ class LLVMEmitter:
 
             call_name = f"call_{fn_name}" if llvm_func.function_type.return_type != ir.VoidType() else ""
             return self._builder.call(llvm_func, arg_values, name=call_name)
+
+        if isinstance(expr, BoundFunctionPointerExpression):
+            fn_name = expr.function.mangled_name or expr.function.name
+            llvm_func = self._functions.get(fn_name)
+            if llvm_func is None:
+                return ir.Constant(ir.PointerType(ir.IntType(8)), None)
+            return llvm_func
+
+        if isinstance(expr, BoundIndirectCallExpression):
+            callee_ptr = self._emit_expression(expr.callee)
+            fn_t = expr.callee.type
+            param_types = getattr(fn_t, "parameter_types", ())
+            ret_t = getattr(fn_t, "return_type", TypeVoid)
+            
+            # If callee is pointer to function, get underlying function type
+            llvm_ret_t = to_llvm_type(ret_t, self._struct_types)
+            llvm_param_types = [to_llvm_type(p, self._struct_types) for p in param_types]
+            llvm_fn_type = ir.FunctionType(llvm_ret_t, llvm_param_types)
+
+            # Cast pointer to function pointer if needed
+            fn_ptr_type = ir.PointerType(llvm_fn_type)
+            if callee_ptr.type != fn_ptr_type:
+                callee_ptr = self._builder.bitcast(callee_ptr, fn_ptr_type, name="fn_ptr_cast")
+
+            arg_values: list[ir.Value] = []
+            for i, arg in enumerate(expr.arguments):
+                val = self._emit_expression(arg)
+                if i < len(param_types):
+                    val = self._coerce_type(val, arg.type, param_types[i])
+                arg_values.append(val)
+
+            call_name = "indirect_call" if llvm_ret_t != ir.VoidType() else ""
+            return self._builder.call(callee_ptr, arg_values, name=call_name)
 
         if isinstance(expr, BoundArrayLiteralExpression):
             count = len(expr.elements)
