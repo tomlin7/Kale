@@ -246,6 +246,9 @@ class LLVMEmitter:
                 val = self._emit_expression(statement.initializer)
                 val = self._coerce_type(val, statement.initializer.type, statement.variable.type)
                 self._builder.store(val, alloca)
+            elif isinstance(statement.variable.type, StructTypeSymbol):
+                # Structs are cleanly zero-initialized by default
+                self._builder.store(ir.Constant(llvm_t, None), alloca)
 
         elif isinstance(statement, BoundIfStatement):
             cond_val = self._emit_expression(statement.condition)
