@@ -1,0 +1,135 @@
+// packages/std/text/string_builder.kl
+// High-performance dynamic String Builder for Kale
+
+extern void* malloc(int size);
+extern int strlen(string s);
+
+struct StringBuilder {
+    char* buffer;
+    int length;
+    int capacity;
+}
+
+fn void StringBuilder.init(int initial_cap) {
+    int cap = 32;
+    if (initial_cap > 32) {
+        cap = initial_cap;
+    }
+    this->capacity = cap;
+    this->length = 0;
+    this->buffer = (char*)malloc(cap);
+    this->buffer[0] = (char)0;
+}
+
+fn int StringBuilder.len() {
+    return this->length;
+}
+
+fn int StringBuilder.cap() {
+    return this->capacity;
+}
+
+fn void StringBuilder.reserve(int additional) {
+    if (this->length + additional + 1 > this->capacity) {
+        int new_cap = this->capacity * 2;
+        while (new_cap < this->length + additional + 1) {
+            new_cap = new_cap * 2;
+        }
+        char* new_buf = (char*)malloc(new_cap);
+        int i = 0;
+        while (i < this->length) {
+            new_buf[i] = this->buffer[i];
+            i = i + 1;
+        }
+        new_buf[this->length] = (char)0;
+        free(this->buffer);
+        this->buffer = new_buf;
+        this->capacity = new_cap;
+    }
+}
+
+fn void StringBuilder.append_char(char c) {
+    this->reserve(1);
+    this->buffer[this->length] = c;
+    this->length = this->length + 1;
+    this->buffer[this->length] = (char)0;
+}
+
+fn void StringBuilder.append(string s) {
+    int s_len = strlen(s);
+    if (s_len == 0) {
+        return;
+    }
+    this->reserve(s_len);
+    char* src = (char*)s;
+    int i = 0;
+    while (i < s_len) {
+        this->buffer[this->length + i] = src[i];
+        i = i + 1;
+    }
+    this->length = this->length + s_len;
+    this->buffer[this->length] = (char)0;
+}
+
+fn void StringBuilder.append_line(string s) {
+    this->append(s);
+    this->append_char((char)10); // '\n'
+}
+
+fn void StringBuilder.append_int(int val) {
+    if (val == 0) {
+        this->append_char((char)48); // '0'
+        return;
+    }
+    int v = val;
+    if (v < 0) {
+        this->append_char((char)45); // '-'
+        v = 0 - v;
+    }
+
+    // Allocate stack buffer with alloc for safe indexing
+    char* digits = alloc(char, 24);
+    int count = 0;
+    while (v > 0) {
+        int digit = v % 10;
+        digits[count] = (char)(48 + digit);
+        count = count + 1;
+        v = v / 10;
+    }
+
+    this->reserve(count);
+    int k = count - 1;
+    while (k >= 0) {
+        this->append_char(digits[k]);
+        k = k - 1;
+    }
+    free(digits);
+}
+
+fn string StringBuilder.to_string() {
+    string res = (string)malloc(this->length + 1);
+    char* dst = (char*)res;
+    int i = 0;
+    while (i < this->length) {
+        dst[i] = this->buffer[i];
+        i = i + 1;
+    }
+    dst[this->length] = (char)0;
+    return res;
+}
+
+fn void StringBuilder.clear() {
+    this->length = 0;
+    if (this->buffer != (char*)0) {
+        this->buffer[0] = (char)0;
+    }
+}
+
+fn void StringBuilder.destroy() {
+    if (this->buffer != (char*)0) {
+        free(this->buffer);
+        this->buffer = (char*)0;
+    }
+    this->length = 0;
+    this->capacity = 0;
+}
