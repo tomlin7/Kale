@@ -2,20 +2,31 @@
 // Native Win32 Windowing, Event Loop, and GDI Drawing in Kale
 
 import "packages/bindings/win32/user32.kl" as u32;
+import "packages/bindings/win32/gdi32.kl" as gdi;
 
-extern void* GetModuleHandleA(void* lpModuleName);
-extern void* DefWindowProcA(void* hWnd, int Msg, void* wParam, void* lParam);
-extern void PostQuitMessage(int nExitCode);
-extern int DestroyWindow(void* hWnd);
+
+struct WNDCLASS {
+    int32 style;
+    void* lpfnWndProc;
+    int32 cbClsExtra;
+    int32 cbWndExtra;
+    void* hInstance;
+    void* hIcon;
+    void* hCursor;
+    void* hbrBackground;
+    void* lpszMenuName;
+    string lpszClassName;
+}
 
 struct MSG {
     void* hwnd;
-    int message;
+    int32 message;
     void* wParam;
     void* lParam;
-    int time;
-    int pt_x;
-    int pt_y;
+    int32 time;
+    int32 pt_x;
+    int32 pt_y;
+    int32 lPrivate;
 }
 
 struct Window {
@@ -34,7 +45,21 @@ fn void Window.init(int w, int h) {
 }
 
 fn bool Window.create(string title, string class_name) {
-    void* hinst = GetModuleHandleA((void*)0);
+    void* hinst = u32.GetModuleHandleA((void*)0);
+
+    WNDCLASS wc;
+    wc.style = (int32)3; // CS_HREDRAW | CS_VREDRAW
+    wc.lpfnWndProc = (void*)u32.DefWindowProcA;
+    wc.cbClsExtra = (int32)0;
+    wc.cbWndExtra = (int32)0;
+    wc.hInstance = hinst;
+    wc.hIcon = (void*)0;
+    wc.hCursor = u32.LoadCursorA((void*)0, 32512); // IDC_ARROW
+    wc.hbrBackground = gdi.CreateSolidBrush(1973790); // 0x1E1E1E dark background
+    wc.lpszMenuName = (void*)0;
+    wc.lpszClassName = class_name;
+    u32.RegisterClassA((void*)&wc);
+
     int style = u32.ws_overlappedwindow() | u32.ws_visible();
     void* hwnd = u32.CreateWindowExA(
         0,
@@ -57,6 +82,8 @@ fn bool Window.create(string title, string class_name) {
     this->is_open = true;
     u32.ShowWindow(this->hwnd, u32.sw_show());
     u32.UpdateWindow(this->hwnd);
+    u32.SetForegroundWindow(this->hwnd);
+    u32.SetFocus(this->hwnd);
     return true;
 }
 
@@ -66,7 +93,7 @@ fn bool Window.poll_events() {
     }
     MSG msg;
     while (u32.PeekMessageA((void*)&msg, (void*)0, 0, 0, u32.pm_remove()) != 0) {
-        if (msg.message == 18) { // WM_QUIT
+        if (msg.message == 18 || msg.message == 16 || msg.message == 2) { // WM_QUIT, WM_CLOSE, WM_DESTROY
             this->is_open = false;
             return false;
         }
@@ -79,7 +106,7 @@ fn bool Window.poll_events() {
 fn void Window.close() {
     this->is_open = false;
     if (this->hwnd != (void*)0) {
-        DestroyWindow(this->hwnd);
+        u32.DestroyWindow(this->hwnd);
         this->hwnd = (void*)0;
     }
 }

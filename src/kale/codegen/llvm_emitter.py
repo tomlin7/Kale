@@ -42,6 +42,7 @@ from ..binding.bound_nodes import (
 )
 from ..binding.types import (
     TypeInt,
+    TypeInt32,
     TypeFloat,
     TypeDouble,
     TypeBool,
@@ -469,22 +470,27 @@ class LLVMEmitter:
     def _coerce_type(self, value: ir.Value, from_t, to_t) -> ir.Value:
         if from_t == to_t:
             return value
-        if from_t == TypeInt and to_t in (TypeFloat, TypeDouble):
+        if from_t in (TypeInt, TypeInt32) and to_t in (TypeInt, TypeInt32):
+            if to_t == TypeInt32:
+                return self._builder.trunc(value, ir.IntType(32)) if value.type != ir.IntType(32) else value
+            else:
+                return self._builder.sext(value, ir.IntType(64)) if value.type != ir.IntType(64) else value
+        if from_t in (TypeInt, TypeInt32) and to_t in (TypeFloat, TypeDouble):
             return self._builder.sitofp(value, ir.DoubleType())
-        if from_t in (TypeFloat, TypeDouble) and to_t == TypeInt:
-            return self._builder.fptosi(value, ir.IntType(64))
-        if from_t == TypeInt and to_t == TypeChar:
+        if from_t in (TypeFloat, TypeDouble) and to_t in (TypeInt, TypeInt32):
+            return self._builder.fptosi(value, ir.IntType(32 if to_t == TypeInt32 else 64))
+        if from_t in (TypeInt, TypeInt32) and to_t == TypeChar:
             return self._builder.trunc(value, ir.IntType(8))
-        if from_t == TypeChar and to_t == TypeInt:
-            return self._builder.sext(value, ir.IntType(64))
+        if from_t == TypeChar and to_t in (TypeInt, TypeInt32):
+            return self._builder.sext(value, ir.IntType(32 if to_t == TypeInt32 else 64))
         if from_t == TypeString and isinstance(to_t, PointerTypeSymbol) and to_t.base_type in (TypeChar, TypeVoid):
             return self._builder.bitcast(value, ir.PointerType(ir.IntType(8)))
         if isinstance(from_t, PointerTypeSymbol) and from_t.base_type in (TypeChar, TypeVoid) and to_t == TypeString:
             return self._builder.bitcast(value, ir.PointerType(ir.IntType(8)))
-        if from_t == TypeInt and isinstance(to_t, (PointerTypeSymbol, FunctionTypeSymbol)):
+        if from_t in (TypeInt, TypeInt32) and isinstance(to_t, (PointerTypeSymbol, FunctionTypeSymbol)):
             return self._builder.inttoptr(value, to_llvm_type(to_t, self._struct_types))
-        if isinstance(from_t, (PointerTypeSymbol, FunctionTypeSymbol)) and to_t == TypeInt:
-            return self._builder.ptrtoint(value, ir.IntType(64))
+        if isinstance(from_t, (PointerTypeSymbol, FunctionTypeSymbol)) and to_t in (TypeInt, TypeInt32):
+            return self._builder.ptrtoint(value, ir.IntType(32 if to_t == TypeInt32 else 64))
         if isinstance(from_t, (PointerTypeSymbol, FunctionTypeSymbol)) and isinstance(to_t, (PointerTypeSymbol, FunctionTypeSymbol)):
             target_llvm_t = to_llvm_type(to_t, self._struct_types)
             if value.type != target_llvm_t:
@@ -742,37 +748,53 @@ class LLVMEmitter:
             if inner_val.type == dest_llvm_t:
                 return inner_val
 
-            # Int <-> Float/Double
-            if from_t == TypeInt and to_t in (TypeFloat, TypeDouble):
+            # Int/Int32 <-> Float/Double
+            if from_t in (TypeInt, TypeInt32) and to_t in (TypeFloat, TypeDouble):
                 return self._builder.sitofp(inner_val, dest_llvm_t)
-            if from_t in (TypeFloat, TypeDouble) and to_t == TypeInt:
+            if from_t in (TypeFloat, TypeDouble) and to_t in (TypeInt, TypeInt32):
                 return self._builder.fptosi(inner_val, dest_llvm_t)
+
+            # Int <-> Int32
+            if from_t in (TypeInt, TypeInt32) and to_t in (TypeInt, TypeInt32):
+                if to_t == TypeInt32:
+                    return self._builder.trunc(inner_val, dest_llvm_t) if inner_val.type != dest_llvm_t else inner_val
+                else:
+                    return self._builder.sext(inner_val, dest_llvm_t) if inner_val.type != dest_llvm_t else inner_val
 
             # Pointer <-> Pointer
             if isinstance(from_t, PointerTypeSymbol) and isinstance(to_t, PointerTypeSymbol):
                 return self._builder.bitcast(inner_val, dest_llvm_t)
 
-            # Pointer <-> Int
-            if isinstance(from_t, PointerTypeSymbol) and to_t == TypeInt:
+            # Pointer <-> Int/Int32
+            if isinstance(from_t, PointerTypeSymbol) and to_t in (TypeInt, TypeInt32):
                 return self._builder.ptrtoint(inner_val, dest_llvm_t)
-            if from_t == TypeInt and isinstance(to_t, PointerTypeSymbol):
+            if from_t in (TypeInt, TypeInt32) and isinstance(to_t, PointerTypeSymbol):
                 return self._builder.inttoptr(inner_val, dest_llvm_t)
 
-            # Int <-> Char
-            if from_t == TypeInt and to_t == TypeChar:
+            # Int/Int32 <-> Char
+            if from_t in (TypeInt, TypeInt32) and to_t == TypeChar:
                 return self._builder.trunc(inner_val, dest_llvm_t)
-            if from_t == TypeChar and to_t == TypeInt:
+            if from_t == TypeChar and to_t in (TypeInt, TypeInt32):
                 return self._builder.sext(inner_val, dest_llvm_t)
 
-            # Int <-> Bool
-            if from_t == TypeInt and to_t == TypeBool:
-                return self._builder.icmp_signed("!=", inner_val, ir.Constant(ir.IntType(64), 0))
-            if from_t == TypeBool and to_t == TypeInt:
+            # Int/Int32 <-> Bool
+            if from_t in (TypeInt, TypeInt32) and to_t == TypeBool:
+                zero_c = ir.Constant(inner_val.type, 0)
+                return self._builder.icmp_signed("!=", inner_val, zero_c)
+            if from_t == TypeBool and to_t in (TypeInt, TypeInt32):
                 return self._builder.zext(inner_val, dest_llvm_t)
 
             # Array <-> Pointer
             if isinstance(from_t, ArrayTypeSymbol) and isinstance(to_t, PointerTypeSymbol):
                 return self._builder.bitcast(inner_val, dest_llvm_t)
+
+            # Pointer / Function Pointer <-> Pointer
+            if isinstance(inner_val.type, ir.PointerType) and isinstance(dest_llvm_t, ir.PointerType):
+                return self._builder.bitcast(inner_val, dest_llvm_t)
+            if not isinstance(inner_val.type, ir.PointerType) and isinstance(dest_llvm_t, ir.PointerType):
+                return self._builder.inttoptr(inner_val, dest_llvm_t)
+            if isinstance(inner_val.type, ir.PointerType) and not isinstance(dest_llvm_t, ir.PointerType):
+                return self._builder.ptrtoint(inner_val, dest_llvm_t)
 
             # General bitcast fallback
             try:

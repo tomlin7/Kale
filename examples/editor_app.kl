@@ -15,13 +15,14 @@ editor.load_text(sample_code);
 bool ok = editor.open_window("Kale Code Editor - Live Interactive Desktop App");
 
 if (ok) {
-    // Render once
+    // Initial render
     editor.render();
 
-    // Event pump runs indefinitely until closed by user (WM_QUIT / close)
+    // Event pump runs until closed by user (WM_QUIT / WM_CLOSE / Alt+F4)
     while (editor.window.is_open) {
         editor.window.poll_events();
-        Sleep(20);
+        editor.render();
+        Sleep(16); // ~60 FPS smooth rendering
     }
 
     editor.destroy();

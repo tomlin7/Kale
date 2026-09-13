@@ -1018,7 +1018,10 @@ class Binder:
                 if isinstance(sym, VariableSymbol):
                     return BoundVariableExpression(sym)
                 if isinstance(sym, FunctionSymbol):
-                    return BoundVariableExpression(VariableSymbol(name=sym.mangled_name or sym.name, type=sym.type))
+                    param_types = tuple(p.type for p in sym.parameters)
+                    ret_type = sym.return_type or TypeVoid
+                    fn_t = FunctionTypeSymbol(param_types, ret_type)
+                    return BoundFunctionPointerExpression(sym, fn_t)
             enum_t = target.type.get_enum_type(m_name)
             if enum_t is not None:
                 # Return a pseudo-variable expression typed with EnumTypeSymbol so chained member access module.Enum.Member works!

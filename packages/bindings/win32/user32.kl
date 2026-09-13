@@ -9,6 +9,15 @@ extern int MessageBeep(int uType);
 extern int MessageBoxA(void* hWnd, string lpText, string lpCaption, int uType);
 
 
+extern void* GetModuleHandleA(void* lpModuleName);
+extern void* DefWindowProcA(void* hWnd, int Msg, void* wParam, void* lParam);
+extern int RegisterClassA(void* lpWndClass);
+extern void* LoadCursorA(void* hInstance, int lpCursorName);
+extern int SetForegroundWindow(void* hWnd);
+extern void* SetFocus(void* hWnd);
+extern void PostQuitMessage(int nExitCode);
+extern int DestroyWindow(void* hWnd);
+
 // Window creation & message pump externs
 extern void* CreateWindowExA(
     int dwExStyle,

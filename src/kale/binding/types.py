@@ -146,6 +146,7 @@ class ModuleTypeSymbol(TypeSymbol):
 
 # Built-in primitive types
 TypeInt = TypeSymbol("int")
+TypeInt32 = TypeSymbol("int32")
 TypeFloat = TypeSymbol("float")
 TypeDouble = TypeSymbol("double")
 TypeBool = TypeSymbol("bool")
@@ -156,6 +157,8 @@ TypeUnknown = TypeSymbol("<unknown>")
 
 TYPE_MAP: dict[str, TypeSymbol] = {
     "int": TypeInt,
+    "int32": TypeInt32,
+    "i32": TypeInt32,
     "float": TypeFloat,
     "double": TypeDouble,
     "bool": TypeBool,
@@ -186,7 +189,7 @@ def lookup_type(name: str) -> TypeSymbol | None:
     return None
 
 def is_numeric(t: TypeSymbol) -> bool:
-    return t in (TypeInt, TypeFloat, TypeDouble, TypeChar)
+    return t in (TypeInt, TypeInt32, TypeFloat, TypeDouble, TypeChar)
 
 
 def can_convert(from_type: TypeSymbol, to_type: TypeSymbol) -> bool:
@@ -219,20 +222,23 @@ def can_convert(from_type: TypeSymbol, to_type: TypeSymbol) -> bool:
         if can_convert(from_type.element_type, to_type.element_type):
             if to_type.size is None or from_type.size == to_type.size:
                 return True
+    # int <-> int32 conversion
+    if from_type in (TypeInt, TypeInt32) and to_type in (TypeInt, TypeInt32):
+        return True
     # Implicit numeric widening
-    if from_type == TypeInt and to_type in (TypeFloat, TypeDouble):
+    if from_type in (TypeInt, TypeInt32) and to_type in (TypeFloat, TypeDouble):
         return True
     if from_type == TypeFloat and to_type == TypeDouble:
         return True
-    # Enum types implicitly convert to int and vice versa (or same enum)
-    if isinstance(from_type, EnumTypeSymbol) and to_type == TypeInt:
+    # Enum types implicitly convert to int/int32 and vice versa (or same enum)
+    if isinstance(from_type, EnumTypeSymbol) and to_type in (TypeInt, TypeInt32):
         return True
-    if from_type == TypeInt and isinstance(to_type, EnumTypeSymbol):
+    if from_type in (TypeInt, TypeInt32) and isinstance(to_type, EnumTypeSymbol):
         return True
-    # char <-> int conversion
-    if from_type == TypeChar and to_type == TypeInt:
+    # char <-> int/int32 conversion
+    if from_type == TypeChar and to_type in (TypeInt, TypeInt32):
         return True
-    if from_type == TypeInt and to_type == TypeChar:
+    if from_type in (TypeInt, TypeInt32) and to_type == TypeChar:
         return True
     return False
 
@@ -248,17 +254,17 @@ def can_explicit_cast(from_type: TypeSymbol, to_type: TypeSymbol) -> bool:
     # Enum <-> any numeric
     if (isinstance(from_type, EnumTypeSymbol) or isinstance(to_type, EnumTypeSymbol)):
         return True
-    # Numeric <-> Numeric (int, float, double, bool, char)
-    scalar_types = (TypeInt, TypeFloat, TypeDouble, TypeBool, TypeChar)
+    # Numeric <-> Numeric (int, int32, float, double, bool, char)
+    scalar_types = (TypeInt, TypeInt32, TypeFloat, TypeDouble, TypeBool, TypeChar)
     if from_type in scalar_types and to_type in scalar_types:
         return True
     # Pointer <-> Pointer (any pointer can cast to any pointer, including void*)
     if isinstance(from_type, PointerTypeSymbol) and isinstance(to_type, PointerTypeSymbol):
         return True
-    # Pointer <-> Int (e.g. uintptr_t style integer address manipulation)
-    if isinstance(from_type, PointerTypeSymbol) and to_type == TypeInt:
+    # Pointer <-> Int/Int32 (e.g. uintptr_t style integer address manipulation)
+    if isinstance(from_type, PointerTypeSymbol) and to_type in (TypeInt, TypeInt32):
         return True
-    if from_type == TypeInt and isinstance(to_type, PointerTypeSymbol):
+    if from_type in (TypeInt, TypeInt32) and isinstance(to_type, PointerTypeSymbol):
         return True
     # String <-> char* or void*
     if from_type == TypeString and isinstance(to_type, PointerTypeSymbol) and to_type.base_type in (TypeChar, TypeVoid):
@@ -276,4 +282,6 @@ def get_promoted_numeric_type(left: TypeSymbol, right: TypeSymbol) -> TypeSymbol
         return TypeDouble
     if TypeFloat in (left, right):
         return TypeFloat
-    return TypeInt
+    if TypeInt in (left, right):
+        return TypeInt
+    return TypeInt32

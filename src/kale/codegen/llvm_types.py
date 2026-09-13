@@ -2,6 +2,7 @@ import llvmlite.ir as ir
 from ..binding.types import (
     TypeSymbol,
     TypeInt,
+    TypeInt32,
     TypeFloat,
     TypeDouble,
     TypeBool,
@@ -36,6 +37,8 @@ def to_llvm_type(type_symbol: TypeSymbol, struct_map: dict[str, ir.Type] | None 
     if isinstance(type_symbol, ArrayTypeSymbol):
         elem_t = to_llvm_type(type_symbol.element_type, struct_map)
         return ir.PointerType(elem_t)
+    if type_symbol == TypeInt32:
+        return ir.IntType(32)
     if type_symbol == TypeInt or isinstance(type_symbol, EnumTypeSymbol):
         return ir.IntType(64)
     if type_symbol in (TypeFloat, TypeDouble):

@@ -43,7 +43,7 @@ fn void Editor.init(int width, int height) {
 }
 
 fn bool Editor.open_window(string title) {
-    return this->window.create(title, "STATIC");
+    return this->window.create(title, "KaleEditorWindowClass");
 }
 
 fn void Editor.load_text(string text) {

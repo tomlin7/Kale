@@ -3,17 +3,17 @@
 
 Write-Host "Building standalone Kale compiler binary..." -ForegroundColor Cyan
 
-uv run pyinstaller 
-    --noconfirm 
-    --onedir 
-    --name kale 
-    --collect-all llvmlite 
-    --collect-all colorama 
-    --collect-all kale 
-    --paths src 
+uv run pyinstaller `
+    --noconfirm `
+    --onedir `
+    --name kale `
+    --collect-all llvmlite `
+    --collect-all colorama `
+    --collect-all kale `
+    --paths src `
     src/kale/__main__.py
 
-if ( -eq 0) {
+if ($LASTEXITCODE -eq 0) {
     New-Item -ItemType Directory -Force -Path bin | Out-Null
     Copy-Item -Recurse -Force dist/kale/* bin/
     Remove-Item -Recurse -Force build, dist, kale.spec -ErrorAction SilentlyContinue
