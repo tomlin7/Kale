@@ -40,20 +40,26 @@ def _print_diagnostics(source_text: SourceText, diagnostics: DiagnosticBag):
         print(source_text.format_diagnostic(diag), file=sys.stderr)
 
 def _create_module_loader(diagnostics: DiagnosticBag, current_file: str | None = None) -> ModuleLoader:
-    search_paths: list[str] = []
+    search_paths: list[str] = [os.path.abspath(".")]
+    if current_file:
+        file_dir = os.path.dirname(os.path.abspath(current_file))
+        if file_dir not in search_paths:
+            search_paths.append(file_dir)
+
     # If in a repo, add packages/std, packages, and libs to search paths
     repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) # src/kale -> src -> root
     repo_root = os.path.dirname(repo_root)
     std_dir = os.path.join(repo_root, "packages", "std")
     libs_dir = os.path.join(repo_root, "libs")
-    if os.path.isdir(std_dir):
+    if os.path.isdir(std_dir) and std_dir not in search_paths:
         search_paths.append(std_dir)
-    if os.path.isdir(libs_dir):
+    if os.path.isdir(libs_dir) and libs_dir not in search_paths:
         search_paths.append(libs_dir)
-    if os.path.isdir(repo_root):
+    if os.path.isdir(repo_root) and repo_root not in search_paths:
         search_paths.append(repo_root)
 
     return ModuleLoader(diagnostics, search_paths=search_paths)
+
 
 def cmd_dump_tokens(args: argparse.Namespace) -> int:
     source_text = _read_source(args.file)

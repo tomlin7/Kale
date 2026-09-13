@@ -15,15 +15,13 @@ editor.load_text(sample_code);
 bool ok = editor.open_window("Kale Code Editor - Live Interactive Desktop App");
 
 if (ok) {
+    // Render once
     editor.render();
 
-    // Event pump runs until you close the window (clicking the X button) or up to 25 seconds
-    int frames = 0;
-    while (frames < 250 && editor.window.is_open) {
+    // Event pump runs indefinitely until closed by user (WM_QUIT / close)
+    while (editor.window.is_open) {
         editor.window.poll_events();
-        editor.render();
-        Sleep(100);
-        frames = frames + 1;
+        Sleep(20);
     }
 
     editor.destroy();

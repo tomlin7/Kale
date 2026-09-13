@@ -34,9 +34,10 @@ class LLVMDriver:
 
         cmd = [self.clang_path, ll_path, f"-O{opt_level}", "-o", output_path]
         if is_windows:
-            cmd.append("--target=x86_64-pc-windows-msvc")
+            cmd.extend(["--target=x86_64-pc-windows-msvc", "-luser32", "-lgdi32", "-lkernel32"])
         else:
             cmd.append("-lm")
+
 
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
