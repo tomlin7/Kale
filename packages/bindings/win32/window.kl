@@ -29,8 +29,51 @@ struct Window {
 fn void Window.init(int w, int h) {
     this->width = w;
     this->height = h;
-    this->is_open = true;
+    this->is_open = false;
     this->hwnd = (void*)0;
+}
+
+fn bool Window.create(string title, string class_name) {
+    void* hinst = GetModuleHandleA((void*)0);
+    int style = u32.ws_overlappedwindow() | u32.ws_visible();
+    void* hwnd = u32.CreateWindowExA(
+        0,
+        class_name,
+        title,
+        style,
+        100, 100,
+        this->width, this->height,
+        (void*)0,
+        (void*)0,
+        hinst,
+        (void*)0
+    );
+
+    if (hwnd == (void*)0) {
+        return false;
+    }
+
+    this->hwnd = hwnd;
+    this->is_open = true;
+    u32.ShowWindow(this->hwnd, u32.sw_show());
+    u32.UpdateWindow(this->hwnd);
+    return true;
+}
+
+fn bool Window.poll_events() {
+    if (!this->is_open || this->hwnd == (void*)0) {
+        return false;
+    }
+    MSG msg;
+    while (u32.PeekMessageA((void*)&msg, (void*)0, 0, 0, u32.pm_remove()) != 0) {
+        if (msg.message == 18) { // WM_QUIT
+            this->is_open = false;
+            return false;
+        }
+        u32.TranslateMessage((void*)&msg);
+        u32.DispatchMessageA((void*)&msg);
+    }
+    return true;
 }
 
 fn void Window.close() {
@@ -40,3 +83,4 @@ fn void Window.close() {
         this->hwnd = (void*)0;
     }
 }
+

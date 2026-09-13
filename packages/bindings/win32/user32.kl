@@ -7,19 +7,60 @@ extern int ReleaseDC(void* hWnd, void* hDC);
 extern int GetDeviceCaps(void* hdc, int nIndex);
 extern int MessageBeep(int uType);
 
-// System metrics constants
+// Window creation & message pump externs
+extern void* CreateWindowExA(
+    int dwExStyle,
+    string lpClassName,
+    string lpWindowName,
+    int dwStyle,
+    int X,
+    int Y,
+    int nWidth,
+    int nHeight,
+    void* hWndParent,
+    void* hMenu,
+    void* hInstance,
+    void* lpParam
+);
+
+extern int ShowWindow(void* hWnd, int nCmdShow);
+extern int UpdateWindow(void* hWnd);
+extern int PeekMessageA(void* lpMsg, void* hWnd, int wMsgFilterMin, int wMsgFilterMax, int wRemoveMsg);
+extern int TranslateMessage(void* lpMsg);
+extern void* DispatchMessageA(void* lpMsg);
+
+// System metrics constants & helpers
 int sm_cx_screen() {
-    return GetSystemMetrics(0); // SM_CXSCREEN
+    return GetSystemMetrics(0);
 }
 
 int sm_cy_screen() {
-    return GetSystemMetrics(1); // SM_CYSCREEN
+    return GetSystemMetrics(1);
 }
 
 int sm_cx_vscroll() {
-    return GetSystemMetrics(2); // SM_CXVSCROLL
+    return GetSystemMetrics(2);
 }
 
 int sm_cy_hscroll() {
-    return GetSystemMetrics(3); // SM_CYHSCROLL
+    return GetSystemMetrics(3);
 }
+
+// Window style constants
+int ws_overlappedwindow() {
+    return 13565952; // 0x00CF0000 (WS_OVERLAPPEDWINDOW)
+}
+
+int ws_visible() {
+    return 268435456; // 0x10000000 (WS_VISIBLE)
+}
+
+int sw_show() {
+    return 5; // SW_SHOW
+}
+
+int pm_remove() {
+    return 1; // PM_REMOVE
+}
+
+

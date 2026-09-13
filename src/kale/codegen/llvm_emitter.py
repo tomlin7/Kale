@@ -52,6 +52,7 @@ from ..binding.types import (
     PointerTypeSymbol,
     StructTypeSymbol,
     EnumTypeSymbol,
+    FunctionTypeSymbol,
 )
 from .llvm_types import to_llvm_type
 
@@ -480,6 +481,14 @@ class LLVMEmitter:
             return self._builder.bitcast(value, ir.PointerType(ir.IntType(8)))
         if isinstance(from_t, PointerTypeSymbol) and from_t.base_type in (TypeChar, TypeVoid) and to_t == TypeString:
             return self._builder.bitcast(value, ir.PointerType(ir.IntType(8)))
+        if from_t == TypeInt and isinstance(to_t, (PointerTypeSymbol, FunctionTypeSymbol)):
+            return self._builder.inttoptr(value, to_llvm_type(to_t, self._struct_types))
+        if isinstance(from_t, (PointerTypeSymbol, FunctionTypeSymbol)) and to_t == TypeInt:
+            return self._builder.ptrtoint(value, ir.IntType(64))
+        if isinstance(from_t, (PointerTypeSymbol, FunctionTypeSymbol)) and isinstance(to_t, (PointerTypeSymbol, FunctionTypeSymbol)):
+            target_llvm_t = to_llvm_type(to_t, self._struct_types)
+            if value.type != target_llvm_t:
+                return self._builder.bitcast(value, target_llvm_t)
         return value
 
     def _apply_compound_op(self, op: str, old_val: ir.Value, rhs_val: ir.Value, target_t: Any) -> ir.Value:

@@ -52,15 +52,27 @@ class TestWin32Bindings(unittest.TestCase):
         import "packages/bindings/win32/window.kl" as win;
 
         win.Window w;
-        w.init(800, 600);
+        w.init(640, 480);
 
-        if (w.width != 800 || w.height != 600 || !w.is_open) {
+        if (w.width != 640 || w.height != 480 || w.is_open) {
             return 1;
         }
 
-        w.close();
-        if (w.is_open) {
+        // Use built-in system window class "STATIC"
+        bool ok = w.create("Kale Native Window", "STATIC");
+        if (!ok || !w.is_open || w.hwnd == (void*)0) {
             return 2;
+        }
+
+        // Poll messages (should not crash or block)
+        bool polled = w.poll_events();
+        if (!polled) {
+            return 3;
+        }
+
+        w.close();
+        if (w.is_open || w.hwnd != (void*)0) {
+            return 4;
         }
         return 42;
         """
@@ -69,3 +81,4 @@ class TestWin32Bindings(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
