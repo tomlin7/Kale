@@ -1,0 +1,26 @@
+// packages/bindings/win32/gdi32.kl
+// Direct Win32 GDI32 bindings for Kale native text rendering and graphics
+
+extern void* CreateSolidBrush(int color);
+extern void* CreatePen(int fnPenStyle, int nWidth, int crColor);
+extern void* SelectObject(void* hdc, void* hgdiobj);
+extern int DeleteObject(void* hObject);
+extern int SetTextColor(void* hdc, int color);
+extern int SetBkColor(void* hdc, int color);
+extern int SetBkMode(void* hdc, int mode);
+extern int TextOutA(void* hdc, int x, int y, string lpString, int c);
+extern int Rectangle(void* hdc, int left, int top, int right, int bottom);
+
+// Helper for RGB color pack: 0x00BBGGRR in Win32 COLORREF format
+int rgb(int r, int g, int b) {
+    return (r & 255) | ((g & 255) << 8) | ((b & 255) << 16);
+}
+
+// Background modes
+int bk_transparent() {
+    return 1;
+}
+
+int bk_opaque() {
+    return 2;
+}
