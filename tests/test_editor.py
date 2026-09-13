@@ -80,5 +80,36 @@ class TestEditor(unittest.TestCase):
         res = self.run_kale_jit(code)
         self.assertEqual(res, 42)
 
+    def test_editor_cursor_movement_and_scrolling(self):
+        code = """
+        import "packages/editor/editor.kl" as ed;
+
+        ed.Editor editor;
+        editor.init(640, 480);
+        editor.load_text("line 0\\nline 1\\nline 2\\nline 3\\nline 4\\nline 5");
+
+        editor.move_cursor(2, 3);
+        if (editor.cursor_row != 2 || editor.cursor_col != 3) {
+            return 1;
+        }
+
+        // Move beyond bounds (should clamp to lines count)
+        editor.move_cursor(100, 0);
+        if (editor.cursor_row != 5) {
+            return 2;
+        }
+
+        // Move negative (should clamp to 0)
+        editor.move_cursor(-200, -200);
+        if (editor.cursor_row != 0 || editor.cursor_col != 0) {
+            return 3;
+        }
+
+        editor.destroy();
+        return 42;
+        """
+        res = self.run_kale_jit(code)
+        self.assertEqual(res, 42)
+
 if __name__ == "__main__":
     unittest.main()

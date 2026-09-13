@@ -2,34 +2,42 @@
 // Native Code Editor Engine for Kale
 
 import "packages/std/text/piece_table.kl" as pt;
+import "packages/std/text/string_builder.kl" as sb;
 import "packages/bindings/win32/window.kl" as win;
 import "packages/bindings/win32/user32.kl" as u32;
 import "packages/bindings/win32/gdi32.kl" as gdi;
+import "packages/editor/theme.kl" as th;
 
 extern int strlen(string s);
 
 struct Editor {
     pt.PieceTable buffer;
     win.Window window;
+    th.Theme theme;
     int cursor_row;
     int cursor_col;
     int line_height;
     int char_width;
-    int bg_color;
-    int fg_color;
-    int cursor_color;
+    int gutter_width;
+    int scroll_row;
+    int scroll_col;
+    int viewport_rows;
+    int viewport_cols;
 }
 
 fn void Editor.init(int width, int height) {
     this->buffer.init("");
     this->window.init(width, height);
+    this->theme.init_dark();
     this->cursor_row = 0;
     this->cursor_col = 0;
     this->line_height = 18;
     this->char_width = 8;
-    this->bg_color = gdi.rgb(30, 30, 30);      // Dark theme background #1E1E1E
-    this->fg_color = gdi.rgb(220, 220, 220);  // Text color
-    this->cursor_color = gdi.rgb(255, 255, 255);
+    this->gutter_width = 48; // Gutter for line numbers
+    this->scroll_row = 0;
+    this->scroll_col = 0;
+    this->viewport_rows = height / this->line_height;
+    this->viewport_cols = (width - this->gutter_width) / this->char_width;
 }
 
 fn bool Editor.open_window(string title) {
@@ -41,6 +49,32 @@ fn void Editor.load_text(string text) {
     this->buffer.init(text);
     this->cursor_row = 0;
     this->cursor_col = 0;
+    this->scroll_row = 0;
+    this->scroll_col = 0;
+}
+
+fn void Editor.move_cursor(int d_row, int d_col) {
+    int lines = this->buffer.line_count();
+    this->cursor_row = this->cursor_row + d_row;
+    if (this->cursor_row < 0) {
+        this->cursor_row = 0;
+    }
+    if (this->cursor_row >= lines && lines > 0) {
+        this->cursor_row = lines - 1;
+    }
+
+    this->cursor_col = this->cursor_col + d_col;
+    if (this->cursor_col < 0) {
+        this->cursor_col = 0;
+    }
+
+    // Auto-scroll vertically if cursor moves out of viewport
+    if (this->cursor_row < this->scroll_row) {
+        this->scroll_row = this->cursor_row;
+    }
+    if (this->cursor_row >= this->scroll_row + this->viewport_rows) {
+        this->scroll_row = this->cursor_row - this->viewport_rows + 1;
+    }
 }
 
 fn void Editor.insert_char_at_cursor(string ch) {
@@ -66,17 +100,43 @@ fn void Editor.render() {
         return;
     }
 
-    gdi.SetBkColor(hdc, this->bg_color);
-    gdi.SetTextColor(hdc, this->fg_color);
+    int total_lines = this->buffer.line_count();
+    int visible_lines = this->viewport_rows;
+    if (visible_lines <= 0) {
+        visible_lines = 40;
+    }
 
-    int count = this->buffer.line_count();
-    int i = 0;
-    while (i < count && i < 40) {
-        string line_str = this->buffer.get_line(i);
-        int len = strlen(line_str);
-        int y = i * this->line_height + 4;
-        gdi.TextOutA(hdc, 10, y, line_str, len);
-        i = i + 1;
+    int row_idx = 0;
+    while (row_idx < visible_lines) {
+        int current_line_num = this->scroll_row + row_idx;
+        int y = row_idx * this->line_height + 2;
+
+        if (current_line_num < total_lines) {
+            // Draw line number in gutter
+            gdi.SetBkColor(hdc, this->theme.line_number_bg);
+            gdi.SetTextColor(hdc, this->theme.line_number_fg);
+
+            sb.StringBuilder num_sb;
+            num_sb.init(8);
+            num_sb.append_int(current_line_num + 1);
+            string num_str = num_sb.to_string();
+            gdi.TextOutA(hdc, 4, y, num_str, strlen(num_str));
+            num_sb.destroy();
+
+            // Draw line content
+            gdi.SetBkColor(hdc, this->theme.bg);
+            gdi.SetTextColor(hdc, this->theme.fg);
+            string line_str = this->buffer.get_line(current_line_num);
+            int len = strlen(line_str);
+            gdi.TextOutA(hdc, this->gutter_width + 8, y, line_str, len);
+        } else {
+            // Fill empty line
+            gdi.SetBkColor(hdc, this->theme.bg);
+            gdi.SetTextColor(hdc, this->theme.line_number_fg);
+            gdi.TextOutA(hdc, 4, y, "~", 1);
+        }
+
+        row_idx = row_idx + 1;
     }
 
     u32.ReleaseDC(this->window.hwnd, hdc);

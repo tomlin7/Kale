@@ -1,0 +1,49 @@
+// packages/editor/theme.kl
+// Color scheme and visual styling for Kale Code Editor
+
+import "packages/bindings/win32/gdi32.kl" as gdi;
+
+struct Theme {
+    int bg;              // Background #1E1E1E
+    int fg;              // Normal foreground #D4D4D4
+    int line_number_fg;  // Line numbers #858585
+    int line_number_bg;  // Gutter background #252526
+    int cursor;          // Caret color #FFFFFF
+    int selection_bg;    // Selection highlight #264F78
+    int status_bg;       // Status bar background #007ACC
+    int status_fg;       // Status bar foreground #FFFFFF
+    int keyword_fg;      // Syntax: Keywords #569CD6
+    int string_fg;       // Syntax: Strings #CE9178
+    int comment_fg;      // Syntax: Comments #6A9955
+    int number_fg;       // Syntax: Numbers #B5CEA8
+}
+
+fn void Theme.init_dark() {
+    this->bg = gdi.rgb(30, 30, 30);
+    this->fg = gdi.rgb(212, 212, 212);
+    this->line_number_fg = gdi.rgb(133, 133, 133);
+    this->line_number_bg = gdi.rgb(37, 37, 38);
+    this->cursor = gdi.rgb(255, 255, 255);
+    this->selection_bg = gdi.rgb(38, 79, 120);
+    this->status_bg = gdi.rgb(0, 122, 204);
+    this->status_fg = gdi.rgb(255, 255, 255);
+    this->keyword_fg = gdi.rgb(86, 156, 214);
+    this->string_fg = gdi.rgb(206, 145, 120);
+    this->comment_fg = gdi.rgb(106, 153, 85);
+    this->number_fg = gdi.rgb(181, 206, 168);
+}
+
+fn void Theme.init_light() {
+    this->bg = gdi.rgb(255, 255, 255);
+    this->fg = gdi.rgb(0, 0, 0);
+    this->line_number_fg = gdi.rgb(120, 120, 120);
+    this->line_number_bg = gdi.rgb(240, 240, 240);
+    this->cursor = gdi.rgb(0, 0, 0);
+    this->selection_bg = gdi.rgb(173, 214, 255);
+    this->status_bg = gdi.rgb(0, 122, 204);
+    this->status_fg = gdi.rgb(255, 255, 255);
+    this->keyword_fg = gdi.rgb(0, 0, 255);
+    this->string_fg = gdi.rgb(163, 21, 21);
+    this->comment_fg = gdi.rgb(0, 128, 0);
+    this->number_fg = gdi.rgb(9, 134, 88);
+}
