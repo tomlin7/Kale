@@ -1,0 +1,38 @@
+// packages/editor/syntax.kl
+// Lexical token classification for syntax highlighting in Kale Code Editor
+
+import "packages/std/collections/generic_list.kl" as gl;
+
+extern int strlen(string s);
+extern int strcmp(string s1, string s2);
+
+struct TokenSpan {
+    int start_col;
+    int length;
+    int token_type; // 0=Default, 1=Keyword, 2=String, 3=Comment, 4=Number, 5=Operator
+}
+
+fn bool is_ident_start(char c) {
+    return (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c == 95; // [A-Za-z_]
+}
+
+fn bool is_ident_part(char c) {
+    return is_ident_start(c) || (c >= 48 && c <= 57); // [A-Za-z0-9_]
+}
+
+fn bool is_digit(char c) {
+    return c >= 48 && c <= 57;
+}
+
+fn bool is_kale_keyword(string s) {
+    if (strcmp(s, "fn") == 0 || strcmp(s, "return") == 0 || strcmp(s, "if") == 0 ||
+        strcmp(s, "else") == 0 || strcmp(s, "while") == 0 || strcmp(s, "for") == 0 ||
+        strcmp(s, "struct") == 0 || strcmp(s, "enum") == 0 || strcmp(s, "import") == 0 ||
+        strcmp(s, "as") == 0 || strcmp(s, "extern") == 0 || strcmp(s, "int") == 0 ||
+        strcmp(s, "float") == 0 || strcmp(s, "double") == 0 || strcmp(s, "char") == 0 ||
+        strcmp(s, "string") == 0 || strcmp(s, "bool") == 0 || strcmp(s, "void") == 0 ||
+        strcmp(s, "true") == 0 || strcmp(s, "false") == 0) {
+        return true;
+    }
+    return false;
+}

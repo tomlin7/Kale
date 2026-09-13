@@ -186,7 +186,8 @@ def lookup_type(name: str) -> TypeSymbol | None:
     return None
 
 def is_numeric(t: TypeSymbol) -> bool:
-    return t in (TypeInt, TypeFloat, TypeDouble)
+    return t in (TypeInt, TypeFloat, TypeDouble, TypeChar)
+
 
 def can_convert(from_type: TypeSymbol, to_type: TypeSymbol) -> bool:
     """Checks whether from_type can be assigned or implicitly converted to to_type."""
