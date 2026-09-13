@@ -1,0 +1,3 @@
+import "packages/bindings/win32/user32.kl" as u32;
+
+u32.MessageBoxA((void*)0, "Hello! This is a live native Win32 window rendered directly from Kale!", "Kale Desktop App - Live Verification", 64);

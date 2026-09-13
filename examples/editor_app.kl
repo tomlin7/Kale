@@ -6,9 +6,9 @@ import "packages/editor/editor.kl" as ed;
 extern int Sleep(int dwMilliseconds);
 
 ed.Editor editor;
-editor.init(950, 680);
+editor.init(1000, 700);
 
-string sample_code = "// Kale Native Code Editor - Live App\nimport \"packages/std/text/piece_table.kl\" as pt;\n\nstruct Vec3 {\n    float x;\n    float y;\n    float z;\n}\n\nfn int compute_sum(int a, int b) {\n    int result = a + b;\n    return result;\n}\n\nfn int run_app() {\n    // Welcome to the Kale Code Editor!\n    string greeting = \"Hello from Kale OS window!\";\n    int val = 42;\n    return 0;\n}\n";
+string sample_code = "// ==========================================\n// Kale Native Code Editor - Live App\n// ==========================================\n\nimport \"packages/std/text/piece_table.kl\" as pt;\nimport \"packages/bindings/win32/gdi32.kl\" as gdi;\n\nstruct Vec3 {\n    float x;\n    float y;\n    float z;\n}\n\nfn int fib(int n) {\n    if (n <= 1) {\n        return n;\n    }\n    return fib(n - 1) + fib(n - 2);\n}\n\nfn int run_app() {\n    // Welcome to your custom Kale code editor!\n    string title = \"Kale OS Native Window\";\n    int answer = 42;\n    return answer;\n}\n";
 
 editor.load_text(sample_code);
 
@@ -17,9 +17,9 @@ bool ok = editor.open_window("Kale Code Editor - Live Interactive Desktop App");
 if (ok) {
     editor.render();
 
-    // Event pump running 50 frames (approx 5 seconds) to show the live desktop window
+    // Event pump runs until you close the window (clicking the X button) or up to 25 seconds
     int frames = 0;
-    while (frames < 50 && editor.window.is_open) {
+    while (frames < 250 && editor.window.is_open) {
         editor.window.poll_events();
         editor.render();
         Sleep(100);

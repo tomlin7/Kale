@@ -6,6 +6,8 @@ extern void* GetDC(void* hWnd);
 extern int ReleaseDC(void* hWnd, void* hDC);
 extern int GetDeviceCaps(void* hdc, int nIndex);
 extern int MessageBeep(int uType);
+extern int MessageBoxA(void* hWnd, string lpText, string lpCaption, int uType);
+
 
 // Window creation & message pump externs
 extern void* CreateWindowExA(
