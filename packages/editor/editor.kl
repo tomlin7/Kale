@@ -7,6 +7,8 @@ import "packages/bindings/win32/window.kl" as win;
 import "packages/bindings/win32/user32.kl" as u32;
 import "packages/bindings/win32/gdi32.kl" as gdi;
 import "packages/editor/theme.kl" as th;
+import "packages/editor/syntax.kl" as syn;
+
 
 extern int strlen(string s);
 
@@ -123,12 +125,44 @@ fn void Editor.render() {
             gdi.TextOutA(hdc, 4, y, num_str, strlen(num_str));
             num_sb.destroy();
 
-            // Draw line content
+            // Draw line content with syntax highlighting
             gdi.SetBkColor(hdc, this->theme.bg);
-            gdi.SetTextColor(hdc, this->theme.fg);
             string line_str = this->buffer.get_line(current_line_num);
             int len = strlen(line_str);
-            gdi.TextOutA(hdc, this->gutter_width + 8, y, line_str, len);
+
+            syn.LineHighlighter hl;
+            hl.init();
+            hl.highlight_line(line_str);
+            int span_count = hl.get_count();
+
+
+            if (span_count == 0) {
+                // Fallback / plain text
+                gdi.SetTextColor(hdc, this->theme.fg);
+                gdi.TextOutA(hdc, this->gutter_width + 8, y, line_str, len);
+            } else {
+                int s_idx = 0;
+                while (s_idx < span_count) {
+                    syn.TokenSpan span = hl.get_span(s_idx);
+                    int col_color = this->theme.get_token_color(span.token_type);
+                    gdi.SetTextColor(hdc, col_color);
+
+                    sb.StringBuilder span_sb;
+                    span_sb.init(span.length + 1);
+                    int ch_i = 0;
+                    while (ch_i < span.length && span.start_col + ch_i < len) {
+                        span_sb.append_char(line_str[span.start_col + ch_i]);
+                        ch_i = ch_i + 1;
+                    }
+                    string token_text = span_sb.to_string();
+                    int x_pos = this->gutter_width + 8 + span.start_col * this->char_width;
+                    gdi.TextOutA(hdc, x_pos, y, token_text, span.length);
+                    span_sb.destroy();
+
+                    s_idx = s_idx + 1;
+                }
+            }
+            hl.destroy();
         } else {
             // Fill empty line
             gdi.SetBkColor(hdc, this->theme.bg);
@@ -141,6 +175,7 @@ fn void Editor.render() {
 
     u32.ReleaseDC(this->window.hwnd, hdc);
 }
+
 
 fn void Editor.destroy() {
     this->buffer.destroy();

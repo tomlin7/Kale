@@ -1,15 +1,23 @@
 // packages/editor/syntax.kl
-// Lexical token classification for syntax highlighting in Kale Code Editor
+// Lexical token classification and syntax highlighter for Kale Code Editor
 
-import "packages/std/collections/generic_list.kl" as gl;
+import "packages/std/text/string_builder.kl" as sb;
 
 extern int strlen(string s);
 extern int strcmp(string s1, string s2);
 
+// Token Types:
+// 0: Default / Identifier
+// 1: Keyword
+// 2: String literal
+// 3: Comment
+// 4: Number literal
+// 5: Operator / Punctuation
+
 struct TokenSpan {
     int start_col;
     int length;
-    int token_type; // 0=Default, 1=Keyword, 2=String, 3=Comment, 4=Number, 5=Operator
+    int token_type;
 }
 
 fn bool is_ident_start(char c) {
@@ -35,4 +43,116 @@ fn bool is_kale_keyword(string s) {
         return true;
     }
     return false;
+}
+
+struct LineHighlighter {
+    TokenSpan* spans;
+    int count;
+    int capacity;
+}
+
+fn void LineHighlighter.init() {
+    this->capacity = 32;
+    this->count = 0;
+    this->spans = alloc(TokenSpan, 32);
+}
+
+fn void LineHighlighter.destroy() {
+    if (this->spans != (TokenSpan*)0) {
+        free(this->spans);
+        this->spans = (TokenSpan*)0;
+    }
+    this->count = 0;
+    this->capacity = 0;
+}
+
+fn void LineHighlighter.add_span(int start, int len, int type_id) {
+    if (this->count >= this->capacity) {
+        int new_cap = this->capacity * 2;
+        TokenSpan* new_spans = alloc(TokenSpan, new_cap);
+        int i = 0;
+        while (i < this->count) {
+            new_spans[i] = this->spans[i];
+            i = i + 1;
+        }
+        free(this->spans);
+        this->spans = new_spans;
+        this->capacity = new_cap;
+    }
+    this->spans[this->count].start_col = start;
+    this->spans[this->count].length = len;
+    this->spans[this->count].token_type = type_id;
+    this->count = this->count + 1;
+}
+
+fn int LineHighlighter.get_count() {
+    return this->count;
+}
+
+fn TokenSpan LineHighlighter.get_span(int idx) {
+    return this->spans[idx];
+}
+
+fn void LineHighlighter.highlight_line(string line) {
+    int len = strlen(line);
+    int i = 0;
+
+    while (i < len) {
+        char c = line[i];
+
+        // Whitespace skip
+        if (c == 32 || c == 9 || c == 13 || c == 10) {
+            i = i + 1;
+        }
+        // Single-line comment //
+        else if (c == 47 && i + 1 < len && line[i + 1] == 47) {
+            this->add_span(i, len - i, 3);
+            i = len;
+        }
+        // String literal "..."
+        else if (c == 34) {
+            int str_start = i;
+            i = i + 1;
+            while (i < len && line[i] != 34) {
+                if (line[i] == 92 && i + 1 < len) {
+                    i = i + 1; // skip escaped char
+                }
+                i = i + 1;
+            }
+            if (i < len && line[i] == 34) {
+                i = i + 1;
+            }
+            this->add_span(str_start, i - str_start, 2);
+        }
+        // Number literal
+        else if (is_digit(c)) {
+            int num_start = i;
+            while (i < len && is_digit(line[i])) {
+                i = i + 1;
+            }
+            this->add_span(num_start, i - num_start, 4);
+        }
+        // Identifier or Keyword
+        else if (is_ident_start(c)) {
+            int ident_start = i;
+            sb.StringBuilder word_sb;
+            word_sb.init(16);
+            while (i < len && is_ident_part(line[i])) {
+                word_sb.append_char(line[i]);
+                i = i + 1;
+            }
+            string word = word_sb.to_string();
+            int tok_type = 0; // default identifier
+            if (is_kale_keyword(word)) {
+                tok_type = 1; // keyword
+            }
+            this->add_span(ident_start, i - ident_start, tok_type);
+            word_sb.destroy();
+        }
+        // Operator / Punctuation
+        else {
+            this->add_span(i, 1, 5);
+            i = i + 1;
+        }
+    }
 }

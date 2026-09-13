@@ -48,5 +48,60 @@ class TestSyntax(unittest.TestCase):
         res = self.run_kale_jit(code)
         self.assertEqual(res, 42)
 
+    def test_syntax_highlighter_spans(self):
+        code = """
+        import "packages/editor/syntax.kl" as syn;
+
+        syn.LineHighlighter hl;
+        hl.init();
+
+        hl.add_span(0, 2, 1); // "fn"
+        hl.add_span(3, 4, 0); // "main"
+        hl.add_span(7, 2, 5); // "()"
+
+        if (hl.get_count() != 3) {
+            return 1;
+        }
+
+        syn.TokenSpan s0 = hl.get_span(0);
+        if (s0.start_col != 0 || s0.length != 2 || s0.token_type != 1) {
+            return 2;
+        }
+
+        hl.destroy();
+        return 42;
+        """
+        res = self.run_kale_jit(code)
+        self.assertEqual(res, 42)
+
+    def test_syntax_highlight_line_lexer(self):
+        code = """
+        import "packages/editor/syntax.kl" as syn;
+
+        syn.LineHighlighter hl;
+        hl.init();
+
+        hl.highlight_line("fn main() { int x = 42; } // done");
+        int total = hl.get_count();
+        if (total < 7) {
+            return 1;
+        }
+
+        syn.TokenSpan s0 = hl.get_span(0);
+        if (s0.token_type != 1 || s0.length != 2) {
+            return 2;
+        }
+
+        syn.TokenSpan s1 = hl.get_span(1);
+        if (s1.token_type != 0 || s1.length != 4) {
+            return 3;
+        }
+
+        hl.destroy();
+        return 42;
+        """
+        res = self.run_kale_jit(code)
+        self.assertEqual(res, 42)
+
 if __name__ == "__main__":
     unittest.main()

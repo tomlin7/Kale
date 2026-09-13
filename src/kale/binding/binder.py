@@ -723,13 +723,18 @@ class Binder:
 
         for en in sub_program.enums:
             enums[en.enum_type.name] = en.enum_type
+            if en.enum_type.name not in self._enum_types:
+                self._enum_types[en.enum_type.name] = en.enum_type
             if not any(e.enum_type.name == en.enum_type.name for e in self._imported_enums):
                 self._imported_enums.append(en)
 
         for st in sub_program.structs:
             structs[st.struct_type.name] = st.struct_type
+            if st.struct_type.name not in self._struct_types:
+                self._struct_types[st.struct_type.name] = st.struct_type
             if not any(s.struct_type.name == st.struct_type.name for s in self._imported_structs):
                 self._imported_structs.append(st)
+
 
         for fn in sub_program.functions:
             fn_sym = fn.symbol
@@ -1164,6 +1169,11 @@ class Binder:
                     self.diagnostics.report_cannot_convert(expression.index.span, str(index.type), str(idx_param_t))
             return BoundCallExpression(method_sym, [receiver_arg, index])
 
+        if target.type == TypeString:
+            if not can_convert(index.type, TypeInt):
+                self.diagnostics.report_cannot_convert(expression.index.span, str(index.type), "int")
+            return BoundIndexExpression(target, index, TypeChar)
+
         if not isinstance(target.type, (ArrayTypeSymbol, PointerTypeSymbol)):
             self.diagnostics.report(expression.target.span, f"Cannot index a non-array type '{target.type}'.")
             return BoundLiteralExpression(None, TypeUnknown)
@@ -1173,6 +1183,7 @@ class Binder:
 
         elem_type = target.type.element_type if isinstance(target.type, ArrayTypeSymbol) else target.type.base_type
         return BoundIndexExpression(target, index, elem_type)
+
 
     def _bind_index_assignment_expression(self, expression: IndexAssignmentExpression) -> BoundExpression:
         target = self.bind_expression(expression.target)

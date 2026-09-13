@@ -47,3 +47,20 @@ fn void Theme.init_light() {
     this->comment_fg = gdi.rgb(0, 128, 0);
     this->number_fg = gdi.rgb(9, 134, 88);
 }
+
+fn int Theme.get_token_color(int token_type) {
+    if (token_type == 1) { // Keyword
+        return this->keyword_fg;
+    }
+    if (token_type == 2) { // String
+        return this->string_fg;
+    }
+    if (token_type == 3) { // Comment
+        return this->comment_fg;
+    }
+    if (token_type == 4) { // Number
+        return this->number_fg;
+    }
+    return this->fg; // Default
+}
+
