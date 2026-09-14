@@ -415,12 +415,19 @@ class LLVMEmitter:
             if statement.expression:
                 ret_val = self._emit_expression(statement.expression)
                 if ret_val.type != ret_t:
-                    ret_val = self._coerce_type(ret_val, statement.expression.type, getattr(getattr(self, "_current_fn_sym", None), "return_type", None) or TypeInt)
+                    target_type_sym = getattr(getattr(self, "_current_fn_sym", None), "return_type", None)
+                    if target_type_sym is None:
+                        target_type_sym = TypeInt32 if ret_t == ir.IntType(32) else TypeInt
+                    ret_val = self._coerce_type(ret_val, statement.expression.type, target_type_sym)
                     if ret_val.type != ret_t:
-                        if ret_t == ir.DoubleType() and ret_val.type == ir.IntType(64):
-                            ret_val = self._builder.sitofp(ret_val, ir.DoubleType())
-                        elif ret_t == ir.IntType(64) and ret_val.type == ir.DoubleType():
-                            ret_val = self._builder.fptosi(ret_val, ir.IntType(64))
+                        if isinstance(ret_t, (ir.FloatType, ir.DoubleType)) and isinstance(ret_val.type, ir.IntType):
+                            ret_val = self._builder.sitofp(ret_val, ret_t)
+                        elif isinstance(ret_t, ir.IntType) and isinstance(ret_val.type, (ir.FloatType, ir.DoubleType)):
+                            ret_val = self._builder.fptosi(ret_val, ret_t)
+                        elif isinstance(ret_t, ir.FloatType) and ret_val.type == ir.DoubleType():
+                            ret_val = self._builder.fptrunc(ret_val, ir.FloatType())
+                        elif isinstance(ret_t, ir.DoubleType) and ret_val.type == ir.FloatType():
+                            ret_val = self._builder.fpext(ret_val, ir.DoubleType())
                         elif ret_t.is_pointer and ret_val.type.is_pointer:
                             ret_val = self._builder.bitcast(ret_val, ret_t)
                         elif isinstance(ret_t, ir.IntType) and isinstance(ret_val.type, ir.IntType):
@@ -484,10 +491,18 @@ class LLVMEmitter:
                 return self._builder.trunc(value, ir.IntType(32)) if value.type != ir.IntType(32) else value
             else:
                 return self._builder.sext(value, ir.IntType(64)) if value.type != ir.IntType(64) else value
+        if from_t in (TypeFloat, TypeDouble) and to_t in (TypeFloat, TypeDouble):
+            if from_t == TypeFloat and to_t == TypeDouble:
+                return self._builder.fpext(value, ir.DoubleType())
+            elif from_t == TypeDouble and to_t == TypeFloat:
+                return self._builder.fptrunc(value, ir.FloatType())
+            return value
         if from_t in (TypeInt, TypeInt32) and to_t in (TypeFloat, TypeDouble):
-            return self._builder.sitofp(value, ir.DoubleType())
+            dest_t = ir.FloatType() if to_t == TypeFloat else ir.DoubleType()
+            return self._builder.sitofp(value, dest_t)
         if from_t in (TypeFloat, TypeDouble) and to_t in (TypeInt, TypeInt32):
-            return self._builder.fptosi(value, ir.IntType(32 if to_t == TypeInt32 else 64))
+            dest_t = ir.IntType(32 if to_t == TypeInt32 else 64)
+            return self._builder.fptosi(value, dest_t)
         if from_t in (TypeInt, TypeInt32) and to_t == TypeChar:
             return self._builder.trunc(value, ir.IntType(8))
         if from_t == TypeChar and to_t in (TypeInt, TypeInt32):
@@ -509,6 +524,11 @@ class LLVMEmitter:
     def _apply_compound_op(self, op: str, old_val: ir.Value, rhs_val: ir.Value, target_t: Any) -> ir.Value:
         base_op = op[:-1] # e.g. "+=", "&=", "<<=" -> "+", "&", "<<"
         is_flt = (target_t in (TypeFloat, TypeDouble))
+        if is_flt and old_val.type != rhs_val.type:
+            if old_val.type == ir.FloatType():
+                rhs_val = self._builder.fptrunc(rhs_val, ir.FloatType()) if rhs_val.type == ir.DoubleType() else self._builder.sitofp(rhs_val, ir.FloatType())
+            elif old_val.type == ir.DoubleType():
+                rhs_val = self._builder.fpext(rhs_val, ir.DoubleType()) if rhs_val.type == ir.FloatType() else self._builder.sitofp(rhs_val, ir.DoubleType())
         if base_op == "+":
             return self._builder.fadd(old_val, rhs_val) if is_flt else self._builder.add(old_val, rhs_val)
         if base_op == "-":
@@ -567,6 +587,8 @@ class LLVMEmitter:
             if isinstance(expr.value, int):
                 return ir.Constant(ir.IntType(64), expr.value)
             if isinstance(expr.value, float):
+                if expr.type == TypeFloat:
+                    return ir.Constant(ir.FloatType(), expr.value)
                 return ir.Constant(ir.DoubleType(), expr.value)
             if isinstance(expr.value, str):
                 return self._get_string_constant(expr.value)
@@ -764,6 +786,14 @@ class LLVMEmitter:
             if inner_val.type == dest_llvm_t:
                 return inner_val
 
+            # Float <-> Float (f32 <-> f64)
+            if from_t in (TypeFloat, TypeDouble) and to_t in (TypeFloat, TypeDouble):
+                if from_t == TypeFloat and to_t == TypeDouble:
+                    return self._builder.fpext(inner_val, dest_llvm_t)
+                elif from_t == TypeDouble and to_t == TypeFloat:
+                    return self._builder.fptrunc(inner_val, dest_llvm_t)
+                return inner_val
+
             # Int/Int32 <-> Float/Double
             if from_t in (TypeInt, TypeInt32) and to_t in (TypeFloat, TypeDouble):
                 return self._builder.sitofp(inner_val, dest_llvm_t)
@@ -870,12 +900,20 @@ class LLVMEmitter:
             op = expr.operator.operator_kind
 
             # Coerce numbers if mixed int and float
-            if expr.left.type == TypeInt and expr.right.type in (TypeFloat, TypeDouble):
-                left_val = self._builder.sitofp(left_val, ir.DoubleType())
-            elif expr.left.type in (TypeFloat, TypeDouble) and expr.right.type == TypeInt:
-                right_val = self._builder.sitofp(right_val, ir.DoubleType())
+            if expr.left.type in (TypeInt, TypeInt32) and expr.right.type in (TypeFloat, TypeDouble):
+                target_flt = ir.FloatType() if expr.right.type == TypeFloat else ir.DoubleType()
+                left_val = self._builder.sitofp(left_val, target_flt)
+            elif expr.left.type in (TypeFloat, TypeDouble) and expr.right.type in (TypeInt, TypeInt32):
+                target_flt = ir.FloatType() if expr.left.type == TypeFloat else ir.DoubleType()
+                right_val = self._builder.sitofp(right_val, target_flt)
 
-            is_flt = (left_val.type == ir.DoubleType() or right_val.type == ir.DoubleType())
+            # If both are float but one is float32 and other is float64: promote float32 to double
+            if left_val.type == ir.FloatType() and right_val.type == ir.DoubleType():
+                left_val = self._builder.fpext(left_val, ir.DoubleType())
+            elif left_val.type == ir.DoubleType() and right_val.type == ir.FloatType():
+                right_val = self._builder.fpext(right_val, ir.DoubleType())
+
+            is_flt = isinstance(left_val.type, (ir.FloatType, ir.DoubleType))
 
             # Pointer arithmetic
             if isinstance(left_val.type, ir.PointerType) and isinstance(right_val.type, ir.IntType):

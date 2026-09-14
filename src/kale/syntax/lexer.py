@@ -195,12 +195,18 @@ class Lexer:
             while self._cur_char.isdigit():
                 self._advance()
 
+        has_f_suffix = False
+        if self._cur_char in ('f', 'F'):
+            has_f_suffix = True
+            self._advance()
+
         length = self._position - start
         text = self.source_text.text[start:self._position]
 
         try:
-            if has_dot or has_exponent:
-                value = float(text)
+            if has_dot or has_exponent or has_f_suffix:
+                clean_text = text[:-1] if has_f_suffix else text
+                value = float(clean_text)
             else:
                 value = int(text)
             return SyntaxToken(SyntaxKind.NumberToken, TextSpan(start, length), value, text)

@@ -41,7 +41,9 @@ def to_llvm_type(type_symbol: TypeSymbol, struct_map: dict[str, ir.Type] | None 
         return ir.IntType(32)
     if type_symbol == TypeInt or isinstance(type_symbol, EnumTypeSymbol):
         return ir.IntType(64)
-    if type_symbol in (TypeFloat, TypeDouble):
+    if type_symbol == TypeFloat:
+        return ir.FloatType()
+    if type_symbol == TypeDouble:
         return ir.DoubleType()
     if type_symbol == TypeBool:
         return ir.IntType(1)

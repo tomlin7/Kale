@@ -160,7 +160,11 @@ TYPE_MAP: dict[str, TypeSymbol] = {
     "int32": TypeInt32,
     "i32": TypeInt32,
     "float": TypeFloat,
+    "float32": TypeFloat,
+    "f32": TypeFloat,
     "double": TypeDouble,
+    "float64": TypeDouble,
+    "f64": TypeDouble,
     "bool": TypeBool,
     "string": TypeString,
     "char": TypeChar,
@@ -232,7 +236,8 @@ def can_convert(from_type: TypeSymbol, to_type: TypeSymbol) -> bool:
     # Implicit numeric widening
     if from_type in (TypeInt, TypeInt32) and to_type in (TypeFloat, TypeDouble):
         return True
-    if from_type == TypeFloat and to_type == TypeDouble:
+    # Float conversions (f32 <-> f64)
+    if from_type in (TypeFloat, TypeDouble) and to_type in (TypeFloat, TypeDouble):
         return True
     # Enum types implicitly convert to int/int32 and vice versa (or same enum)
     if isinstance(from_type, EnumTypeSymbol) and to_type in (TypeInt, TypeInt32):

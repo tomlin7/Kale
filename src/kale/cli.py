@@ -39,8 +39,13 @@ def _print_diagnostics(source_text: SourceText, diagnostics: DiagnosticBag):
     for diag in diagnostics:
         print(source_text.format_diagnostic(diag), file=sys.stderr)
 
-def _create_module_loader(diagnostics: DiagnosticBag, current_file: str | None = None) -> ModuleLoader:
+def _create_module_loader(diagnostics: DiagnosticBag, current_file: str | None = None, extra_includes: list[str] | None = None) -> ModuleLoader:
     search_paths: list[str] = [os.path.abspath(".")]
+    if extra_includes:
+        for inc in extra_includes:
+            abs_inc = os.path.abspath(inc)
+            if abs_inc not in search_paths:
+                search_paths.append(abs_inc)
     if current_file:
         file_dir = os.path.dirname(os.path.abspath(current_file))
         if file_dir not in search_paths:
@@ -147,7 +152,8 @@ def cmd_build(args: argparse.Namespace) -> int:
     parser = Parser(source_text, diagnostics)
     unit = parser.parse_compilation_unit()
 
-    loader = _create_module_loader(diagnostics, args.file)
+    extra_includes = getattr(args, "includes", []) or []
+    loader = _create_module_loader(diagnostics, args.file, extra_includes=extra_includes)
     binder = Binder(diagnostics, module_loader=loader, current_file=args.file)
     program = binder.bind_program(unit)
 
@@ -177,7 +183,15 @@ def cmd_build(args: argparse.Namespace) -> int:
             driver = LLVMDriver()
             out_exe = args.output or None
             opt_level = getattr(args, "opt", 2)
-            binary = driver.compile_ll(ll_path, out_exe, opt_level=opt_level)
+            extra_libs = getattr(args, "libs", []) or []
+            lib_dirs = getattr(args, "lib_dirs", []) or []
+            binary = driver.compile_ll(
+                ll_path,
+                out_exe,
+                opt_level=opt_level,
+                extra_libs=extra_libs,
+                lib_dirs=lib_dirs,
+            )
             print(f"Compiled executable (LLVM): {binary}")
             return 0
         except Exception as e:
@@ -278,6 +292,9 @@ def main() -> int:
     p_build.add_argument("--emit-c", action="store_true", help="Keep generated .c file")
     p_build.add_argument("--opt", type=int, choices=[0, 1, 2, 3], default=2, help="Optimization level (0-3)")
     p_build.add_argument("--no-compile", action="store_true", help="Generate IR/C without native binary linkage")
+    p_build.add_argument("-l", "--lib", action="append", default=[], dest="libs", help="Additional libraries to link (e.g. -lglfw3)")
+    p_build.add_argument("-L", "--lib-dir", action="append", default=[], dest="lib_dirs", help="Additional library search directories")
+    p_build.add_argument("-I", "--include", action="append", default=[], dest="includes", help="Additional module search directories")
 
     # run
     p_run = subparsers.add_parser("run", help="Compile and execute (uses in-memory LLVM JIT)")

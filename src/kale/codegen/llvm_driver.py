@@ -18,7 +18,14 @@ class LLVMDriver:
             return vs_clang
         return None
 
-    def compile_ll(self, ll_path: str, output_path: str | None = None, opt_level: int = 2) -> str:
+    def compile_ll(
+        self,
+        ll_path: str,
+        output_path: str | None = None,
+        opt_level: int = 2,
+        extra_libs: list[str] | None = None,
+        lib_dirs: list[str] | None = None,
+    ) -> str:
         if not self.clang_path:
             raise RuntimeError("Clang compiler not found in PATH. Please install Clang or LLVM.")
 
@@ -38,6 +45,13 @@ class LLVMDriver:
         else:
             cmd.append("-lm")
 
+        if lib_dirs:
+            for d in lib_dirs:
+                cmd.append(f"-L{d}" if not d.startswith("-L") else d)
+
+        if extra_libs:
+            for lib in extra_libs:
+                cmd.append(f"-l{lib}" if not lib.startswith("-l") else lib)
 
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:

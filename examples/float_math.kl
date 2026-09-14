@@ -1,0 +1,12 @@
+fn float add_floats(float a, float b) {
+    return a + b;
+}
+
+fn void main_app() {
+    float x = 3.14f;
+    float y = 2.86f;
+    float sum = add_floats(x, y);
+    print("Sum of floats:", (int)sum);
+}
+
+main_app();

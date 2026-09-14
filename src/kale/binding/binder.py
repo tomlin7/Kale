@@ -1366,6 +1366,8 @@ class Binder:
         if isinstance(val, int):
             return BoundLiteralExpression(val, TypeInt)
         if isinstance(val, float):
+            if expression.literal_token.text.endswith(('f', 'F')):
+                return BoundLiteralExpression(val, TypeFloat)
             return BoundLiteralExpression(val, TypeDouble)
         if isinstance(val, str):
             return BoundLiteralExpression(val, TypeString)
