@@ -27,6 +27,10 @@ import {
   FileCode,
   Archive,
   Columns,
+  GithubLogo,
+  XLogo,
+  Key,
+  Sparkle,
   IconProps,
 } from "@phosphor-icons/react";
 
@@ -61,6 +65,290 @@ function HatchingOverlay() {
         </pattern>
       </defs>
       <rect width="100%" height="100%" fill="url(#hatch-pattern)" />
+    </svg>
+  );
+}
+
+/**
+ * Metaphysical Art (Giorgio de Chirico) & Moebius Comic Graphic Illustration
+ * Procedural SVG composed with native SVG feTurbulence (Perlin noise) filters.
+ * Features:
+ * - Stark Roman / Metaphysical arcade colonnade with receding linear perspective
+ * - Exaggerated dramatic cast shadows across an uncanny empty plaza
+ * - High-contrast digital color blocking (stark white stone, vermilion red monolith, midnight blue shadows)
+ * - Moebius-style stippling and ink contour lines
+ * - Native fractal Perlin noise grain texture
+ */
+function MetaphysicalPerlinGraphic() {
+  return (
+    <svg
+      viewBox="0 0 700 380"
+      className="w-full h-full object-cover select-none"
+      preserveAspectRatio="xMidYMid slice"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <defs>
+        {/* Procedural Perlin Noise Filter (Stipple / Grain Texture) */}
+        <filter id="perlin-grain" x="0%" y="0%" width="100%" height="100%">
+          <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" result="noise" />
+          <feColorMatrix
+            type="matrix"
+            values="0 0 0 0 1
+                    0 0 0 0 1
+                    0 0 0 0 1
+                    0 0 0 0.15 0"
+            result="coloredNoise"
+          />
+          <feComposite operator="in" in2="SourceGraphic" />
+        </filter>
+
+        {/* Dense Metaphysical Plinth Perlin Noise */}
+        <filter id="monolith-noise" x="0%" y="0%" width="100%" height="100%">
+          <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="4" result="turbulence" />
+          <feColorMatrix
+            type="matrix"
+            values="0 0 0 0 0.05
+                    0 0 0 0 0.09
+                    0 0 0 0 0.24
+                    0 0 0 0.35 0"
+          />
+        </filter>
+
+        {/* Moebius Stipple Pattern */}
+        <pattern id="stipple-dots" width="8" height="8" patternUnits="userSpaceOnUse">
+          <circle cx="2" cy="2" r="0.75" fill="#ffffff" fillOpacity="0.4" />
+          <circle cx="6" cy="6" r="0.6" fill="#ffffff" fillOpacity="0.3" />
+        </pattern>
+
+        {/* Linear Plaza Shadow Gradient */}
+        <linearGradient id="plaza-horizon" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor="#08102b" />
+          <stop offset="35%" stopColor="#0d173d" />
+          <stop offset="100%" stopColor="#162b6b" />
+        </linearGradient>
+
+        {/* Stark Shadow Gradient for Arches */}
+        <linearGradient id="arch-shadow" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="#050a1d" />
+          <stop offset="100%" stopColor="#0d173d" />
+        </linearGradient>
+      </defs>
+
+      {/* Sky / Atmospheric Backplane */}
+      <rect x="0" y="0" width="700" height="220" fill="#08102b" />
+
+      {/* Surrealist Distant Low Horizon Glow */}
+      <rect x="0" y="160" width="700" height="60" fill="#111f4d" />
+      <line x1="0" y1="220" x2="700" y2="220" stroke="#ffffff" strokeWidth="1" strokeOpacity="0.3" />
+
+      {/* Metaphysical Plaza Floor with Perspective Grid Lines (Giorgio de Chirico Plaza) */}
+      <polygon points="0,220 700,220 700,380 0,380" fill="url(#plaza-horizon)" />
+      
+      {/* Receding Perspective Orthogonals to Vanishing Point (x=520, y=220) */}
+      <g stroke="#ffffff" strokeWidth="0.8" strokeOpacity="0.18">
+        <line x1="520" y1="220" x2="-80" y2="380" />
+        <line x1="520" y1="220" x2="80" y2="380" />
+        <line x1="520" y1="220" x2="240" y2="380" />
+        <line x1="520" y1="220" x2="400" y2="380" />
+        <line x1="520" y1="220" x2="560" y2="380" />
+        <line x1="520" y1="220" x2="720" y2="380" />
+        <line x1="520" y1="220" x2="880" y2="380" />
+      </g>
+
+      {/* Transverse Perspective Grid Lines */}
+      <line x1="0" y1="235" x2="700" y2="235" stroke="#ffffff" strokeWidth="0.6" strokeOpacity="0.12" />
+      <line x1="0" y1="260" x2="700" y2="260" stroke="#ffffff" strokeWidth="0.6" strokeOpacity="0.15" />
+      <line x1="0" y1="300" x2="700" y2="300" stroke="#ffffff" strokeWidth="0.8" strokeOpacity="0.18" />
+      <line x1="0" y1="350" x2="700" y2="350" stroke="#ffffff" strokeWidth="1" strokeOpacity="0.22" />
+
+      {/* --- EXAGGERATED METAPHYSICAL CAST SHADOWS (De Chirico 45-degree harsh shadows) --- */}
+      {/* Colonnade cast shadow across the plaza */}
+      <polygon
+        points="0,220 280,220 460,380 0,380"
+        fill="#040816"
+        fillOpacity="0.75"
+      />
+      {/* Monolith / Plinth cast shadow */}
+      <polygon
+        points="530,220 575,220 670,380 600,380"
+        fill="#040816"
+        fillOpacity="0.8"
+      />
+
+      {/* --- CLASSICAL METAPHYSICAL ARCADE (De Chirico Receding Colonnade) --- */}
+      {/* Arcade Wall Body */}
+      <polygon
+        points="20,40 280,120 280,270 20,330"
+        fill="#1e357d"
+        stroke="#ffffff"
+        strokeWidth="1.5"
+      />
+
+      {/* Arch 1 (Foreground, Tallest) */}
+      <g>
+        {/* Arch interior shadow */}
+        <path
+          d="M 40,325 L 40,130 Q 75,90 110,130 L 110,310 Z"
+          fill="url(#arch-shadow)"
+          stroke="#ffffff"
+          strokeWidth="1.2"
+        />
+        {/* Pure Black Inner Void */}
+        <path
+          d="M 50,322 L 50,140 Q 75,108 100,140 L 100,308 Z"
+          fill="#030611"
+        />
+        {/* Moebius Stipple hatching inside arch */}
+        <path
+          d="M 50,322 L 50,140 Q 75,108 100,140 L 100,308 Z"
+          fill="url(#stipple-dots)"
+        />
+        {/* Arch Impost & Keystone Accent */}
+        <line x1="36" y1="130" x2="114" y2="130" stroke="#ffffff" strokeWidth="1.5" />
+        <rect x="71" y="90" width="8" height="12" fill="#ffffff" />
+      </g>
+
+      {/* Arch 2 (Middle) */}
+      <g>
+        <path
+          d="M 130,305 L 130,150 Q 158,118 186,150 L 186,290 Z"
+          fill="url(#arch-shadow)"
+          stroke="#ffffff"
+          strokeWidth="1.2"
+        />
+        <path
+          d="M 138,302 L 138,158 Q 158,132 178,158 L 178,288 Z"
+          fill="#030611"
+        />
+        <path
+          d="M 138,302 L 138,158 Q 158,132 178,158 L 178,288 Z"
+          fill="url(#stipple-dots)"
+        />
+        <line x1="126" y1="150" x2="190" y2="150" stroke="#ffffff" strokeWidth="1.5" />
+        <rect x="154" y="118" width="7" height="10" fill="#ffffff" />
+      </g>
+
+      {/* Arch 3 (Background, Receding) */}
+      <g>
+        <path
+          d="M 206,285 L 206,168 Q 228,142 250,168 L 250,274 Z"
+          fill="url(#arch-shadow)"
+          stroke="#ffffff"
+          strokeWidth="1.2"
+        />
+        <path
+          d="M 212,282 L 212,174 Q 228,154 244,174 L 244,272 Z"
+          fill="#030611"
+        />
+        <line x1="202" y1="168" x2="254" y2="168" stroke="#ffffff" strokeWidth="1.5" />
+        <rect x="225" y="142" width="6" height="8" fill="#ffffff" />
+      </g>
+
+      {/* Arcade Entablature & Roof Cornice */}
+      <polygon
+        points="15,40 285,120 285,108 15,28"
+        fill="#ffffff"
+        stroke="#ffffff"
+        strokeWidth="1.5"
+      />
+      <line x1="15" y1="46" x2="285" y2="126" stroke="#0d173d" strokeWidth="1.5" />
+
+      {/* --- SURREALIST PRIMARY COLOR BLOCK MONOLITH (Stark Red / Minimalist Accent) --- */}
+      {/* High-contrast geometric plinth */}
+      <g>
+        {/* Monolith Front Face (Vibrant Vermilion Red) */}
+        <polygon
+          points="530,120 575,105 575,225 530,240"
+          fill="#dc2626"
+          stroke="#ffffff"
+          strokeWidth="1.5"
+        />
+        {/* Monolith Top Face (Pure White) */}
+        <polygon
+          points="530,120 575,105 560,95 515,110"
+          fill="#ffffff"
+          stroke="#ffffff"
+          strokeWidth="1.5"
+        />
+        {/* Monolith Side Face (Midnight Shadow) */}
+        <polygon
+          points="515,110 530,120 530,240 515,230"
+          fill="#070e24"
+          stroke="#ffffff"
+          strokeWidth="1.5"
+        />
+        {/* Perlin noise texture over monolith face */}
+        <polygon
+          points="530,120 575,105 575,225 530,240"
+          fill="#000000"
+          fillOpacity="0.1"
+          filter="url(#monolith-noise)"
+        />
+      </g>
+
+      {/* Classical Geometric Sphere / Orb casting shadow (De Chirico Motif) */}
+      <g>
+        <circle cx="430" cy="275" r="22" fill="#ffffff" stroke="#ffffff" strokeWidth="1.5" />
+        <circle cx="430" cy="275" r="22" fill="url(#stipple-dots)" />
+        {/* Sphere 3D shading */}
+        <path
+          d="M 430,253 A 22,22 0 0,1 452,275 A 22,14 0 0,1 430,289 A 22,22 0 0,1 408,275 A 22,22 0 0,1 430,253 Z"
+          fill="#0d173d"
+          fillOpacity="0.5"
+        />
+        {/* Ground shadow ellipse */}
+        <ellipse cx="448" cy="285" rx="26" ry="7" fill="#040816" fillOpacity="0.7" />
+      </g>
+
+      {/* Architectural Chimney / Distant Metaphysical Tower */}
+      <polygon
+        points="630,70 655,70 655,220 630,220"
+        fill="#0d173d"
+        stroke="#ffffff"
+        strokeWidth="1.2"
+      />
+      <polygon
+        points="625,70 660,70 655,62 630,62"
+        fill="#ffffff"
+        stroke="#ffffff"
+        strokeWidth="1"
+      />
+
+      {/* Global Perlin Noise Grain Overlay across the entire artwork */}
+      <rect
+        x="0"
+        y="0"
+        width="700"
+        height="380"
+        fill="#ffffff"
+        filter="url(#perlin-grain)"
+        pointerEvents="none"
+      />
+
+      {/* Frame Border Accent */}
+      <rect
+        x="1"
+        y="1"
+        width="698"
+        height="378"
+        fill="none"
+        stroke="#ffffff"
+        strokeWidth="1"
+        strokeOpacity="0.3"
+      />
+
+      {/* Typography Inscription In-Canvas */}
+      <text
+        x="680"
+        y="365"
+        fill="#ffffff"
+        fillOpacity="0.5"
+        fontSize="9"
+        fontFamily="monospace"
+        textAnchor="end"
+      >
+        METAPHYSICAL PROCEDURAL MATRIX // PERLIN NOISE &amp; PERSPECTIVE
+      </text>
     </svg>
   );
 }
@@ -488,7 +776,200 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* 5. MONOREPO MODULES REGISTRY GRID (18 projects with images & phosphor icons) */}
+      {/* 5. PROCEDURAL METAPHYSICAL GRAPHICS & ARCHITECTURAL PHILOSOPHY BENTO */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+        <div className="rounded-[6px] bg-[#0d173d] border border-[#243b82] overflow-hidden grid grid-cols-1 lg:grid-cols-12 items-stretch relative">
+          <HatchingOverlay />
+
+          {/* Left 7 Columns: Metaphysical Procedural SVG Graphic (Perlin Noise, Colonnade, Stark Shadows, Color Blocks) */}
+          <div className="lg:col-span-7 relative min-h-[380px] lg:min-h-[460px] border-b lg:border-b-0 lg:border-r border-[#243b82] overflow-hidden bg-[#08102b] flex items-center justify-center">
+            <MetaphysicalPerlinGraphic />
+            <div className="absolute top-4 left-4 px-3 py-1 rounded-[6px] bg-[#0d173d]/90 border border-white/20 text-[10px] font-mono text-white flex items-center gap-1.5 backdrop-blur-sm">
+              <Sparkle size={12} weight="fill" className="text-white" />
+              <span>NATIVE SVG FRACTAL NOISE // DE CHIRICO ARCADE</span>
+            </div>
+            <div className="absolute bottom-4 left-4 right-4 hidden sm:flex items-center justify-between px-3 py-1.5 rounded-[6px] bg-[#0d173d]/90 border border-white/10 text-[9px] font-mono text-white/70 backdrop-blur-sm">
+              <span>feTurbulence baseFrequency=0.65 (Perlin)</span>
+              <span>Vanishing Point: (520, 220)</span>
+              <span>Pittura Metafisica</span>
+            </div>
+          </div>
+
+          {/* Right 5 Columns: Architectural & Surrealist Philosophy Specification */}
+          <div className="lg:col-span-5 p-8 sm:p-10 flex flex-col justify-between space-y-6 z-10">
+            <div className="space-y-4">
+              <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-[6px] border border-white/20 bg-[#162b6b] text-[10px] font-mono text-white">
+                <span>METAPHYSICAL SYSTEMS DOCTRINE</span>
+              </div>
+
+              <h2 className="text-2xl sm:text-3xl font-renaissance font-normal text-white leading-snug">
+                Uncanny Stillness. <br />
+                Geometric Solitude.
+              </h2>
+
+              <p className="text-xs sm:text-sm text-white/80 leading-relaxed font-normal">
+                Drawing direct heritage from Giorgio de Chirico&apos;s <em>Pittura Metafisica</em> and Jean Giraud (Moebius)&apos; clean-line graphic formalism, Kale rejects decorative noise in both software architecture and visual expression.
+              </p>
+
+              <div className="space-y-2.5 pt-2">
+                <div className="p-3 rounded-[6px] bg-[#0a1333] border border-white/10 space-y-1">
+                  <div className="text-[10px] uppercase font-mono text-white/60">I. Architectural Rigor</div>
+                  <div className="text-xs text-white/90">
+                    Stark classical columns and Roman arches mirror rigid deterministic type bounds. No dynamic indirection.
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-[6px] bg-[#0a1333] border border-white/10 space-y-1">
+                  <div className="text-[10px] uppercase font-mono text-white/60">II. Exaggerated Cast Shadows</div>
+                  <div className="text-xs text-white/90">
+                    Dramatic 45° black/midnight geometry exposes hardware reality. Zero hidden runtime abstractions or GC pauses.
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-[6px] bg-[#0a1333] border border-white/10 space-y-1">
+                  <div className="text-[10px] uppercase font-mono text-white/60">III. Procedural Perlin Grain</div>
+                  <div className="text-xs text-white/90">
+                    Pure mathematical turbulence rendered in-browser without raster assets. Deterministic from first principles.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-[#243b82] flex items-center justify-between text-xs font-mono text-white/70">
+              <span>ANNO MMXXVI</span>
+              <span className="text-white">x86_64 PURE SYSTEM</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 6. COMMUNITY & GITHUB ECOSYSTEM LINKS BENTO */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+          {/* Card A (7 Cols): Primary GitHub Repository & Clone Bento */}
+          <div className="lg:col-span-7 rounded-[6px] bg-[#0d173d] border border-[#243b82] p-8 sm:p-10 flex flex-col justify-between space-y-6 relative overflow-hidden">
+            <HatchingOverlay />
+            <div className="space-y-4 z-10">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-[6px] bg-white text-[#162b6b] flex items-center justify-center">
+                    <GithubLogo size={20} weight="fill" />
+                  </div>
+                  <div>
+                    <span className="text-[10px] uppercase font-mono text-white/60 block">Official Repository</span>
+                    <h3 className="text-xl font-renaissance font-normal text-white">tomlin7 / kale</h3>
+                  </div>
+                </div>
+                <a
+                  href="https://github.com/tomlin7/kale"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-4 py-2 rounded-[6px] bg-white text-[#162b6b] text-xs font-medium hover:bg-white/90 transition-colors flex items-center gap-1.5"
+                >
+                  <span>Star on GitHub</span>
+                  <ArrowUpRight size={14} weight="bold" />
+                </a>
+              </div>
+
+              <p className="text-xs sm:text-sm text-white/80 leading-relaxed font-normal">
+                The entire Kale monorepo—compiler, standard library, 144Hz editor, Git-compatible VCS, linear window manager, SQL engine, and bare-metal OS—is completely open source and distributed under the MIT license.
+              </p>
+
+              {/* Terminal Clone Command Snippet */}
+              <div className="p-4 rounded-[6px] bg-[#0a1333] border border-white/10 space-y-2">
+                <div className="flex items-center justify-between text-[10px] font-mono text-white/60">
+                  <span>CLONE WITH SUBMODULES</span>
+                  <span className="text-white/40">bash / zsh / pwsh</span>
+                </div>
+                <div className="flex items-center justify-between font-mono text-xs text-white">
+                  <code className="text-white/90 selection:bg-white selection:text-[#0a1333] overflow-x-auto">
+                    git clone --recurse-submodules https://github.com/tomlin7/kale.git
+                  </code>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-[#243b82] grid grid-cols-3 gap-3 text-center z-10">
+              <div className="p-2.5 rounded-[6px] bg-[#162b6b]/40 border border-white/10">
+                <div className="text-[10px] font-mono text-white/60">BRANCH</div>
+                <div className="text-xs font-mono font-medium text-white mt-0.5">master</div>
+              </div>
+              <div className="p-2.5 rounded-[6px] bg-[#162b6b]/40 border border-white/10">
+                <div className="text-[10px] font-mono text-white/60">LICENSE</div>
+                <div className="text-xs font-mono font-medium text-white mt-0.5">MIT Open</div>
+              </div>
+              <div className="p-2.5 rounded-[6px] bg-[#162b6b]/40 border border-white/10">
+                <div className="text-[10px] font-mono text-white/60">CONTRIBUTIONS</div>
+                <div className="text-xs font-mono font-medium text-white mt-0.5">Welcome</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Card B (5 Cols): Ecosystem Channels (Twitter/X & Release GPG) */}
+          <div className="lg:col-span-5 flex flex-col gap-5">
+            {/* Twitter / X Dispatch Bento */}
+            <div className="rounded-[6px] bg-[#0d173d] border border-[#243b82] p-6 flex flex-col justify-between flex-1 relative overflow-hidden">
+              <HatchingOverlay />
+              <div className="space-y-3 z-10">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-[6px] bg-[#162b6b] border border-white/20 text-white flex items-center justify-center">
+                      <XLogo size={16} weight="bold" />
+                    </div>
+                    <div>
+                      <span className="text-[10px] uppercase font-mono text-white/60 block">Social Transmission</span>
+                      <h4 className="text-base font-renaissance font-normal text-white">X / Twitter</h4>
+                    </div>
+                  </div>
+                  <span className="px-2 py-0.5 rounded-[6px] bg-[#162b6b] border border-white/20 text-[10px] font-mono text-white">
+                    SOON
+                  </span>
+                </div>
+                <p className="text-xs text-white/80 leading-relaxed font-normal">
+                  Release dispatches, compiler benchmarks, 144Hz editor demos, and architectural whitepapers broadcast soon.
+                </p>
+              </div>
+
+              <div className="pt-4 border-t border-[#243b82] flex items-center justify-between text-xs font-mono text-white/60 z-10">
+                <span>@kalesystems</span>
+                <span className="text-white/40">Broadcast Pending</span>
+              </div>
+            </div>
+
+            {/* Cryptographic Verification Bento */}
+            <div className="rounded-[6px] bg-[#0d173d] border border-[#243b82] p-6 flex flex-col justify-between flex-1 relative overflow-hidden">
+              <HatchingOverlay />
+              <div className="space-y-3 z-10">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-[6px] bg-[#162b6b] border border-white/20 text-white flex items-center justify-center">
+                      <Key size={16} weight="regular" />
+                    </div>
+                    <div>
+                      <span className="text-[10px] uppercase font-mono text-white/60 block">Security & Integrity</span>
+                      <h4 className="text-base font-renaissance font-normal text-white">Signed Releases</h4>
+                    </div>
+                  </div>
+                  <span className="px-2 py-0.5 rounded-[6px] bg-white text-[#162b6b] text-[10px] font-mono font-medium">
+                    VERIFIED
+                  </span>
+                </div>
+                <div className="p-2.5 rounded-[6px] bg-[#0a1333] border border-white/10 font-mono text-[11px] text-white flex items-center justify-between">
+                  <span className="text-white/60 text-[10px]">GPG:</span>
+                  <span className="text-white tracking-wider">1B91 7D47 79A6 102E</span>
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-[#243b82] flex items-center justify-between text-xs font-mono text-white/60 z-10">
+                <span>Binary Provenance</span>
+                <span className="text-white">Deterministic Build</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 7. MONOREPO MODULES REGISTRY GRID (18 projects with images & phosphor icons) */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-10">
         <div className="flex flex-col sm:flex-row sm:items-end justify-between mb-8 pb-4 border-b border-[#243b82]">
           <div>

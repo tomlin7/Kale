@@ -7,6 +7,8 @@ import { PROJECTS } from "@/data/projects";
 import {
   CaretLeft,
   CaretRight,
+  House,
+  GithubLogo,
   Columns,
   Code,
   Terminal,
@@ -72,109 +74,96 @@ export function TopNavCarousel() {
     }
   }, [pathname]);
 
+  const isHome = pathname === "/";
+
   return (
-    <header className="sticky top-0 z-50 w-full bg-[#0d173d] border-b border-[#243b82]">
-      {/* Brand & Monorepo Bar */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-[6px] border border-white/30 bg-[#162b6b] flex items-center justify-center text-white">
-            <Columns size={18} weight="regular" />
-          </div>
-          <div className="flex flex-col">
-            <span className="font-renaissance tracking-wider text-base text-white font-normal">
-              KALE
-            </span>
-            <span className="text-[10px] uppercase tracking-widest text-white/60 -mt-1 font-mono">
-              Systems Monorepo
-            </span>
-          </div>
+    <header className="sticky top-0 z-50 w-full bg-[#0d173d] border-b border-[#243b82] shadow-sm">
+      <div className="w-full flex items-center justify-between px-3 sm:px-4 h-12 gap-2">
+        {/* Home / Overview Tab */}
+        <Link
+          href="/"
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-[6px] text-xs font-mono border transition-colors flex-shrink-0 ${
+            isHome
+              ? "bg-white text-[#162b6b] border-white font-medium"
+              : "bg-[#162b6b]/60 border-white/20 text-white/80 hover:text-white hover:border-white/40"
+          }`}
+        >
+          <House size={14} weight="bold" />
+          <span className="tracking-wider">OVERVIEW</span>
         </Link>
 
-        {/* Global Action Links */}
-        <div className="flex items-center gap-3 text-xs">
-          <div className="hidden sm:flex items-center gap-2 px-2.5 py-1 rounded-[6px] bg-[#162b6b] border border-white/20 text-white font-mono">
-            <span className="w-1.5 h-1.5 rounded-[2px] bg-white"></span>
-            <span>18 Modules</span>
-          </div>
-          <a
-            href="https://github.com/tomlin7/kale"
-            target="_blank"
-            rel="noreferrer"
-            className="px-3.5 py-1.5 rounded-[6px] bg-white text-[#162b6b] font-medium text-xs hover:bg-white/90 transition-colors"
+        {/* Separator */}
+        <div className="h-4 w-[1px] bg-[#243b82] flex-shrink-0" />
+
+        {/* Scrollable Architectural Tabs Container */}
+        <div className="relative flex-1 flex items-center overflow-hidden">
+          {/* Scroll Left Button */}
+          <button
+            onClick={() => scroll("left")}
+            className="absolute left-0 top-1/2 -translate-y-1/2 z-20 w-6 h-6 rounded-[6px] bg-[#0d173d] border border-white/20 text-white hover:border-white flex items-center justify-center transition-colors shadow-md"
+            aria-label="Scroll left"
           >
-            Source Code
-          </a>
-        </div>
-      </div>
+            <CaretLeft size={12} weight="bold" />
+          </button>
 
-      {/* Horizontal Project Carousel Strip */}
-      <div className="relative w-full border-t border-[#243b82] bg-[#162b6b]">
-        {/* Left Arrow Button */}
-        <button
-          onClick={() => scroll("left")}
-          className="absolute left-2 top-1/2 -translate-y-1/2 z-20 w-7 h-7 rounded-[6px] bg-[#0d173d] border border-white/20 text-white hover:border-white/50 flex items-center justify-center transition-colors"
-          aria-label="Scroll left"
-        >
-          <CaretLeft size={16} weight="bold" />
-        </button>
+          {/* Tabs Ribbon */}
+          <div
+            ref={scrollRef}
+            className="flex items-center gap-1.5 overflow-x-auto px-8 py-1 no-scrollbar scroll-smooth w-full"
+          >
+            {PROJECTS.map((p) => {
+              const href = `/projects/${p.slug}`;
+              const isActive = pathname === href;
+              const IconComponent = PROJECT_ICONS[p.slug] || Columns;
 
-        {/* Scrollable Container */}
-        <div
-          ref={scrollRef}
-          className="flex items-center gap-2 overflow-x-auto px-12 py-2.5 no-scrollbar scroll-smooth"
-        >
-          {PROJECTS.map((p) => {
-            const href = `/projects/${p.slug}`;
-            const isActive = pathname === href;
-            const IconComponent = PROJECT_ICONS[p.slug] || Columns;
-
-            return (
-              <Link
-                key={p.slug}
-                href={href}
-                data-active={isActive}
-                className={`flex-shrink-0 flex items-center gap-2.5 px-3 py-1.5 rounded-[6px] border transition-colors ${
-                  isActive
-                    ? "bg-[#0d173d] border-white text-white"
-                    : "bg-[#0d173d]/70 border-[#243b82] text-white/80 hover:border-white/40 hover:text-white hover:bg-[#0d173d]"
-                }`}
-              >
-                {/* Phosphor Icon instead of text initials */}
-                <div
-                  className={`w-6 h-6 rounded-[6px] flex items-center justify-center ${
-                    isActive ? "bg-white text-[#162b6b]" : "bg-[#162b6b] text-white"
+              return (
+                <Link
+                  key={p.slug}
+                  href={href}
+                  data-active={isActive}
+                  className={`flex-shrink-0 flex items-center gap-2 px-2.5 py-1 rounded-[6px] border text-xs transition-colors font-mono ${
+                    isActive
+                      ? "bg-white text-[#162b6b] border-white font-medium"
+                      : "bg-[#162b6b]/40 border-white/10 text-white/70 hover:border-white/30 hover:text-white hover:bg-[#162b6b]/80"
                   }`}
                 >
-                  <IconComponent size={14} weight="regular" />
-                </div>
-
-                {/* Project Title & Status */}
-                <div className="flex flex-col text-left">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-normal text-white">
-                      {p.name}
-                    </span>
-                    <span className="text-[9px] px-1.5 py-0.2 rounded-[6px] font-mono bg-[#162b6b] border border-white/20 text-white/80">
-                      {p.version}
-                    </span>
-                  </div>
-                  <span className="text-[10px] text-white/60 font-mono truncate max-w-[140px]">
-                    {p.path}
+                  <IconComponent size={13} weight="regular" />
+                  <span className="font-sans font-normal">{p.name}</span>
+                  <span
+                    className={`text-[9px] px-1 py-0.2 rounded-[4px] ${
+                      isActive ? "bg-[#162b6b]/15 text-[#162b6b]" : "bg-[#0d173d] text-white/50"
+                    }`}
+                  >
+                    {p.version}
                   </span>
-                </div>
-              </Link>
-            );
-          })}
+                </Link>
+              );
+            })}
+          </div>
+
+          {/* Scroll Right Button */}
+          <button
+            onClick={() => scroll("right")}
+            className="absolute right-0 top-1/2 -translate-y-1/2 z-20 w-6 h-6 rounded-[6px] bg-[#0d173d] border border-white/20 text-white hover:border-white flex items-center justify-center transition-colors shadow-md"
+            aria-label="Scroll right"
+          >
+            <CaretRight size={12} weight="bold" />
+          </button>
         </div>
 
-        {/* Right Arrow Button */}
-        <button
-          onClick={() => scroll("right")}
-          className="absolute right-2 top-1/2 -translate-y-1/2 z-20 w-7 h-7 rounded-[6px] bg-[#0d173d] border border-white/20 text-white hover:border-white/50 flex items-center justify-center transition-colors"
-          aria-label="Scroll right"
+        {/* Separator */}
+        <div className="h-4 w-[1px] bg-[#243b82] flex-shrink-0" />
+
+        {/* Highlighted GitHub Action Link */}
+        <a
+          href="https://github.com/tomlin7/kale"
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-[6px] bg-white text-[#162b6b] text-xs font-medium hover:bg-white/90 transition-colors flex-shrink-0"
         >
-          <CaretRight size={16} weight="bold" />
-        </button>
+          <GithubLogo size={15} weight="fill" />
+          <span className="hidden sm:inline">GitHub</span>
+        </a>
       </div>
     </header>
   );
