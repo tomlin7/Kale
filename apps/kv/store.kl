@@ -1,3 +1,8 @@
+// apps/kv/store.kl
+// Core In-Memory Key-Value Storage Engine (kaledis)
+
+extern int strcmp(string s1, string s2);
+
 struct KvEntry {
     string key;
     string val;
@@ -36,13 +41,23 @@ fn void store_set(KvStore* s, string k, string v) {
     int i = 0;
     while (i < s->count) {
         if (s->entries[i].active) {
-            // Check matching key (simplified check)
-            if (s->entries[i].key[0] == k[0]) {
+            if (strcmp(s->entries[i].key, k) == 0) {
                 s->entries[i].val = v;
                 return;
             }
         }
         i = i + 1;
+    }
+    // Check if there is an inactive slot to reuse
+    int j = 0;
+    while (j < s->count) {
+        if (!s->entries[j].active) {
+            s->entries[j].key = k;
+            s->entries[j].val = v;
+            s->entries[j].active = true;
+            return;
+        }
+        j = j + 1;
     }
     if (s->count < s->max_entries) {
         s->entries[s->count].key = k;
@@ -56,11 +71,63 @@ fn string store_get(KvStore* s, string k) {
     int i = 0;
     while (i < s->count) {
         if (s->entries[i].active) {
-            if (s->entries[i].key[0] == k[0]) {
+            if (strcmp(s->entries[i].key, k) == 0) {
                 return s->entries[i].val;
             }
         }
         i = i + 1;
     }
     return "";
+}
+
+fn bool store_exists(KvStore* s, string k) {
+    int i = 0;
+    while (i < s->count) {
+        if (s->entries[i].active) {
+            if (strcmp(s->entries[i].key, k) == 0) {
+                return true;
+            }
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
+fn bool store_del(KvStore* s, string k) {
+    int i = 0;
+    while (i < s->count) {
+        if (s->entries[i].active) {
+            if (strcmp(s->entries[i].key, k) == 0) {
+                s->entries[i].active = false;
+                s->entries[i].key = "";
+                s->entries[i].val = "";
+                return true;
+            }
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
+fn int store_active_count(KvStore* s) {
+    int total = 0;
+    int i = 0;
+    while (i < s->count) {
+        if (s->entries[i].active) {
+            total = total + 1;
+        }
+        i = i + 1;
+    }
+    return total;
+}
+
+fn void store_clear(KvStore* s) {
+    int i = 0;
+    while (i < s->count) {
+        s->entries[i].active = false;
+        s->entries[i].key = "";
+        s->entries[i].val = "";
+        i = i + 1;
+    }
+    s->count = 0;
 }

@@ -1,14 +1,18 @@
-# apps/kv — High-Performance Key-Value Store (kaledis)
+# apps/kv — High-Performance Key-Value Store & Network Daemon (kaledis)
 
 ## Version
-`0.1.0`
+`0.2.0`
 
 ## Description
-In-memory, RESP-compatible key-value database written in Kale. Features lock-free skip lists, append-only log (AOF) persistence, and sub-millisecond query response times.
+In-memory, RESP-compatible key-value database and TCP network daemon written in pure Kale. Features string matching, CRUD operations, bulk/inline protocol parsing, and high-throughput socket request dispatch.
 
 ## Status
-🟡 In Progress
+🟢 Active (Network Daemon Completed)
 
 ## Dependencies
-- `libs/net`: TCP socket server
-- `packages/std`: collections, string builder, file I/O
+- `libs/net`: TCP socket server and listener
+- `packages/std`: collections, string builder
+
+## Verification
+- Unit & Network Tests: `kale run tests/test_kv_daemon.kl`
+- Main Runner: `kale run apps/kv/main.kl`

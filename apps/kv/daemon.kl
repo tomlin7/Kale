@@ -1,0 +1,271 @@
+// apps/kv/daemon.kl
+// TCP Network Daemon & Command Dispatcher for kaledis using libs/net
+
+import "apps/kv/store.kl" as store;
+import "libs/net/tcp.kl" as tcp;
+import "packages/std/text/string_builder.kl" as sb;
+
+extern int strlen(string s);
+extern int strcmp(string s1, string s2);
+extern void* malloc(int size);
+
+// Uppercase a character if lowercase ASCII
+fn char to_upper_char(char c) {
+    if ((int)c >= 97 && (int)c <= 122) {
+        return (char)((int)c - 32);
+    }
+    return c;
+}
+
+// Check if two strings match case-insensitively
+fn bool str_eq_ci(string a, string b) {
+    int len_a = strlen(a);
+    int len_b = strlen(b);
+    if (len_a != len_b) {
+        return false;
+    }
+    int i = 0;
+    while (i < len_a) {
+        char ca = to_upper_char(a[i]);
+        char cb = to_upper_char(b[i]);
+        if (ca != cb) {
+            return false;
+        }
+        i = i + 1;
+    }
+    return true;
+}
+
+// Parses raw command string into RESP-formatted response
+fn string daemon_execute_command(store.KvStore* s, string raw_cmd) {
+    int len = strlen(raw_cmd);
+    if (len == 0) {
+        return "-ERR empty command\r\n";
+    }
+
+    // Skip leading whitespace / CR / LF
+    int idx = 0;
+    while (idx < len && (raw_cmd[idx] == ' ' || (int)raw_cmd[idx] == 13 || (int)raw_cmd[idx] == 10)) {
+        idx = idx + 1;
+    }
+    if (idx >= len) {
+        return "-ERR empty command\r\n";
+    }
+
+    // Token 1: Command name
+    sb.StringBuilder cmd_sb;
+    cmd_sb.init(16);
+    while (idx < len && raw_cmd[idx] != ' ' && (int)raw_cmd[idx] != 13 && (int)raw_cmd[idx] != 10) {
+        cmd_sb.append_char(raw_cmd[idx]);
+        idx = idx + 1;
+    }
+    string cmd = cmd_sb.to_string();
+    cmd_sb.destroy();
+
+    // Skip whitespace
+    while (idx < len && raw_cmd[idx] == ' ') {
+        idx = idx + 1;
+    }
+
+    // Token 2: Argument 1 (e.g. key)
+    sb.StringBuilder arg1_sb;
+    arg1_sb.init(64);
+    while (idx < len && raw_cmd[idx] != ' ' && (int)raw_cmd[idx] != 13 && (int)raw_cmd[idx] != 10) {
+        arg1_sb.append_char(raw_cmd[idx]);
+        idx = idx + 1;
+    }
+    string arg1 = arg1_sb.to_string();
+    arg1_sb.destroy();
+
+    // Skip whitespace
+    while (idx < len && raw_cmd[idx] == ' ') {
+        idx = idx + 1;
+    }
+
+    // Token 3: Argument 2 (e.g. value)
+    sb.StringBuilder arg2_sb;
+    arg2_sb.init(128);
+    while (idx < len && (int)raw_cmd[idx] != 13 && (int)raw_cmd[idx] != 10) {
+        arg2_sb.append_char(raw_cmd[idx]);
+        idx = idx + 1;
+    }
+    string arg2 = arg2_sb.to_string();
+    arg2_sb.destroy();
+
+    // Dispatch commands
+    if (str_eq_ci(cmd, "PING")) {
+        if (strlen(arg1) > 0) {
+            sb.StringBuilder res;
+            res.init(64);
+            res.append("+");
+            res.append(arg1);
+            res.append("\r\n");
+            string ret = res.to_string();
+            res.destroy();
+            return ret;
+        }
+        return "+PONG\r\n";
+    }
+
+    if (str_eq_ci(cmd, "SET")) {
+        if (strlen(arg1) == 0) {
+            return "-ERR wrong number of arguments for 'set' command\r\n";
+        }
+        store.store_set(s, arg1, arg2);
+        return "+OK\r\n";
+    }
+
+    if (str_eq_ci(cmd, "GET")) {
+        if (strlen(arg1) == 0) {
+            return "-ERR wrong number of arguments for 'get' command\r\n";
+        }
+        if (!store.store_exists(s, arg1)) {
+            return "$-1\r\n"; // Nil bulk string
+        }
+        string val = store.store_get(s, arg1);
+        sb.StringBuilder res;
+        res.init(strlen(val) + 16);
+        res.append("$");
+        res.append_int(strlen(val));
+        res.append("\r\n");
+        res.append(val);
+        res.append("\r\n");
+        string ret = res.to_string();
+        res.destroy();
+        return ret;
+    }
+
+    if (str_eq_ci(cmd, "DEL")) {
+        if (strlen(arg1) == 0) {
+            return "-ERR wrong number of arguments for 'del' command\r\n";
+        }
+        bool ok = store.store_del(s, arg1);
+        if (ok) {
+            return ":1\r\n";
+        }
+        return ":0\r\n";
+    }
+
+    if (str_eq_ci(cmd, "EXISTS")) {
+        if (strlen(arg1) == 0) {
+            return "-ERR wrong number of arguments for 'exists' command\r\n";
+        }
+        if (store.store_exists(s, arg1)) {
+            return ":1\r\n";
+        }
+        return ":0\r\n";
+    }
+
+    if (str_eq_ci(cmd, "DBSIZE")) {
+        int cnt = store.store_active_count(s);
+        sb.StringBuilder res;
+        res.init(16);
+        res.append(":");
+        res.append_int(cnt);
+        res.append("\r\n");
+        string ret = res.to_string();
+        res.destroy();
+        return ret;
+    }
+
+    if (str_eq_ci(cmd, "FLUSHDB") || str_eq_ci(cmd, "FLUSHALL")) {
+        store.store_clear(s);
+        return "+OK\r\n";
+    }
+
+    if (str_eq_ci(cmd, "INFO")) {
+        int cnt = store.store_active_count(s);
+        sb.StringBuilder res;
+        res.init(256);
+        res.append("# Server\r\nkaledis_version:0.2.0\r\nkale_arch:native_x86_64\r\n");
+        res.append("# Keyspace\r\ndb0:keys=");
+        res.append_int(cnt);
+        res.append("\r\n");
+        string body = res.to_string();
+        res.destroy();
+
+        sb.StringBuilder ret;
+        ret.init(strlen(body) + 16);
+        ret.append("$");
+        ret.append_int(strlen(body));
+        ret.append("\r\n");
+        ret.append(body);
+        ret.append("\r\n");
+        string final_res = ret.to_string();
+        ret.destroy();
+        return final_res;
+    }
+
+    if (str_eq_ci(cmd, "QUIT")) {
+        return "+OK\r\n";
+    }
+
+    return "-ERR unknown command\r\n";
+}
+
+struct KaledisDaemon {
+    store.KvStore* store;
+    tcp.TcpListener listener;
+    string host;
+    int port;
+    bool is_running;
+    int commands_processed;
+}
+
+fn KaledisDaemon* daemon_new(string host, int port, int max_entries) {
+    KaledisDaemon* d = alloc(KaledisDaemon);
+    d->store = store.store_new(max_entries);
+    d->listener.init();
+    d->host = host;
+    d->port = port;
+    d->is_running = false;
+    d->commands_processed = 0;
+    return d;
+}
+
+fn void daemon_free(KaledisDaemon* d) {
+    if (d != (KaledisDaemon*)0) {
+        if (d->is_running) {
+            d->listener.close();
+        }
+        if (d->store != (store.KvStore*)0) {
+            store.store_free(d->store);
+        }
+        free(d);
+    }
+}
+
+fn bool daemon_start(KaledisDaemon* d, int backlog) {
+    d->listener = tcp.tcp_listen(d->host, d->port, backlog);
+    d->is_running = d->listener.is_listening;
+    return d->is_running;
+}
+
+fn void daemon_stop(KaledisDaemon* d) {
+    if (d->is_running) {
+        d->listener.close();
+        d->is_running = false;
+    }
+}
+
+// Handles a single client connection exchange
+fn bool daemon_handle_client(KaledisDaemon* d, tcp.TcpStream* client) {
+    if (!client->is_connected) {
+        return false;
+    }
+
+    char* buf = (char*)malloc(1024);
+    int read_bytes = client->read_bytes((void*)buf, 1023);
+    if (read_bytes <= 0) {
+        free((void*)buf);
+        return false;
+    }
+    buf[read_bytes] = (char)0;
+
+    string response = daemon_execute_command(d->store, (string)buf);
+    client->send_string(response);
+    d->commands_processed = d->commands_processed + 1;
+
+    free((void*)buf);
+    return true;
+}

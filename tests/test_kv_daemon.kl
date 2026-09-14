@@ -1,0 +1,168 @@
+import "apps/kv/store.kl" as store;
+import "apps/kv/daemon.kl" as daemon;
+import "libs/net/tcp.kl" as tcp;
+
+extern int strcmp(string s1, string s2);
+extern void* malloc(int size);
+
+fn int main_entry() {
+    print("[TEST] Starting kaledis in-memory store and TCP daemon test suite...");
+
+    // 1. Storage unit tests
+    store.KvStore* s = store.store_new(16);
+    store.store_set(s, "framework", "kale-v2");
+    store.store_set(s, "protocol", "resp");
+
+    if (strcmp(store.store_get(s, "framework"), "kale-v2") != 0) {
+        print("FAILED: store_get framework");
+        return 1;
+    }
+    if (!store.store_exists(s, "protocol")) {
+        print("FAILED: store_exists protocol");
+        return 2;
+    }
+    if (store.store_exists(s, "missing_key")) {
+        print("FAILED: store_exists missing_key");
+        return 3;
+    }
+    if (store.store_active_count(s) != 2) {
+        print("FAILED: store_active_count");
+        return 4;
+    }
+
+    bool del_ok = store.store_del(s, "framework");
+    if (!del_ok || store.store_exists(s, "framework")) {
+        print("FAILED: store_del");
+        return 5;
+    }
+    if (store.store_active_count(s) != 1) {
+        print("FAILED: store_active_count after del");
+        return 6;
+    }
+    print("  [PASS] Storage engine CRUD verified");
+
+    // 2. Protocol parsing & RESP output verification
+    string r_ping = daemon.daemon_execute_command(s, "PING\r\n");
+    if (strcmp(r_ping, "+PONG\r\n") != 0) {
+        print("FAILED: PING response");
+        return 10;
+    }
+
+    string r_set = daemon.daemon_execute_command(s, "SET redis_compat true\r\n");
+    if (strcmp(r_set, "+OK\r\n") != 0) {
+        print("FAILED: SET response");
+        return 11;
+    }
+
+    string r_get = daemon.daemon_execute_command(s, "GET redis_compat\r\n");
+    if (strcmp(r_get, "$4\r\ntrue\r\n") != 0) {
+        print("FAILED: GET response");
+        return 12;
+    }
+
+    string r_nil = daemon.daemon_execute_command(s, "GET not_found\r\n");
+    if (strcmp(r_nil, "$-1\r\n") != 0) {
+        print("FAILED: Nil GET response");
+        return 13;
+    }
+
+    string r_ex = daemon.daemon_execute_command(s, "EXISTS redis_compat\r\n");
+    if (strcmp(r_ex, ":1\r\n") != 0) {
+        print("FAILED: EXISTS response");
+        return 14;
+    }
+
+    string r_del = daemon.daemon_execute_command(s, "DEL redis_compat\r\n");
+    if (strcmp(r_del, ":1\r\n") != 0) {
+        print("FAILED: DEL response");
+        return 15;
+    }
+
+    string r_flush = daemon.daemon_execute_command(s, "FLUSHDB\r\n");
+    if (strcmp(r_flush, "+OK\r\n") != 0) {
+        print("FAILED: FLUSHDB response");
+        return 16;
+    }
+
+    string r_dbsize = daemon.daemon_execute_command(s, "DBSIZE\r\n");
+    if (strcmp(r_dbsize, ":0\r\n") != 0) {
+        print("FAILED: DBSIZE response");
+        return 17;
+    }
+    print("  [PASS] RESP protocol command parsing verified");
+
+    // 3. Loopback TCP daemon networking test
+    int test_port = 16379;
+    daemon.KaledisDaemon* d = daemon.daemon_new("127.0.0.1", test_port, 64);
+    bool listening = daemon.daemon_start(d, 16);
+    if (!listening) {
+        print("FAILED: daemon_start failed to bind port");
+        daemon.daemon_free(d);
+        return 20;
+    }
+
+    tcp.TcpStream client = tcp.tcp_connect("127.0.0.1", test_port);
+    if (!client.is_connected) {
+        print("FAILED: client connect failed");
+        daemon.daemon_free(d);
+        return 21;
+    }
+
+    tcp.TcpStream server_conn = d->listener.accept_client();
+    if (!server_conn.is_connected) {
+        print("FAILED: listener accept_client failed");
+        client.close();
+        daemon.daemon_free(d);
+        return 22;
+    }
+
+    // Ping exchange over TCP
+    client.send_string("PING\r\n");
+    daemon.daemon_handle_client(d, &server_conn);
+
+    char* net_buf = (char*)malloc(128);
+    int net_read = client.read_bytes((void*)net_buf, 127);
+    if (net_read <= 0) {
+        print("FAILED: net_read <= 0");
+        return 23;
+    }
+    net_buf[net_read] = (char)0;
+    if (strcmp((string)net_buf, "+PONG\r\n") != 0) {
+        print("FAILED: wire PONG mismatch");
+        return 24;
+    }
+
+    // Set exchange over TCP
+    client.send_string("SET kaledis_daemon active\r\n");
+    daemon.daemon_handle_client(d, &server_conn);
+    net_read = client.read_bytes((void*)net_buf, 127);
+    net_buf[net_read] = (char)0;
+    if (strcmp((string)net_buf, "+OK\r\n") != 0) {
+        print("FAILED: wire SET mismatch");
+        return 25;
+    }
+
+    // Get exchange over TCP
+    client.send_string("GET kaledis_daemon\r\n");
+    daemon.daemon_handle_client(d, &server_conn);
+    net_read = client.read_bytes((void*)net_buf, 127);
+    net_buf[net_read] = (char)0;
+    if (strcmp((string)net_buf, "$6\r\nactive\r\n") != 0) {
+        print("FAILED: wire GET mismatch");
+        return 26;
+    }
+
+    print("  [PASS] TCP Network Daemon wire loopback round-trips verified");
+
+    free((void*)net_buf);
+    client.close();
+    server_conn.close();
+    daemon.daemon_stop(d);
+    daemon.daemon_free(d);
+    store.store_free(s);
+
+    print("ALL KALEDIS DAEMON TESTS PASSED PERFECTLY.");
+    return 0;
+}
+
+main_entry();
