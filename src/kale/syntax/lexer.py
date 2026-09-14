@@ -176,6 +176,43 @@ class Lexer:
         while self._cur_char.isdigit():
             self._advance()
 
+        # Support hexadecimal (0x...) and binary (0b...) literals
+        if (self._position - start == 1) and self.source_text.text[start] == '0':
+            if self._cur_char in ('x', 'X'):
+                self._advance()
+                if self._cur_char not in "0123456789abcdefABCDEF":
+                    length = self._position - start
+                    text = self.source_text.text[start:self._position]
+                    self.diagnostics.report_invalid_number(TextSpan(start, length), text)
+                    return SyntaxToken(SyntaxKind.BadToken, TextSpan(start, length), None, text)
+                while self._cur_char in "0123456789abcdefABCDEF":
+                    self._advance()
+                length = self._position - start
+                text = self.source_text.text[start:self._position]
+                try:
+                    value = int(text, 16)
+                    return SyntaxToken(SyntaxKind.NumberToken, TextSpan(start, length), value, text)
+                except ValueError:
+                    self.diagnostics.report_invalid_number(TextSpan(start, length), text)
+                    return SyntaxToken(SyntaxKind.BadToken, TextSpan(start, length), None, text)
+            elif self._cur_char in ('b', 'B'):
+                self._advance()
+                if self._cur_char not in "01":
+                    length = self._position - start
+                    text = self.source_text.text[start:self._position]
+                    self.diagnostics.report_invalid_number(TextSpan(start, length), text)
+                    return SyntaxToken(SyntaxKind.BadToken, TextSpan(start, length), None, text)
+                while self._cur_char in "01":
+                    self._advance()
+                length = self._position - start
+                text = self.source_text.text[start:self._position]
+                try:
+                    value = int(text, 2)
+                    return SyntaxToken(SyntaxKind.NumberToken, TextSpan(start, length), value, text)
+                except ValueError:
+                    self.diagnostics.report_invalid_number(TextSpan(start, length), text)
+                    return SyntaxToken(SyntaxKind.BadToken, TextSpan(start, length), None, text)
+
         if self._cur_char == '.' and self._peek(1).isdigit():
             has_dot = True
             self._advance() # consume '.'

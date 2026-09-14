@@ -1,0 +1,55 @@
+// libs/glfw/glfw.kl
+// Core GLFW3 Windowing, Context, and Application Lifecycle FFI Bindings
+
+import "libs/glfw/constants.kl" as glc;
+
+// ============================================================================
+// Initialization & Termination
+// ============================================================================
+extern int glfwInit();
+extern void glfwTerminate();
+extern void glfwInitHint(int hint, int value);
+extern int glfwGetError(void* description);
+
+// ============================================================================
+// Window Creation, Attributes & Hints
+// ============================================================================
+extern void glfwDefaultWindowHints();
+extern void glfwWindowHint(int hint, int value);
+extern void* glfwCreateWindow(int width, int height, string title, void* monitor, void* share);
+extern void glfwDestroyWindow(void* window);
+extern int glfwWindowShouldClose(void* window);
+extern void glfwSetWindowShouldClose(void* window, int value);
+extern void glfwSetWindowTitle(void* window, string title);
+extern void glfwGetWindowSize(void* window, int* width, int* height);
+extern void glfwSetWindowSize(void* window, int width, int height);
+extern void glfwGetFramebufferSize(void* window, int* width, int* height);
+extern void glfwShowWindow(void* window);
+extern void glfwHideWindow(void* window);
+extern void glfwFocusWindow(void* window);
+
+// ============================================================================
+// Event Loop & Frame Presentation
+// ============================================================================
+extern void glfwPollEvents();
+extern void glfwWaitEvents();
+extern void glfwWaitEventsTimeout(double timeout);
+extern void glfwPostEmptyEvent();
+extern void glfwSwapBuffers(void* window);
+extern void glfwSwapInterval(int interval);
+
+// ============================================================================
+// Context Handling
+// ============================================================================
+extern void glfwMakeContextCurrent(void* window);
+extern void* glfwGetCurrentContext();
+extern void* glfwGetProcAddress(string procname);
+extern int glfwExtensionSupported(string extension);
+
+// ============================================================================
+// High-Precision Timing
+// ============================================================================
+extern double glfwGetTime();
+extern void glfwSetTime(double time);
+extern int glfwGetTimerValue();
+extern int glfwGetTimerFrequency();

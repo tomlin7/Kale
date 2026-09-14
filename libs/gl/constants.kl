@@ -1,0 +1,70 @@
+// libs/gl/constants.kl
+// OpenGL 3.3 Core Profile constants
+
+// Clear Buffer Bits
+int32 GL_COLOR_BUFFER_BIT() { return 0x00004000; }
+int32 GL_DEPTH_BUFFER_BIT() { return 0x00000100; }
+int32 GL_STENCIL_BUFFER_BIT() { return 0x00000400; }
+
+// Primitives
+int32 GL_POINTS() { return 0x0000; }
+int32 GL_LINES() { return 0x0001; }
+int32 GL_LINE_LOOP() { return 0x0002; }
+int32 GL_LINE_STRIP() { return 0x0003; }
+int32 GL_TRIANGLES() { return 0x0004; }
+int32 GL_TRIANGLE_STRIP() { return 0x0005; }
+int32 GL_TRIANGLE_FAN() { return 0x0006; }
+
+// Data Types
+int32 GL_BYTE() { return 0x1400; }
+int32 GL_UNSIGNED_BYTE() { return 0x1401; }
+int32 GL_SHORT() { return 0x1402; }
+int32 GL_UNSIGNED_SHORT() { return 0x1403; }
+int32 GL_INT() { return 0x1404; }
+int32 GL_UNSIGNED_INT() { return 0x1405; }
+int32 GL_FLOAT() { return 0x1406; }
+int32 GL_DOUBLE() { return 0x140A; }
+
+// Blending & Tests
+int32 GL_BLEND() { return 0x0BE2; }
+int32 GL_DEPTH_TEST() { return 0x0B71; }
+int32 GL_SCISSOR_TEST() { return 0x0C11; }
+int32 GL_CULL_FACE() { return 0x0B44; }
+
+// Blend Factors
+int32 GL_ZERO() { return 0; }
+int32 GL_ONE() { return 1; }
+int32 GL_SRC_COLOR() { return 0x0300; }
+int32 GL_ONE_MINUS_SRC_COLOR() { return 0x0301; }
+int32 GL_SRC_ALPHA() { return 0x0302; }
+int32 GL_ONE_MINUS_SRC_ALPHA() { return 0x0303; }
+int32 GL_DST_ALPHA() { return 0x0304; }
+int32 GL_ONE_MINUS_DST_ALPHA() { return 0x0305; }
+
+// Textures
+int32 GL_TEXTURE_2D() { return 0x0DE1; }
+int32 GL_TEXTURE_WRAP_S() { return 0x2802; }
+int32 GL_TEXTURE_WRAP_T() { return 0x2803; }
+int32 GL_TEXTURE_MAG_FILTER() { return 0x2800; }
+int32 GL_TEXTURE_MIN_FILTER() { return 0x2801; }
+int32 GL_NEAREST() { return 0x2600; }
+int32 GL_LINEAR() { return 0x2601; }
+int32 GL_CLAMP_TO_EDGE() { return 0x812F; }
+int32 GL_REPEAT() { return 0x2901; }
+int32 GL_RGBA() { return 0x1908; }
+int32 GL_RGB() { return 0x1907; }
+int32 GL_RED() { return 0x1903; }
+
+// Shaders & Programs
+int32 GL_FRAGMENT_SHADER() { return 0x8B30; }
+int32 GL_VERTEX_SHADER() { return 0x8B31; }
+int32 GL_COMPILE_STATUS() { return 0x8B81; }
+int32 GL_LINK_STATUS() { return 0x8B82; }
+int32 GL_INFO_LOG_LENGTH() { return 0x8B84; }
+
+// Buffers
+int32 GL_ARRAY_BUFFER() { return 0x8892; }
+int32 GL_ELEMENT_ARRAY_BUFFER() { return 0x8893; }
+int32 GL_STATIC_DRAW() { return 0x88E4; }
+int32 GL_DYNAMIC_DRAW() { return 0x88E8; }
+int32 GL_STREAM_DRAW() { return 0x88E0; }

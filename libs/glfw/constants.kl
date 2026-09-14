@@ -1,0 +1,133 @@
+// libs/glfw/constants.kl
+// Standard GLFW3 constants for window creation, context initialization, and input events
+
+// Boolean Values
+int32 GLFW_TRUE() { return 1; }
+int32 GLFW_FALSE() { return 0; }
+
+// Key & Button Action States
+int32 GLFW_RELEASE() { return 0; }
+int32 GLFW_PRESS() { return 1; }
+int32 GLFW_REPEAT() { return 2; }
+
+// Window Hints & Context Attributes
+int32 GLFW_FOCUSED() { return 0x00020001; }
+int32 GLFW_RESIZABLE() { return 0x00020003; }
+int32 GLFW_VISIBLE() { return 0x00020004; }
+int32 GLFW_DECORATED() { return 0x00020005; }
+int32 GLFW_AUTO_ICONIFY() { return 0x00020006; }
+int32 GLFW_FLOATING() { return 0x00020007; }
+int32 GLFW_MAXIMIZED() { return 0x00020008; }
+
+int32 GLFW_CLIENT_API() { return 0x00022001; }
+int32 GLFW_CONTEXT_VERSION_MAJOR() { return 0x00022002; }
+int32 GLFW_CONTEXT_VERSION_MINOR() { return 0x00022003; }
+int32 GLFW_OPENGL_FORWARD_COMPAT() { return 0x00022006; }
+int32 GLFW_OPENGL_DEBUG_CONTEXT() { return 0x00022007; }
+int32 GLFW_OPENGL_PROFILE() { return 0x00022008; }
+
+int32 GLFW_OPENGL_API() { return 0x00030001; }
+int32 GLFW_OPENGL_ES_API() { return 0x00030002; }
+int32 GLFW_NO_API() { return 0; }
+
+int32 GLFW_OPENGL_ANY_PROFILE() { return 0; }
+int32 GLFW_OPENGL_CORE_PROFILE() { return 0x00032001; }
+int32 GLFW_OPENGL_COMPAT_PROFILE() { return 0x00032002; }
+
+// Mouse Buttons
+int32 GLFW_MOUSE_BUTTON_1() { return 0; }
+int32 GLFW_MOUSE_BUTTON_2() { return 1; }
+int32 GLFW_MOUSE_BUTTON_3() { return 2; }
+int32 GLFW_MOUSE_BUTTON_4() { return 3; }
+int32 GLFW_MOUSE_BUTTON_5() { return 4; }
+int32 GLFW_MOUSE_BUTTON_6() { return 5; }
+int32 GLFW_MOUSE_BUTTON_7() { return 6; }
+int32 GLFW_MOUSE_BUTTON_8() { return 7; }
+int32 GLFW_MOUSE_BUTTON_LEFT() { return 0; }
+int32 GLFW_MOUSE_BUTTON_RIGHT() { return 1; }
+int32 GLFW_MOUSE_BUTTON_MIDDLE() { return 2; }
+
+// Standard Keyboard Keys
+int32 GLFW_KEY_SPACE() { return 32; }
+int32 GLFW_KEY_APOSTROPHE() { return 39; }
+int32 GLFW_KEY_COMMA() { return 44; }
+int32 GLFW_KEY_MINUS() { return 45; }
+int32 GLFW_KEY_PERIOD() { return 46; }
+int32 GLFW_KEY_SLASH() { return 47; }
+int32 GLFW_KEY_0() { return 48; }
+int32 GLFW_KEY_1() { return 49; }
+int32 GLFW_KEY_2() { return 50; }
+int32 GLFW_KEY_3() { return 51; }
+int32 GLFW_KEY_4() { return 52; }
+int32 GLFW_KEY_5() { return 53; }
+int32 GLFW_KEY_6() { return 54; }
+int32 GLFW_KEY_7() { return 55; }
+int32 GLFW_KEY_8() { return 56; }
+int32 GLFW_KEY_9() { return 57; }
+int32 GLFW_KEY_SEMICOLON() { return 59; }
+int32 GLFW_KEY_EQUAL() { return 61; }
+int32 GLFW_KEY_A() { return 65; }
+int32 GLFW_KEY_B() { return 66; }
+int32 GLFW_KEY_C() { return 67; }
+int32 GLFW_KEY_D() { return 68; }
+int32 GLFW_KEY_E() { return 69; }
+int32 GLFW_KEY_F() { return 70; }
+int32 GLFW_KEY_G() { return 71; }
+int32 GLFW_KEY_H() { return 72; }
+int32 GLFW_KEY_I() { return 73; }
+int32 GLFW_KEY_J() { return 74; }
+int32 GLFW_KEY_K() { return 75; }
+int32 GLFW_KEY_L() { return 76; }
+int32 GLFW_KEY_M() { return 77; }
+int32 GLFW_KEY_N() { return 78; }
+int32 GLFW_KEY_O() { return 79; }
+int32 GLFW_KEY_P() { return 80; }
+int32 GLFW_KEY_Q() { return 81; }
+int32 GLFW_KEY_R() { return 82; }
+int32 GLFW_KEY_S() { return 83; }
+int32 GLFW_KEY_T() { return 84; }
+int32 GLFW_KEY_U() { return 85; }
+int32 GLFW_KEY_V() { return 86; }
+int32 GLFW_KEY_W() { return 87; }
+int32 GLFW_KEY_X() { return 88; }
+int32 GLFW_KEY_Y() { return 89; }
+int32 GLFW_KEY_Z() { return 90; }
+
+// Function & Control Keys
+int32 GLFW_KEY_ESCAPE() { return 256; }
+int32 GLFW_KEY_ENTER() { return 257; }
+int32 GLFW_KEY_TAB() { return 258; }
+int32 GLFW_KEY_BACKSPACE() { return 259; }
+int32 GLFW_KEY_INSERT() { return 260; }
+int32 GLFW_KEY_DELETE() { return 261; }
+int32 GLFW_KEY_RIGHT() { return 262; }
+int32 GLFW_KEY_LEFT() { return 263; }
+int32 GLFW_KEY_DOWN() { return 264; }
+int32 GLFW_KEY_UP() { return 265; }
+int32 GLFW_KEY_PAGE_UP() { return 266; }
+int32 GLFW_KEY_PAGE_DOWN() { return 267; }
+int32 GLFW_KEY_HOME() { return 268; }
+int32 GLFW_KEY_END() { return 269; }
+int32 GLFW_KEY_CAPS_LOCK() { return 280; }
+int32 GLFW_KEY_SCROLL_LOCK() { return 281; }
+int32 GLFW_KEY_NUM_LOCK() { return 282; }
+int32 GLFW_KEY_PRINT_SCREEN() { return 283; }
+int32 GLFW_KEY_PAUSE() { return 284; }
+int32 GLFW_KEY_F1() { return 290; }
+int32 GLFW_KEY_F2() { return 291; }
+int32 GLFW_KEY_F3() { return 292; }
+int32 GLFW_KEY_F4() { return 293; }
+int32 GLFW_KEY_F5() { return 294; }
+int32 GLFW_KEY_F6() { return 295; }
+int32 GLFW_KEY_F7() { return 296; }
+int32 GLFW_KEY_F8() { return 297; }
+int32 GLFW_KEY_F9() { return 298; }
+int32 GLFW_KEY_F10() { return 299; }
+int32 GLFW_KEY_F11() { return 300; }
+int32 GLFW_KEY_F12() { return 301; }
+int32 GLFW_KEY_LEFT_SHIFT() { return 340; }
+int32 GLFW_KEY_LEFT_CONTROL() { return 341; }
+int32 GLFW_KEY_LEFT_ALT() { return 342; }
+int32 GLFW_KEY_RIGHT_SHIFT() { return 344; }
+int32 GLFW_KEY_RIGHT_CONTROL() { return 345; }
+int32 GLFW_KEY_RIGHT_ALT() { return 346; }

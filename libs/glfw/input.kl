@@ -1,0 +1,38 @@
+// libs/glfw/input.kl
+// Hardware Keyboard, Mouse, and Cursor Input FFI Bindings for GLFW3
+
+import "libs/glfw/constants.kl" as glc;
+
+// ============================================================================
+// Keyboard Input & Callbacks
+// ============================================================================
+extern int glfwGetKey(void* window, int key);
+extern string glfwGetKeyName(int key, int scancode);
+extern int glfwGetKeyScancode(int key);
+extern void* glfwSetKeyCallback(void* window, void* callback);
+extern void* glfwSetCharCallback(void* window, void* callback);
+
+// ============================================================================
+// Mouse & Cursor Input
+// ============================================================================
+extern int glfwGetMouseButton(void* window, int button);
+extern void glfwGetCursorPos(void* window, double* xpos, double* ypos);
+extern void glfwSetCursorPos(void* window, double xpos, double ypos);
+extern void* glfwSetCursorPosCallback(void* window, void* callback);
+extern void* glfwSetMouseButtonCallback(void* window, void* callback);
+extern void* glfwSetScrollCallback(void* window, void* callback);
+extern void* glfwSetCursorEnterCallback(void* window, void* callback);
+
+// ============================================================================
+// Window Event Callbacks
+// ============================================================================
+extern void* glfwSetWindowSizeCallback(void* window, void* callback);
+extern void* glfwSetFramebufferSizeCallback(void* window, void* callback);
+extern void* glfwSetWindowCloseCallback(void* window, void* callback);
+extern void* glfwSetWindowFocusCallback(void* window, void* callback);
+
+// ============================================================================
+// Clipboard
+// ============================================================================
+extern void glfwSetClipboardString(void* window, string str);
+extern string glfwGetClipboardString(void* window);
