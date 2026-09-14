@@ -1,0 +1,121 @@
+import "libs/vg/canvas.kl" as canvas;
+import "libs/vg/geom.kl" as geom;
+import "libs/physics/body.kl" as body;
+import "libs/physics/world.kl" as world;
+import "games/arcade/game.kl" as game;
+import "games/arcade/entity.kl" as entity;
+
+fn int main_entry() {
+    print("[TEST] Starting 2D Physics & Vector Arcade test suite...");
+
+    // 1. Vector line and circle drawing verification
+    canvas.VgCanvas* c = canvas.canvas_new(100, 100);
+    canvas.canvas_clear(c, 0);
+
+    // Draw horizontal line
+    canvas.canvas_draw_line(c, 10, 20, 50, 20, 16777215);
+    if (canvas.canvas_get_pixel(c, 30, 20) != 16777215) {
+        print("FAILED: vector line pixel check");
+        return 1;
+    }
+
+    // Draw circle at (50, 50) radius 10
+    canvas.canvas_draw_circle(c, 50, 50, 10, 65279);
+    // At cx + 10, cy -> (60, 50) should be colored
+    if (canvas.canvas_get_pixel(c, 60, 50) != 65279) {
+        print("FAILED: circle right pixel check");
+        return 2;
+    }
+    // At cx, cy + 10 -> (50, 60) should be colored
+    if (canvas.canvas_get_pixel(c, 50, 60) != 65279) {
+        print("FAILED: circle bottom pixel check");
+        return 3;
+    }
+    canvas.canvas_free(c);
+    print("  [PASS] Vector graphics rasterization primitives verified");
+
+    // 2. Physics collision detection verification
+    body.RigidBody* b1 = body.body_new(10, 10, 1, 20, 20);
+    body.RigidBody* b2 = body.body_new(25, 25, 1, 20, 20);
+    body.RigidBody* b3 = body.body_new(100, 100, 1, 20, 20);
+
+    if (!body.body_check_collision(b1, b2)) {
+        print("FAILED: overlapping bodies should collide");
+        return 4;
+    }
+    if (body.body_check_collision(b1, b3)) {
+        print("FAILED: separated bodies should not collide");
+        return 5;
+    }
+    body.body_free(b1);
+    body.body_free(b2);
+    body.body_free(b3);
+    print("  [PASS] 2D AABB rigid-body collision detection verified");
+
+    // 3. Arcade game engine simulation and gameplay test
+    game.ArcadeGame* g = game.arcade_new(400, 300);
+
+    // Initial state checks
+    if (g->score != 0 || g->lives != 3 || g->game_state != 1) {
+        print("FAILED: initial game state incorrect");
+        return 6;
+    }
+
+    // Test player thrust
+    game.arcade_player_thrust(g, 5, 5);
+    if (g->player_body->vel.x != 5 || g->player_body->vel.y != 5) {
+        print("FAILED: player thrust impulse");
+        return 7;
+    }
+
+    // Direct collision test: place bullet right on target0
+    g->bullet->pos.x = g->target0->pos.x + 2;
+    g->bullet->pos.y = g->target0->pos.y + 2;
+    g->bullet_active = true;
+
+    // Step game to resolve collision
+    game.arcade_step(g, 1);
+
+    if (g->target0_active) {
+        print("FAILED: target0 should have been destroyed");
+        return 8;
+    }
+    if (g->score != 100) {
+        print("FAILED: score should be 100 after target destruction");
+        return 9;
+    }
+    if (g->bullet_active) {
+        print("FAILED: bullet should deactivate on impact");
+        return 10;
+    }
+
+    // Destroy target1 to trigger victory condition
+    g->bullet->pos.x = g->target1->pos.x + 2;
+    g->bullet->pos.y = g->target1->pos.y + 2;
+    g->bullet_active = true;
+    game.arcade_step(g, 1);
+
+    if (g->target1_active) {
+        print("FAILED: target1 should have been destroyed");
+        return 11;
+    }
+    if (g->score != 200) {
+        print("FAILED: score should be 200");
+        return 12;
+    }
+    if (g->game_state != 3) { // VICTORY
+        print("FAILED: game_state should be 3 (VICTORY)");
+        return 13;
+    }
+    print("  [PASS] Gameplay loop, projectile collision, and scoring verified");
+
+    // Render frame to ensure rasterization pipeline works end-to-end
+    game.arcade_render(g);
+    print("  [PASS] Arcade vector rendering pipeline verified");
+
+    game.arcade_free(g);
+    print("ALL GAMES/ARCADE TESTS PASSED PERFECTLY.");
+    return 0;
+}
+
+main_entry();

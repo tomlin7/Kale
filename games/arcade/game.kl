@@ -1,0 +1,199 @@
+// games/arcade/game.kl
+// 2D Physics and Vector Graphics Arcade Game Engine
+
+import "libs/vg/geom.kl" as geom;
+import "libs/vg/canvas.kl" as canvas;
+import "libs/physics/body.kl" as body;
+import "libs/physics/world.kl" as world;
+import "games/arcade/entity.kl" as entity;
+
+struct ArcadeGame {
+    canvas.VgCanvas* canvas;
+    world.World* world;
+    body.RigidBody* player_body;
+    body.RigidBody* target0;
+    body.RigidBody* target1;
+    body.RigidBody* bullet;
+    int score;
+    int lives;
+    bool bullet_active;
+    bool target0_active;
+    bool target1_active;
+    int game_state; // 0 = ready, 1 = playing, 2 = game over, 3 = victory
+    int frame_count;
+}
+
+fn ArcadeGame* arcade_new(int width, int height) {
+    ArcadeGame* g = alloc(ArcadeGame);
+    g->canvas = canvas.canvas_new(width, height);
+    g->world = world.world_new(0); // Zero gravity space simulation
+
+    // Create player rigid body at center
+    g->player_body = body.body_new(width / 2 - 8, height / 2 - 8, 1, 16, 16);
+
+    // Create targets/asteroids with initial velocities
+    g->target0 = body.body_new(120, 100, 1, 24, 24);
+    body.body_set_vel(g->target0, 2, 1);
+
+    g->target1 = body.body_new(width - 150, 120, 1, 24, 24);
+    body.body_set_vel(g->target1, -2, 2);
+
+    // Laser projectile body (initially inactive)
+    g->bullet = body.body_new(0, 0, 1, 4, 8);
+    body.body_set_vel(g->bullet, 0, 0);
+
+    // Register into physics world
+    world.world_add_body(g->world, g->player_body);
+    world.world_add_body(g->world, g->target0);
+    world.world_add_body(g->world, g->target1);
+    world.world_add_body(g->world, g->bullet);
+
+    g->score = 0;
+    g->lives = 3;
+    g->bullet_active = false;
+    g->target0_active = true;
+    g->target1_active = true;
+    g->game_state = 1; // Playing
+    g->frame_count = 0;
+
+    return g;
+}
+
+fn void arcade_free(ArcadeGame* g) {
+    if (g != (ArcadeGame*)0) {
+        if (g->canvas != (canvas.VgCanvas*)0) {
+            canvas.canvas_free(g->canvas);
+        }
+        if (g->player_body != (body.RigidBody*)0) {
+            body.body_free(g->player_body);
+        }
+        if (g->target0 != (body.RigidBody*)0) {
+            body.body_free(g->target0);
+        }
+        if (g->target1 != (body.RigidBody*)0) {
+            body.body_free(g->target1);
+        }
+        if (g->bullet != (body.RigidBody*)0) {
+            body.body_free(g->bullet);
+        }
+        if (g->world != (world.World*)0) {
+            world.world_free(g->world);
+        }
+        free(g);
+    }
+}
+
+fn void arcade_player_thrust(ArcadeGame* g, int fx, int fy) {
+    body.body_apply_impulse(g->player_body, fx, fy);
+}
+
+fn void arcade_player_fire(ArcadeGame* g, int vx, int vy) {
+    if (!g->bullet_active) {
+        g->bullet->pos.x = g->player_body->pos.x + 6;
+        g->bullet->pos.y = g->player_body->pos.y - 10;
+        body.body_set_vel(g->bullet, vx, vy);
+        g->bullet_active = true;
+    }
+}
+
+fn void arcade_step(ArcadeGame* g, int dt) {
+    // 1. Advance physics simulation
+    world.world_step(g->world, dt);
+
+    // 2. Bounce bodies off screen limits
+    world.world_bounce_bounds(g->world, 10, 10, g->canvas->width - 10, g->canvas->height - 10);
+
+    // 3. Update bullet status
+    if (g->bullet_active) {
+        if (g->bullet->pos.y <= 10 || g->bullet->pos.y >= g->canvas->height - 10 ||
+            g->bullet->pos.x <= 10 || g->bullet->pos.x >= g->canvas->width - 10) {
+            g->bullet_active = false;
+            body.body_set_vel(g->bullet, 0, 0);
+        }
+    }
+
+    // 4. Bullet vs Target Collision Resolution
+    if (g->bullet_active && g->target0_active) {
+        if (body.body_check_collision(g->bullet, g->target0)) {
+            g->target0_active = false;
+            g->bullet_active = false;
+            body.body_set_vel(g->bullet, 0, 0);
+            body.body_set_vel(g->target0, 0, 0);
+            g->score = g->score + 100;
+        }
+    }
+
+    if (g->bullet_active && g->target1_active) {
+        if (body.body_check_collision(g->bullet, g->target1)) {
+            g->target1_active = false;
+            g->bullet_active = false;
+            body.body_set_vel(g->bullet, 0, 0);
+            body.body_set_vel(g->target1, 0, 0);
+            g->score = g->score + 100;
+        }
+    }
+
+    // 5. Player vs Target Hazard Collision
+    if (g->target0_active && body.body_check_collision(g->player_body, g->target0)) {
+        g->lives = g->lives - 1;
+        g->target0->vel.x = -g->target0->vel.x;
+        g->target0->vel.y = -g->target0->vel.y;
+    }
+
+    if (g->target1_active && body.body_check_collision(g->player_body, g->target1)) {
+        g->lives = g->lives - 1;
+        g->target1->vel.x = -g->target1->vel.x;
+        g->target1->vel.y = -g->target1->vel.y;
+    }
+
+    // 6. Win / Loss Condition
+    if (!g->target0_active && !g->target1_active) {
+        g->game_state = 3; // VICTORY
+    } else if (g->lives <= 0) {
+        g->game_state = 2; // GAME OVER
+    }
+
+    g->frame_count = g->frame_count + 1;
+}
+
+fn void arcade_render(ArcadeGame* g) {
+    // 1. Clear to deep space
+    canvas.canvas_clear(g->canvas, entity.COLOR_DARK_BG());
+
+    // 2. Render vector screen border
+    geom.Rect border = geom.rect_new(6, 6, g->canvas->width - 12, g->canvas->height - 12);
+    canvas.canvas_draw_rect(g->canvas, border, entity.COLOR_CYAN());
+
+    // 3. Render vector targets/asteroids
+    if (g->target0_active) {
+        int t0_cx = g->target0->pos.x + 12;
+        int t0_cy = g->target0->pos.y + 12;
+        canvas.canvas_draw_circle(g->canvas, t0_cx, t0_cy, 12, entity.COLOR_AMBER());
+    }
+
+    if (g->target1_active) {
+        int t1_cx = g->target1->pos.x + 12;
+        int t1_cy = g->target1->pos.y + 12;
+        canvas.canvas_draw_circle(g->canvas, t1_cx, t1_cy, 12, entity.COLOR_AMBER());
+    }
+
+    // 4. Render laser projectile
+    if (g->bullet_active) {
+        canvas.canvas_draw_line(
+            g->canvas,
+            g->bullet->pos.x,
+            g->bullet->pos.y,
+            g->bullet->pos.x,
+            g->bullet->pos.y + 8,
+            entity.COLOR_CRIMSON()
+        );
+    }
+
+    // 5. Render player ship (vector wireframe arrowhead)
+    int px = g->player_body->pos.x + 8;
+    int py = g->player_body->pos.y + 8;
+    canvas.canvas_draw_line(g->canvas, px, py - 10, px - 8, py + 8, entity.COLOR_GREEN());
+    canvas.canvas_draw_line(g->canvas, px - 8, py + 8, px, py + 4, entity.COLOR_GREEN());
+    canvas.canvas_draw_line(g->canvas, px, py + 4, px + 8, py + 8, entity.COLOR_GREEN());
+    canvas.canvas_draw_line(g->canvas, px + 8, py + 8, px, py - 10, entity.COLOR_GREEN());
+}

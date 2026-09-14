@@ -1,3 +1,6 @@
+// libs/physics/body.kl
+// 2D Rigid Body and Vector Primitives
+
 struct Vec2 {
     int x;
     int y;
@@ -34,4 +37,33 @@ fn void body_free(RigidBody* b) {
     if (b != (RigidBody*)0) {
         free(b);
     }
+}
+
+fn void body_set_vel(RigidBody* b, int vx, int vy) {
+    b->vel.x = vx;
+    b->vel.y = vy;
+}
+
+fn void body_apply_impulse(RigidBody* b, int jx, int jy) {
+    if (!b->is_static) {
+        b->vel.x = b->vel.x + jx;
+        b->vel.y = b->vel.y + jy;
+    }
+}
+
+// Check AABB bounding box collision between two rigid bodies
+fn bool body_check_collision(RigidBody* a, RigidBody* b) {
+    if (a == (RigidBody*)0 || b == (RigidBody*)0) {
+        return false;
+    }
+    int a_right = a->pos.x + a->width;
+    int a_bottom = a->pos.y + a->height;
+    int b_right = b->pos.x + b->width;
+    int b_bottom = b->pos.y + b->height;
+
+    if (a->pos.x < b_right && a_right > b->pos.x &&
+        a->pos.y < b_bottom && a_bottom > b->pos.y) {
+        return true;
+    }
+    return false;
 }

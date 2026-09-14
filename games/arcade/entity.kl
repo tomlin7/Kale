@@ -1,0 +1,36 @@
+// games/arcade/entity.kl
+// Entity definitions and visual vector geometries for arcade engine
+
+import "libs/physics/body.kl" as body;
+
+// Entity Types
+fn int ENTITY_PLAYER() { return 1; }
+fn int ENTITY_TARGET() { return 2; }
+fn int ENTITY_BULLET() { return 3; }
+fn int ENTITY_PARTICLE() { return 4; }
+
+// Neon Vector Colors (RGB int)
+fn int COLOR_CYAN() { return 65279; }         // 0x00FFFF
+fn int COLOR_GREEN() { return 3800852; }      // 0x39FF14
+fn int COLOR_AMBER() { return 16753920; }     // 0xFFA500
+fn int COLOR_CRIMSON() { return 16724838; }   // 0xFF3366
+fn int COLOR_WHITE() { return 16777215; }     // 0xFFFFFF
+fn int COLOR_DARK_BG() { return 658970; }     // 0x0A0E1A
+
+struct Entity {
+    int kind;
+    body.RigidBody* rb;
+    int color;
+    bool active;
+    int radius;
+}
+
+fn Entity entity_make(int kind, body.RigidBody* rb, int color, int radius) {
+    Entity e;
+    e.kind = kind;
+    e.rb = rb;
+    e.color = color;
+    e.active = true;
+    e.radius = radius;
+    return e;
+}

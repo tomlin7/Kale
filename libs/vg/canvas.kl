@@ -1,3 +1,6 @@
+// libs/vg/canvas.kl
+// 2D Vector Graphics Canvas & Rasterizer
+
 import "libs/vg/geom.kl" as geom;
 
 struct VgCanvas {
@@ -30,6 +33,29 @@ fn void canvas_free(VgCanvas* c) {
     }
 }
 
+fn void canvas_clear(VgCanvas* c, int color) {
+    int total = c->width * c->height;
+    int i = 0;
+    while (i < total) {
+        c->pixels[i] = color;
+        i = i + 1;
+    }
+}
+
+fn void canvas_set_pixel(VgCanvas* c, int x, int y, int color) {
+    if (x >= 0 && x < c->width && y >= 0 && y < c->height) {
+        int idx = (y * c->width) + x;
+        c->pixels[idx] = color;
+    }
+}
+
+fn int canvas_get_pixel(VgCanvas* c, int x, int y) {
+    if (x >= 0 && x < c->width && y >= 0 && y < c->height) {
+        return c->pixels[(y * c->width) + x];
+    }
+    return 0;
+}
+
 fn void canvas_fill_rect(VgCanvas* c, geom.Rect r, int color) {
     int y = r.y;
     while (y < r.y + r.h && y < c->height) {
@@ -45,9 +71,95 @@ fn void canvas_fill_rect(VgCanvas* c, geom.Rect r, int color) {
     }
 }
 
-fn int canvas_get_pixel(VgCanvas* c, int x, int y) {
-    if (x >= 0 && x < c->width && y >= 0 && y < c->height) {
-        return c->pixels[(y * c->width) + x];
+fn void canvas_draw_rect(VgCanvas* c, geom.Rect r, int color) {
+    int x0 = r.x;
+    int y0 = r.y;
+    int x1 = r.x + r.w - 1;
+    int y1 = r.y + r.h - 1;
+
+    // Top and bottom edges
+    int x = x0;
+    while (x <= x1) {
+        canvas_set_pixel(c, x, y0, color);
+        canvas_set_pixel(c, x, y1, color);
+        x = x + 1;
     }
-    return 0;
+
+    // Left and right edges
+    int y = y0;
+    while (y <= y1) {
+        canvas_set_pixel(c, x0, y, color);
+        canvas_set_pixel(c, x1, y, color);
+        y = y + 1;
+    }
+}
+
+// Bresenham's line algorithm for vector line rendering
+fn void canvas_draw_line(VgCanvas* c, int x0, int y0, int x1, int y1, int color) {
+    int dx = x1 - x0;
+    if (dx < 0) {
+        dx = -dx;
+    }
+    int sx = 1;
+    if (x0 > x1) {
+        sx = -1;
+    }
+
+    int dy = y1 - y0;
+    if (dy > 0) {
+        dy = -dy;
+    }
+    int sy = 1;
+    if (y0 > y1) {
+        sy = -1;
+    }
+
+    int err = dx + dy;
+    int cur_x = x0;
+    int cur_y = y0;
+    bool active = true;
+
+    while (active) {
+        canvas_set_pixel(c, cur_x, cur_y, color);
+        if (cur_x == x1 && cur_y == y1) {
+            active = false;
+        } else {
+            int e2 = 2 * err;
+            if (e2 >= dy) {
+                err = err + dy;
+                cur_x = cur_x + sx;
+            }
+            if (e2 <= dx) {
+                err = err + dx;
+                cur_y = cur_y + sy;
+            }
+        }
+    }
+}
+
+// Midpoint circle algorithm for vector circle rendering
+fn void canvas_draw_circle(VgCanvas* c, int cx, int cy, int radius, int color) {
+    int x = radius;
+    int y = 0;
+    int err = 0;
+
+    while (x >= y) {
+        canvas_set_pixel(c, cx + x, cy + y, color);
+        canvas_set_pixel(c, cx + y, cy + x, color);
+        canvas_set_pixel(c, cx - y, cy + x, color);
+        canvas_set_pixel(c, cx - x, cy + y, color);
+        canvas_set_pixel(c, cx - x, cy - y, color);
+        canvas_set_pixel(c, cx - y, cy - x, color);
+        canvas_set_pixel(c, cx + y, cy - x, color);
+        canvas_set_pixel(c, cx + x, cy - y, color);
+
+        if (err <= 0) {
+            y = y + 1;
+            err = err + (2 * y) + 1;
+        }
+        if (err > 0) {
+            x = x - 1;
+            err = err - (2 * x) + 1;
+        }
+    }
 }

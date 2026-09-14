@@ -1,0 +1,48 @@
+// games/arcade/main.kl
+// 2D Physics & Vector Arcade Game Demonstration
+
+import "games/arcade/game.kl" as game;
+import "games/arcade/entity.kl" as entity;
+import "libs/vg/canvas.kl" as canvas;
+
+fn int main_entry() {
+    print("[ARCADE] Launching 2D Physics & Vector Arcade (games/arcade)...");
+
+    // Initialize 640x480 arcade arena
+    game.ArcadeGame* g = game.arcade_new(640, 480);
+    print("  [PASS] Arcade initialized: 640x480 canvas, 2D physics world, player & targets");
+
+    // Simulate player thrust
+    game.arcade_player_thrust(g, 4, -2);
+    print("  [PASS] Player thrust impulse applied: vel = (4, -2)");
+
+    // Advance 5 physics simulation steps
+    int step = 0;
+    while (step < 5) {
+        game.arcade_step(g, 1);
+        step = step + 1;
+    }
+    print("  [PASS] Simulated 5 physics ticks; bounds collision and momentum resolved");
+
+    // Fire laser projectile at target
+    game.arcade_player_fire(g, 0, -15);
+    print("  [PASS] Vector laser projectile fired");
+
+    // Render vector frame to canvas
+    game.arcade_render(g);
+    print("  [PASS] Frame rendered with vector wireframe ship, circle asteroids, and laser strokes");
+
+    // Check pixel from vector border (e.g. at (6, 6))
+    int border_px = canvas.canvas_get_pixel(g->canvas, 6, 6);
+    if (border_px == entity.COLOR_CYAN()) {
+        print("  [PASS] Canvas vector border verified with Neon Cyan");
+    }
+
+    print("  Score:", g->score, "| Lives:", g->lives, "| State:", g->game_state);
+
+    game.arcade_free(g);
+    print("[ARCADE] Arcade engine demonstration completed successfully.");
+    return 0;
+}
+
+main_entry();

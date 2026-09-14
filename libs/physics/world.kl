@@ -1,3 +1,6 @@
+// libs/physics/world.kl
+// 2D Physics World and Numerical Integrator
+
 import "libs/physics/body.kl" as body;
 
 struct World {
@@ -56,5 +59,54 @@ fn void world_step(World* w, int dt) {
             w->b1->pos.x = w->b1->pos.x + (w->b1->vel.x * dt);
             w->b1->pos.y = w->b1->pos.y + (w->b1->vel.y * dt);
         }
+    }
+    if (w->body_count >= 3 && w->b2 != (body.RigidBody*)0) {
+        if (!w->b2->is_static) {
+            w->b2->vel.y = w->b2->vel.y + (w->gravity_y * dt);
+            w->b2->pos.x = w->b2->pos.x + (w->b2->vel.x * dt);
+            w->b2->pos.y = w->b2->pos.y + (w->b2->vel.y * dt);
+        }
+    }
+    if (w->body_count >= 4 && w->b3 != (body.RigidBody*)0) {
+        if (!w->b3->is_static) {
+            w->b3->vel.y = w->b3->vel.y + (w->gravity_y * dt);
+            w->b3->pos.x = w->b3->pos.x + (w->b3->vel.x * dt);
+            w->b3->pos.y = w->b3->pos.y + (w->b3->vel.y * dt);
+        }
+    }
+}
+
+fn void bounce_single_body(body.RigidBody* b, int min_x, int min_y, int max_x, int max_y) {
+    if (b == (body.RigidBody*)0 || b->is_static) {
+        return;
+    }
+    if (b->pos.x < min_x) {
+        b->pos.x = min_x;
+        b->vel.x = -b->vel.x;
+    } else if (b->pos.x + b->width > max_x) {
+        b->pos.x = max_x - b->width;
+        b->vel.x = -b->vel.x;
+    }
+    if (b->pos.y < min_y) {
+        b->pos.y = min_y;
+        b->vel.y = -b->vel.y;
+    } else if (b->pos.y + b->height > max_y) {
+        b->pos.y = max_y - b->height;
+        b->vel.y = -b->vel.y;
+    }
+}
+
+fn void world_bounce_bounds(World* w, int min_x, int min_y, int max_x, int max_y) {
+    if (w->body_count >= 1) {
+        bounce_single_body(w->b0, min_x, min_y, max_x, max_y);
+    }
+    if (w->body_count >= 2) {
+        bounce_single_body(w->b1, min_x, min_y, max_x, max_y);
+    }
+    if (w->body_count >= 3) {
+        bounce_single_body(w->b2, min_x, min_y, max_x, max_y);
+    }
+    if (w->body_count >= 4) {
+        bounce_single_body(w->b3, min_x, min_y, max_x, max_y);
     }
 }
