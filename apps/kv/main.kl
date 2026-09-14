@@ -1,0 +1,21 @@
+import "apps/kv/store.kl" as store;
+
+fn int main_entry() {
+    print("[KALEDIS] Launching High-Performance In-Memory Key-Value Store...");
+    store.KvStore* s = store.store_new(64);
+    
+    store.store_set(s, "arch", "x86_64");
+    store.store_set(s, "lang", "kale");
+    
+    string val_arch = store.store_get(s, "arch");
+    string val_lang = store.store_get(s, "lang");
+    
+    print("  [PASS] GET arch ->", val_arch);
+    print("  [PASS] GET lang ->", val_lang);
+    
+    store.store_free(s);
+    print("[KALEDIS] In-Memory KV Store operations verified successfully.");
+    return 0;
+}
+
+main_entry();

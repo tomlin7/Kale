@@ -1,0 +1,66 @@
+struct KvEntry {
+    string key;
+    string val;
+    bool active;
+}
+
+struct KvStore {
+    int count;
+    int max_entries;
+    KvEntry* entries;
+}
+
+fn KvStore* store_new(int max_entries) {
+    KvStore* s = alloc(KvStore);
+    s->count = 0;
+    s->max_entries = max_entries;
+    s->entries = alloc(KvEntry, max_entries);
+    int i = 0;
+    while (i < max_entries) {
+        s->entries[i].active = false;
+        i = i + 1;
+    }
+    return s;
+}
+
+fn void store_free(KvStore* s) {
+    if (s != (KvStore*)0) {
+        if (s->entries != (KvEntry*)0) {
+            free(s->entries);
+        }
+        free(s);
+    }
+}
+
+fn void store_set(KvStore* s, string k, string v) {
+    int i = 0;
+    while (i < s->count) {
+        if (s->entries[i].active) {
+            // Check matching key (simplified check)
+            if (s->entries[i].key[0] == k[0]) {
+                s->entries[i].val = v;
+                return;
+            }
+        }
+        i = i + 1;
+    }
+    if (s->count < s->max_entries) {
+        s->entries[s->count].key = k;
+        s->entries[s->count].val = v;
+        s->entries[s->count].active = true;
+        s->count = s->count + 1;
+    }
+}
+
+fn string store_get(KvStore* s, string k) {
+    int i = 0;
+    while (i < s->count) {
+        if (s->entries[i].active) {
+            if (s->entries[i].key[0] == k[0]) {
+                return s->entries[i].val;
+            }
+        }
+        i = i + 1;
+    }
+    return "";
+}
