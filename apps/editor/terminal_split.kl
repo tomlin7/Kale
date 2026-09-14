@@ -1,0 +1,67 @@
+// apps/editor/terminal_split.kl
+// Integrated Terminal Emulator Split Pane for Kale IDE
+
+import "libs/term/term.kl" as term;
+import "libs/term/grid.kl" as grid;
+import "libs/term/color.kl" as color;
+
+fn int SPLIT_HORIZONTAL_BOTTOM() { return 0; }
+fn int SPLIT_VERTICAL_RIGHT() { return 1; }
+
+struct TerminalSplit {
+    term.Terminal* terminal;
+    bool is_open;
+    int split_direction;
+    int split_percent;
+    bool has_focus;
+    string shell_title;
+    int cols;
+    int rows;
+}
+
+fn TerminalSplit* split_new(int cols, int rows, string title) {
+    TerminalSplit* ts = alloc(TerminalSplit);
+    ts->terminal = term.term_new(cols, rows, title);
+    ts->is_open = true;
+    ts->split_direction = SPLIT_HORIZONTAL_BOTTOM();
+    ts->split_percent = 35; // 35% bottom split
+    ts->has_focus = false;
+    ts->shell_title = title;
+    ts->cols = cols;
+    ts->rows = rows;
+    return ts;
+}
+
+fn void split_free(TerminalSplit* ts) {
+    if (ts != (TerminalSplit*)0) {
+        if (ts->terminal != (term.Terminal*)0) {
+            term.term_free(ts->terminal);
+        }
+        free(ts);
+    }
+}
+
+fn void split_toggle(TerminalSplit* ts) {
+    ts->is_open = !ts->is_open;
+}
+
+fn void split_toggle_focus(TerminalSplit* ts) {
+    ts->has_focus = !ts->has_focus;
+}
+
+fn void split_set_direction(TerminalSplit* ts, int dir) {
+    ts->split_direction = dir;
+}
+
+fn void split_write(TerminalSplit* ts, string output) {
+    if (ts->terminal != (term.Terminal*)0) {
+        term.term_write(ts->terminal, output);
+    }
+}
+
+fn grid.Cell* split_cell_at(TerminalSplit* ts, int col, int row) {
+    if (ts->terminal != (term.Terminal*)0) {
+        return term.term_cell_at(ts->terminal, col, row);
+    }
+    return (grid.Cell*)0;
+}

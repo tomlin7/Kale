@@ -1,0 +1,61 @@
+// apps/editor/layout.kl
+// Split Viewport and Layout Geometry Calculator for Kale IDE
+
+import "apps/editor/terminal_split.kl" as ts;
+
+struct RectLayout {
+    int x;
+    int y;
+    int w;
+    int h;
+}
+
+fn RectLayout make_rect(int x, int y, int w, int h) {
+    RectLayout r;
+    r.x = x;
+    r.y = y;
+    r.w = w;
+    r.h = h;
+    return r;
+}
+
+struct IdeLayout {
+    RectLayout tabs_bar;
+    RectLayout editor_pane;
+    RectLayout terminal_pane;
+    RectLayout status_bar;
+}
+
+fn IdeLayout calculate_layout(int total_w, int total_h, ts.TerminalSplit* term_split) {
+    int header_h = 36;
+    int status_h = 24;
+    int content_h = total_h - header_h - status_h;
+
+    IdeLayout layout;
+    layout.tabs_bar = make_rect(0, 0, total_w, header_h);
+    layout.status_bar = make_rect(0, total_h - status_h, total_w, status_h);
+
+    if (term_split == (ts.TerminalSplit*)0 || !term_split->is_open) {
+        // Full height for editor
+        layout.editor_pane = make_rect(0, header_h, total_w, content_h);
+        layout.terminal_pane = make_rect(0, 0, 0, 0);
+        return layout;
+    }
+
+    if (term_split->split_direction == ts.SPLIT_HORIZONTAL_BOTTOM()) {
+        int term_h = (content_h * term_split->split_percent) / 100;
+        int ed_h = content_h - term_h;
+
+        layout.editor_pane = make_rect(0, header_h, total_w, ed_h);
+        layout.terminal_pane = make_rect(0, header_h + ed_h, total_w, term_h);
+    } else {
+        // Vertical right split
+        int term_w = (total_w * term_split->split_percent) / 100;
+        int ed_w = total_w - term_w;
+
+        layout.editor_pane = make_rect(0, header_h, ed_w, content_h);
+        layout.terminal_pane = make_rect(ed_w, header_h, term_w, content_h);
+    }
+
+    return layout;
+}

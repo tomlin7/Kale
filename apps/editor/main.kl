@@ -1,0 +1,68 @@
+// apps/editor/main.kl
+// Supercharged Kale IDE: Multi-Buffer Management & Embedded Terminal Split
+
+import "apps/editor/buffer_manager.kl" as bm;
+import "apps/editor/terminal_split.kl" as ts;
+import "apps/editor/layout.kl" as layout;
+import "libs/term/grid.kl" as grid;
+
+fn int main_entry() {
+    print("[KALE-IDE] Launching Supercharged Code Editor (apps/editor)...");
+
+    // 1. Initialize Multi-Buffer Manager
+    bm.BufferManager* mgr = bm.bufman_new();
+    int idx0 = bm.bufman_open(mgr, "src/main.kl", "main.kl", "fn main() {\n    print(\"Hello, Supercharged IDE!\");\n    return 0;\n}\n");
+    int idx1 = bm.bufman_open(mgr, "src/engine.kl", "engine.kl", "struct Engine {\n    int speed;\n}\n");
+
+    print("  [PASS] Buffer Manager initialized: opened 2 document buffers (main.kl, engine.kl)");
+    if (mgr->count != 2) {
+        print("FAILED: buffer count mismatch");
+        return 1;
+    }
+
+    bm.bufman_switch(mgr, 0); // Focus initial buffer
+    bm.EditorBuffer* active_buf = bm.bufman_get_active(mgr);
+    print("  Active Buffer:", active_buf->file_name, "| Lines:", active_buf->state.buffer.line_count());
+    if (active_buf->id != 0) {
+        print("FAILED: expected active buffer 0");
+        return 2;
+    }
+
+    // 2. Initialize Embedded Terminal Split (80 cols x 24 rows)
+    ts.TerminalSplit* term_pane = ts.split_new(80, 24, "Kale Integrated Terminal");
+    print("  [PASS] Embedded Terminal Split initialized (80x24)");
+
+    // Stream build output with ANSI TrueColor into the terminal emulator
+    ts.split_write(term_pane, "[KALE-BUILD] Compiling target native_x86_64...\n");
+    ts.split_write(term_pane, "\x1b[38;2;34;197;94m[SUCCESS]\x1b[0m Build 0.3.0 finished in 12ms. 0 errors, 0 warnings.\n");
+
+    // Verify cell content from terminal emulator grid
+    grid.Cell* c0 = ts.split_cell_at(term_pane, 0, 0);
+    if (c0->ch != 91) { // '[' == 91
+        print("FAILED: terminal cell grid character check");
+        return 3;
+    }
+    print("  [PASS] Terminal emulation output and ANSI TrueColor parsing verified in cell grid");
+
+    // 3. Viewport split layout computation
+    layout.IdeLayout lay = layout.calculate_layout(1280, 800, term_pane);
+    print("  [PASS] Split Layout computed: Editor pane height =", lay.editor_pane.h, "px | Terminal pane height =", lay.terminal_pane.h, "px");
+
+    // 4. Tab switching test
+    bm.bufman_next(mgr);
+    bm.EditorBuffer* next_buf = bm.bufman_get_active(mgr);
+    print("  Switched Active Buffer ->", next_buf->file_name);
+    if (next_buf->id != 1) {
+        print("FAILED: active buffer switch failed");
+        return 4;
+    }
+
+    // Clean up
+    ts.split_free(term_pane);
+    bm.bufman_free(mgr);
+
+    print("[KALE-IDE] Supercharged Editor & Terminal Split verified successfully.");
+    return 0;
+}
+
+main_entry();

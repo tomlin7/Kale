@@ -1,0 +1,141 @@
+// apps/editor/buffer_manager.kl
+// Multi-Buffer Management and Tab Registry for Kale IDE
+
+import "editor/app_state.kl" as st;
+
+struct EditorBuffer {
+    int id;
+    string file_path;
+    string file_name;
+    st.EditorState state;
+    bool is_open;
+}
+
+fn EditorBuffer* buffer_new(int id, string path, string name, string initial_text) {
+    EditorBuffer* b = alloc(EditorBuffer);
+    b->id = id;
+    b->file_path = path;
+    b->file_name = name;
+    b->state.init(initial_text, path);
+    b->is_open = true;
+    return b;
+}
+
+fn void buffer_free(EditorBuffer* b) {
+    if (b != (EditorBuffer*)0) {
+        b->state.destroy();
+        free(b);
+    }
+}
+
+struct BufferManager {
+    int count;
+    int active_index;
+    EditorBuffer* b0;
+    EditorBuffer* b1;
+    EditorBuffer* b2;
+    EditorBuffer* b3;
+}
+
+fn BufferManager* bufman_new() {
+    BufferManager* bm = alloc(BufferManager);
+    bm->count = 0;
+    bm->active_index = 0;
+    bm->b0 = (EditorBuffer*)0;
+    bm->b1 = (EditorBuffer*)0;
+    bm->b2 = (EditorBuffer*)0;
+    bm->b3 = (EditorBuffer*)0;
+    return bm;
+}
+
+fn void bufman_free(BufferManager* bm) {
+    if (bm != (BufferManager*)0) {
+        if (bm->b0 != (EditorBuffer*)0) {
+            buffer_free(bm->b0);
+        }
+        if (bm->b1 != (EditorBuffer*)0) {
+            buffer_free(bm->b1);
+        }
+        if (bm->b2 != (EditorBuffer*)0) {
+            buffer_free(bm->b2);
+        }
+        if (bm->b3 != (EditorBuffer*)0) {
+            buffer_free(bm->b3);
+        }
+        free(bm);
+    }
+}
+
+fn int bufman_open(BufferManager* bm, string path, string name, string content) {
+    int id = bm->count;
+    EditorBuffer* b = buffer_new(id, path, name, content);
+    if (bm->count == 0) {
+        bm->b0 = b;
+        bm->active_index = 0;
+        bm->count = 1;
+        return 0;
+    } else if (bm->count == 1) {
+        bm->b1 = b;
+        bm->active_index = 1;
+        bm->count = 2;
+        return 1;
+    } else if (bm->count == 2) {
+        bm->b2 = b;
+        bm->active_index = 2;
+        bm->count = 3;
+        return 2;
+    } else if (bm->count == 3) {
+        bm->b3 = b;
+        bm->active_index = 3;
+        bm->count = 4;
+        return 3;
+    }
+    // Max buffers reached; free unused
+    buffer_free(b);
+    return -1;
+}
+
+fn EditorBuffer* bufman_get(BufferManager* bm, int idx) {
+    if (idx == 0) {
+        return bm->b0;
+    }
+    if (idx == 1) {
+        return bm->b1;
+    }
+    if (idx == 2) {
+        return bm->b2;
+    }
+    if (idx == 3) {
+        return bm->b3;
+    }
+    return (EditorBuffer*)0;
+}
+
+fn EditorBuffer* bufman_get_active(BufferManager* bm) {
+    return bufman_get(bm, bm->active_index);
+}
+
+fn void bufman_switch(BufferManager* bm, int idx) {
+    if (idx >= 0 && idx < bm->count) {
+        bm->active_index = idx;
+    }
+}
+
+fn void bufman_next(BufferManager* bm) {
+    if (bm->count > 0) {
+        bm->active_index = (bm->active_index + 1) % bm->count;
+    }
+}
+
+fn void bufman_prev(BufferManager* bm) {
+    if (bm->count > 0) {
+        bm->active_index = (bm->active_index - 1 + bm->count) % bm->count;
+    }
+}
+
+fn void bufman_close_active(BufferManager* bm) {
+    EditorBuffer* cur = bufman_get_active(bm);
+    if (cur != (EditorBuffer*)0) {
+        cur->is_open = false;
+    }
+}

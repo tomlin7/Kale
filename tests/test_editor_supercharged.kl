@@ -1,0 +1,122 @@
+import "apps/editor/buffer_manager.kl" as bm;
+import "apps/editor/terminal_split.kl" as ts;
+import "apps/editor/layout.kl" as layout;
+import "libs/term/grid.kl" as grid;
+
+fn int main_entry() {
+    print("[TEST] Starting Supercharged Editor & Terminal Split test suite...");
+
+    // 1. Buffer Manager tests
+    bm.BufferManager* mgr = bm.bufman_new();
+    int id0 = bm.bufman_open(mgr, "file1.kl", "file1.kl", "line 1\nline 2\nline 3\n");
+    int id1 = bm.bufman_open(mgr, "file2.kl", "file2.kl", "alpha\nbeta\n");
+
+    if (mgr->count != 2) {
+        print("FAILED: buffer count != 2");
+        return 1;
+    }
+
+    bm.bufman_switch(mgr, 0);
+    bm.EditorBuffer* b0 = bm.bufman_get_active(mgr);
+    if (b0->id != 0 || b0->state.buffer.line_count() < 3) {
+        print("FAILED: b0 initial line count");
+        return 2;
+    }
+
+    // Insert text into b0
+    b0->state.insert_char("// comment\n");
+    if (!b0->state.is_dirty) {
+        print("FAILED: buffer should be marked dirty after insert");
+        return 3;
+    }
+
+    // Switch to b1
+    bm.bufman_next(mgr);
+    bm.EditorBuffer* b1 = bm.bufman_get_active(mgr);
+    if (b1->id != 1) {
+        print("FAILED: active buffer should be 1");
+        return 4;
+    }
+
+    // Switch back to b0 using prev
+    bm.bufman_prev(mgr);
+    if (bm.bufman_get_active(mgr)->id != 0) {
+        print("FAILED: bufman_prev should cycle to buffer 0");
+        return 5;
+    }
+    print("  [PASS] Buffer Manager multi-file tab switching & editing verified");
+
+    // 2. Terminal Split tests
+    ts.TerminalSplit* term_pane = ts.split_new(80, 24, "Integrated Term");
+    if (!term_pane->is_open || term_pane->has_focus) {
+        print("FAILED: initial terminal split flags");
+        return 10;
+    }
+
+    // Toggle focus
+    ts.split_toggle_focus(term_pane);
+    if (!term_pane->has_focus) {
+        print("FAILED: terminal split focus toggle");
+        return 11;
+    }
+
+    // Write ANSI TrueColor into terminal
+    ts.split_write(term_pane, "\x1b[38;2;255;165;0mKale\x1b[0m");
+    grid.Cell* cell_k = ts.split_cell_at(term_pane, 0, 0);
+    if (cell_k->ch != 75) { // 'K' == 75
+        print("FAILED: terminal cell 'K' character check");
+        return 12;
+    }
+    if (cell_k->fg.r != 255 || cell_k->fg.g != 165 || cell_k->fg.b != 0) {
+        print("FAILED: terminal cell ANSI TrueColor RGB check");
+        return 13;
+    }
+
+    // Toggle terminal visibility
+    ts.split_toggle(term_pane);
+    if (term_pane->is_open) {
+        print("FAILED: terminal should be closed after toggle");
+        return 14;
+    }
+    print("  [PASS] Terminal Split emulation, ANSI TrueColor, and focus toggle verified");
+
+    // 3. Split Layout tests
+    // When closed, editor pane gets full content height
+    layout.IdeLayout lay_closed = layout.calculate_layout(1000, 700, term_pane);
+    if (lay_closed.editor_pane.h != (700 - 36 - 24)) {
+        print("FAILED: editor pane height when terminal closed");
+        return 20;
+    }
+    if (lay_closed.terminal_pane.h != 0) {
+        print("FAILED: terminal pane height should be 0 when closed");
+        return 21;
+    }
+
+    // Reopen and test horizontal bottom split
+    ts.split_toggle(term_pane);
+    layout.IdeLayout lay_horiz = layout.calculate_layout(1000, 700, term_pane);
+    int content_h = 700 - 36 - 24; // 640
+    int expected_term_h = (content_h * 35) / 100;
+    if (lay_horiz.terminal_pane.h != expected_term_h) {
+        print("FAILED: terminal pane horizontal split height");
+        return 22;
+    }
+
+    // Test vertical right split
+    ts.split_set_direction(term_pane, ts.SPLIT_VERTICAL_RIGHT());
+    layout.IdeLayout lay_vert = layout.calculate_layout(1000, 700, term_pane);
+    int expected_term_w = (1000 * 35) / 100;
+    if (lay_vert.terminal_pane.w != expected_term_w) {
+        print("FAILED: terminal pane vertical split width");
+        return 23;
+    }
+    print("  [PASS] Split Layout dynamic geometry calculations verified");
+
+    ts.split_free(term_pane);
+    bm.bufman_free(mgr);
+
+    print("ALL SUPERCHARGED EDITOR TESTS PASSED PERFECTLY.");
+    return 0;
+}
+
+main_entry();
