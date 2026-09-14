@@ -8,6 +8,7 @@ export interface ProjectInfo {
   version: string;
   path: string;
   image: string;
+  secondaryImage?: string;
   tagline: string;
   description: string;
   stats: {
@@ -36,7 +37,8 @@ export const PROJECTS: ProjectInfo[] = [
     status: "Active",
     version: "v0.2.0",
     path: "src/kale/",
-    image: "/assets/kale_hero_classical.jpg",
+    image: "/assets/kaleimages/HQ35R2NaIAAZecs.jpg",
+    secondaryImage: "/assets/kaleimages/HQNfWuaaAAAE3LA.jpg",
     tagline: "The beating heart of our language. High-performance LLVM IR code generator with strict type inference and native FFI.",
     description: "The official Kale compiler transforms high-level syntax into pristine, highly-optimized LLVM IR. Features stack array literals, struct-by-value passing, IEEE 754 float arithmetic (f32/f64), dynamic library linking (-l/-L), and direct AOT binary emission via Clang/LLD.",
     stats: [
@@ -97,7 +99,8 @@ fn main() -> int32 {
     status: "Active",
     version: "v0.2.0",
     path: "editor/",
-    image: "/assets/classical_columns.jpg",
+    image: "/assets/kaleimages/HQ35R2VakAAcg4J.jpg",
+    secondaryImage: "/assets/kaleimages/HQNfWumaUAANWOP.jpg",
     tagline: "Sub-millisecond input latency, piece table text buffer, and silky smooth 144Hz GPU typography.",
     description: "Built from scratch to deliver uncompromising productivity and responsiveness. Designed around a pure Kale Piece Table text buffer, GPU-batched font rendering with dynamic stb_truetype atlasing, multi-cursor editing, lexical syntax highlighting, and an integrated status bar.",
     stats: [
@@ -157,7 +160,8 @@ fn on_frame(state: *EditorState) -> void {
     status: "Active",
     version: "v0.1.0",
     path: "vcs/",
-    image: "/assets/classical_warrior.jpg",
+    image: "/assets/kaleimages/HQc8WvxbkAAuSWq.jpg",
+    secondaryImage: "/assets/kaleimages/HQNfWupaEAAV_yJ.jpg",
     tagline: "Pure Kale SHA-1 hashing, immutable DAG object database, staging index, and porcelain CLI suite.",
     description: "A fast, transparent distributed version control system designed to be 100% written in Kale. Features a custom pure-Kale SHA-1 cryptographic engine, immutable content-addressable object store (blob, tree, commit), staging index file format with binary checksums, and two-way file diffing.",
     stats: [
@@ -219,7 +223,8 @@ fn create_commit(repo_path: string, author: string, message: string) -> string {
     status: "Active",
     version: "v0.1.0",
     path: "libs/render/",
-    image: "/assets/classical_moon_arch.jpg",
+    image: "/assets/kaleimages/HQfeyisasAAhFNU.jpg",
+    secondaryImage: "/assets/kaleimages/HQNfWurbYAARIEh.jpg",
     tagline: "Dynamic VBO/EBO geometry batching, SDF rounded rectangles, and high-DPI font rasterization.",
     description: "The foundational 2D graphics engine powering all Kale native GUIs. Implements high-throughput CPU-to-GPU dynamic batching capable of drawing hundreds of thousands of textured and colored quads in a single draw call. Fully integrated with stb_truetype for real-time font glyph caching.",
     stats: [
@@ -273,7 +278,8 @@ fn draw_card(b: *batch.RenderBatch, f: *font.FontAtlas, x: f32, y: f32, w: f32, 
     status: "Active",
     version: "v0.1.0",
     path: "libs/ui/",
-    image: "/assets/classical_rose_garden.jpg",
+    image: "/assets/kaleimages/HQk2PcnaUAE5CfX.jpg",
+    secondaryImage: "/assets/kaleimages/HQQA_vDbsAAFoJM.jpg",
     tagline: "Stateless widget declarations, automatic layout stacks, and responsive mouse/keyboard event routing.",
     description: "A fast, immediate-mode GUI toolkit tailored for developer tooling and high-frame-rate user interfaces. Eliminates synchronization headaches between UI state and widget trees by generating layout and drawing commands synchronously on every frame.",
     stats: [
@@ -329,7 +335,8 @@ fn draw_control_panel(ctx: *ui.UIContext) -> void {
     status: "Active",
     version: "v0.2.0",
     path: "libs/framework/",
-    image: "/assets/classical_monument.jpg",
+    image: "/assets/kaleimages/HQk2PcYboAAyKNc.jpg",
+    secondaryImage: "/assets/kaleimages/HQQA_vIbIAAFaVa.jpg",
     tagline: "Event loop orchestration, multi-monitor high-DPI scaling, and 144Hz frame pacing.",
     description: "The core application harness that abstracts GLFW3 window creation, OpenGL context negotiation, event polling, and frame timing. Provides an ergonomic lifecycle interface for building desktop games, developer tools, and rich interactive applications.",
     stats: [
@@ -389,7 +396,8 @@ fn main() -> int32 {
     status: "Active",
     version: "v0.1.0",
     path: "libs/net/",
-    image: "/assets/kale_hero_classical.jpg",
+    image: "/assets/kaleimages/HQNfWuaaAAAE3LA.jpg",
+    secondaryImage: "/assets/kaleimages/HQQA_vIbwAAx2IC.jpg",
     tagline: "Winsock2 networking, non-blocking TCP streams, and RFC 7230 compliant HTTP client & server.",
     description: "Low-latency systems networking built directly on OS socket APIs. Provides asynchronous TCP listeners, client socket streams, chunked transfer encoding, connection pooling, and full HTTP/1.1 protocol parsing.",
     stats: [
@@ -447,7 +455,8 @@ fn main() -> int32 {
     status: "Active",
     version: "v0.1.0",
     path: "libs/web/",
-    image: "/assets/classical_columns.jpg",
+    image: "/assets/kaleimages/HQNfWumaUAANWOP.jpg",
+    secondaryImage: "/assets/kaleimages/HQQA_vJa0AAgpAa.jpg",
     tagline: "Parameterized radix trie router, JSON serialization, and server-side template engine.",
     description: "A fast, modular web application framework in Kale. Features a lightning-fast radix tree URL router with wildcard and parameter capture (/api/v1/users/:id), structured JSON response generation, and composable middleware pipelines.",
     stats: [
@@ -501,7 +510,8 @@ fn main() -> int32 {
     status: "Active",
     version: "v0.1.0",
     path: "libs/sql/",
-    image: "/assets/classical_warrior.jpg",
+    image: "/assets/kaleimages/HQNfWupaEAAV_yJ.jpg",
+    secondaryImage: "/assets/kaleimages/HQqY7DDbkAAp-Xf.jpg",
     tagline: "Native SQLite3 C ABI binding, prepared statements, and type-safe query builder.",
     description: "Embedded relational database connectivity for Kale applications. Provides safe wrappers for SQLite3 connection handles, parameterized prepared statements with positional and named bindings, transaction rollbacks, and a fluent query builder.",
     stats: [
@@ -557,14 +567,15 @@ fn main() -> int32 {
     status: "Active",
     version: "v0.2.0",
     path: "packages/std/",
-    image: "/assets/classical_moon_arch.jpg",
+    image: "/assets/kaleimages/HQNfWurbYAARIEh.jpg",
+    secondaryImage: "/assets/kaleimages/HQX6KvPaEAALJnz.jpg",
     tagline: "Core data structures, high-performance string operations, filesystem utilities, and buffered I/O.",
     description: "The backbone of all Kale software. Delivers generic lists, dynamic byte buffers, hash maps, piece tables, path manipulation, directory walkers, and UTF-8 string builders. Designed for maximum runtime performance and zero unnecessary allocations.",
     stats: [
       { label: "Modules", value: "14 Core Packages" },
       { label: "Collections", value: "List, Buffer, Map, PieceTable" },
       { label: "I/O Speed", value: "> 4.2 GB/s Memory Buffer" },
-      { label: "Milestone", value: "Foundation Pillar" },
+      { label: "Milestone", value: "Core Module" },
     ],
     highlights: [
       {
@@ -610,14 +621,15 @@ fn main() -> int32 {
     status: "Foundational",
     version: "v0.0.1",
     path: "sys/",
-    image: "/assets/classical_rose_garden.jpg",
+    image: "/assets/kaleimages/HQQA_vDbsAAFoJM.jpg",
+    secondaryImage: "/assets/kaleimages/HR-35WubIAAt3Wd.jpg",
     tagline: "Multiboot x86_64 loader, physical page frame allocator, preemptive multitasking, and linear framebuffer.",
     description: "Pushing Kale directly to bare-metal hardware. Features a 64-bit long-mode bootloader, physical memory page frame allocator, IDT interrupt dispatch, and linear framebuffer driver capable of rendering Kale UI widgets without an operating system.",
     stats: [
       { label: "Architecture", value: "x86_64 Bare-Metal" },
       { label: "Boot Standard", value: "Multiboot2 / UEFI" },
       { label: "Kernel Model", value: "Microkernel in Kale" },
-      { label: "Milestone", value: "Pillar 4 Initiated" },
+      { label: "Milestone", value: "Active Module" },
     ],
     highlights: [
       {
@@ -671,14 +683,15 @@ fn kernel_main(boot: *BootInfo) -> void {
     status: "Planned",
     version: "v0.1.0",
     path: "sys/sysmon/",
-    image: "/assets/classical_monument.jpg",
+    image: "/assets/kaleimages/HQQA_vIbIAAFaVa.jpg",
+    secondaryImage: "/assets/kaleimages/HR-35Y_bUAAMBp-.jpg",
     tagline: "Interactive TUI process inspector, CPU core utilization sparklines, and hardware telemetry.",
     description: "An ultra-fast terminal process monitor and resource telemetry dashboard. Provides per-core CPU usage graphs, memory breakdown, active thread trees, disk I/O metrics, and process signaling.",
     stats: [
       { label: "Interface", value: "ANSI / VT100 TUI" },
       { label: "Polling Rate", value: "60 Hz Metric Refresh" },
       { label: "Overhead", value: "< 0.2% CPU Usage" },
-      { label: "Milestone", value: "Pillar 4 Appended" },
+      { label: "Milestone", value: "Active Module" },
     ],
     highlights: [
       {
@@ -727,14 +740,15 @@ fn main() -> int32 {
     status: "Planned",
     version: "v0.1.0",
     path: "libs/term/",
-    image: "/assets/kale_hero_classical.jpg",
+    image: "/assets/kaleimages/HQQA_vIbwAAx2IC.jpg",
+    secondaryImage: "/assets/kaleimages/HRvckHmasAAjgR4.jpg",
     tagline: "ANSI escape sequence state machine, pseudoterminal (pty) abstraction, and cell grid buffer.",
     description: "A terminal emulation engine for building command-line user interfaces, REPLs, and embedded terminal widgets. Implements full VT100/VT220/xterm escape sequence parsing, 24-bit TrueColor support, and pty spawning.",
     stats: [
       { label: "Parser Model", value: "Paul Flo Williams State Machine" },
       { label: "Color Depth", value: "24-bit TrueColor (RGB)" },
       { label: "PTY Support", value: "ConPTY & OpenPTY" },
-      { label: "Milestone", value: "Pillar 5 Appended" },
+      { label: "Milestone", value: "Active Module" },
     ],
     highlights: [
       {
@@ -776,14 +790,15 @@ fn main() -> int32 {
     status: "Planned",
     version: "v0.1.0",
     path: "libs/fs_watch/",
-    image: "/assets/classical_columns.jpg",
+    image: "/assets/kaleimages/HQQA_vJa0AAgpAa.jpg",
+    secondaryImage: "/assets/kaleimages/HRvckHnagAAtALm.jpg",
     tagline: "High-frequency file change notifications via ReadDirectoryChangesW, inotify, and kqueue.",
     description: "An asynchronous filesystem watcher engineered for hot-reloading development servers, build triggers, and live editor file sync. Listens for file additions, modifications, renames, and deletions with debounced event queuing.",
     stats: [
       { label: "Kernel APIs", value: "ReadDirectoryChangesW / inotify" },
       { label: "Debounce Filter", value: "Adjustable 5-50ms" },
       { label: "Scale", value: "Recursive 500k+ Files" },
-      { label: "Milestone", value: "Pillar 5 Appended" },
+      { label: "Milestone", value: "Active Module" },
     ],
     highlights: [
       {
@@ -829,14 +844,15 @@ fn main() -> int32 {
     status: "Planned",
     version: "v0.1.0",
     path: "libs/audio/",
-    image: "/assets/classical_warrior.jpg",
+    image: "/assets/kaleimages/HQqY7DDbkAAp-Xf.jpg",
+    secondaryImage: "/assets/kaleimages/HRvckHnbUAAYfGP.jpg",
     tagline: "WASAPI exclusive-mode PCM playback, multi-channel voice mixing, and audio synthesis.",
     description: "A low-latency audio framework built for game engines, desktop apps, and interactive audio workstations. Directly interfaces with Windows WASAPI and CoreAudio to deliver glitch-free sound synthesis, WAV/OGG decoding, and spatial 3D audio panning.",
     stats: [
       { label: "Audio Backend", value: "WASAPI / CoreAudio / ALSA" },
       { label: "Buffer Latency", value: "< 5.3ms Output Delay" },
       { label: "Channels", value: "64 Mixed Voices" },
-      { label: "Milestone", value: "Pillar 5 Appended" },
+      { label: "Milestone", value: "Active Module" },
     ],
     highlights: [
       {
@@ -882,14 +898,15 @@ fn main() -> int32 {
     status: "Planned",
     version: "v0.1.0",
     path: "libs/physics/",
-    image: "/assets/classical_moon_arch.jpg",
+    image: "/assets/kaleimages/HQX6KvPaEAALJnz.jpg",
+    secondaryImage: "/assets/kaleimages/HSFAzDOaUAAxVfR.jpg",
     tagline: "Gilbert-Johnson-Keerthi (GJK) collision detection, spatial hashing, and symplectic Euler integration.",
     description: "A fast 2D rigid-body physics engine designed to demonstrate Kale's computational efficiency. Implements convex polygon and circle collision testing, impulse-based contact solver, friction, restitution, and broadphase spatial hashing.",
     stats: [
       { label: "Integrator", value: "Symplectic Euler" },
       { label: "Broadphase", value: "Spatial Hash Grid" },
       { label: "Narrowphase", value: "GJK / EPA Algorithm" },
-      { label: "Milestone", value: "Pillar 5 Appended" },
+      { label: "Milestone", value: "Active Module" },
     ],
     highlights: [
       {
@@ -936,14 +953,15 @@ fn main() -> int32 {
     status: "Planned",
     version: "v0.1.0",
     path: "libs/tls/",
-    image: "/assets/classical_rose_garden.jpg",
+    image: "/assets/kaleimages/HR-35WubIAAt3Wd.jpg",
+    secondaryImage: "/assets/kaleimages/HSFAzDRaYAAMl63.jpg",
     tagline: "ChaCha20-Poly1305, AES-256-GCM, SHA-256/512, and pure Kale TLS 1.3 client.",
     description: "Systems-level cryptographic operations and secure transport protocol written directly in Kale. Provides state-of-the-art cipher suites, ECDH key exchange over Curve25519, and full TLS 1.3 connection negotiation.",
     stats: [
       { label: "Cipher Suites", value: "ChaCha20-Poly1305 / AES-GCM" },
       { label: "Key Exchange", value: "X25519 (Curve25519)" },
       { label: "Security Protocol", value: "TLS 1.3 RFC 8446" },
-      { label: "Milestone", value: "Pillar 5 Appended" },
+      { label: "Milestone", value: "Active Module" },
     ],
     highlights: [
       {
@@ -990,14 +1008,15 @@ fn main() -> int32 {
     status: "Planned",
     version: "v0.1.0",
     path: "apps/lsp/",
-    image: "/assets/classical_monument.jpg",
+    image: "/assets/kaleimages/HR-35Y_bUAAMBp-.jpg",
+    secondaryImage: "/assets/kaleimages/HSL0Uk6bsAAylir.jpg",
     tagline: "JSON-RPC 2.0 language server providing completions, diagnostics, hover docs, and jump-to-definition.",
     description: "An official Language Server Protocol daemon powering the flagship Kale editor, VS Code, and Neovim. Consumes incremental editor buffer diffs, executes background AST parsing, and provides instant code intelligence.",
     stats: [
       { label: "Protocol", value: "LSP 3.17 / JSON-RPC" },
       { label: "Diagnostic Latency", value: "< 12ms On Type" },
       { label: "AST Cache", value: "Incremental Memoized" },
-      { label: "Milestone", value: "Pillar 6 Appended" },
+      { label: "Milestone", value: "Active Module" },
     ],
     highlights: [
       {
@@ -1046,14 +1065,15 @@ fn main() -> int32 {
     status: "Planned",
     version: "v0.1.0",
     path: "tools/pkg/",
-    image: "/assets/kale_hero_classical.jpg",
+    image: "/assets/kaleimages/HRvckHmasAAjgR4.jpg",
+    secondaryImage: "/assets/kaleimages/HSL0Uk8bcAAbwtM.jpg",
     tagline: "Hermetic monorepo dependency graph resolver, semantic lockfiles, and distributed binary cache.",
     description: "The package manager and build orchestrator for the Kale ecosystem. Manages module imports, resolves semantic version constraints, downloads distributed dependencies, and provides reproducible, incremental compiler invocations.",
     stats: [
       { label: "Build Graph", value: "DAG Incremental Memoized" },
       { label: "Lockfile Format", value: "kale.lock / TOML" },
       { label: "Registry", value: "Decentralized Git / HTTPS" },
-      { label: "Milestone", value: "Pillar 6 Appended" },
+      { label: "Milestone", value: "Active Module" },
     ],
     highlights: [
       {
