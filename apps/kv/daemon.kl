@@ -37,6 +37,7 @@ fn bool str_eq_ci(string a, string b) {
 }
 
 // Parses raw command string into RESP-formatted response
+// Parses raw command string into RESP-formatted response
 fn string daemon_execute_command(store.KvStore* s, string raw_cmd) {
     int len = strlen(raw_cmd);
     if (len == 0) {
@@ -52,49 +53,111 @@ fn string daemon_execute_command(store.KvStore* s, string raw_cmd) {
         return "-ERR empty command\r\n";
     }
 
-    // Token 1: Command name
-    sb.StringBuilder cmd_sb;
-    cmd_sb.init(16);
-    while (idx < len && raw_cmd[idx] != ' ' && (int)raw_cmd[idx] != 13 && (int)raw_cmd[idx] != 10) {
-        cmd_sb.append_char(raw_cmd[idx]);
-        idx = idx + 1;
-    }
-    string cmd = cmd_sb.to_string();
-    cmd_sb.destroy();
+    string cmd = "";
+    string arg1 = "";
+    string arg2 = "";
+    int num_args = 0;
 
-    // Skip whitespace
-    while (idx < len && raw_cmd[idx] == ' ') {
-        idx = idx + 1;
-    }
+    if (raw_cmd[idx] == '*') {
+        // RESP Array format: *<argc>\r\n$<len>\r\n<arg0>\r\n...
+        idx = idx + 1; // skip '*'
+        int argc = 0;
+        while (idx < len && (int)raw_cmd[idx] >= 48 && (int)raw_cmd[idx] <= 57) {
+            argc = (argc * 10) + ((int)raw_cmd[idx] - 48);
+            idx = idx + 1;
+        }
+        while (idx < len && ((int)raw_cmd[idx] == 13 || (int)raw_cmd[idx] == 10)) {
+            idx = idx + 1;
+        }
 
-    // Token 2: Argument 1 (e.g. key)
-    sb.StringBuilder arg1_sb;
-    arg1_sb.init(64);
-    while (idx < len && raw_cmd[idx] != ' ' && (int)raw_cmd[idx] != 13 && (int)raw_cmd[idx] != 10) {
-        arg1_sb.append_char(raw_cmd[idx]);
-        idx = idx + 1;
-    }
-    string arg1 = arg1_sb.to_string();
-    arg1_sb.destroy();
+        num_args = argc;
+        int arg_i = 0;
+        while (arg_i < argc && idx < len) {
+            if (raw_cmd[idx] == '$') {
+                idx = idx + 1;
+                int str_len = 0;
+                while (idx < len && (int)raw_cmd[idx] >= 48 && (int)raw_cmd[idx] <= 57) {
+                    str_len = (str_len * 10) + ((int)raw_cmd[idx] - 48);
+                    idx = idx + 1;
+                }
+                while (idx < len && ((int)raw_cmd[idx] == 13 || (int)raw_cmd[idx] == 10)) {
+                    idx = idx + 1;
+                }
 
-    // Skip whitespace
-    while (idx < len && raw_cmd[idx] == ' ') {
-        idx = idx + 1;
-    }
+                sb.StringBuilder elem_sb;
+                elem_sb.init(str_len + 1);
+                int k = 0;
+                while (k < str_len && idx < len) {
+                    elem_sb.append_char(raw_cmd[idx]);
+                    idx = idx + 1;
+                    k = k + 1;
+                }
+                string elem_val = elem_sb.to_string();
+                elem_sb.destroy();
 
-    // Token 3: Argument 2 (e.g. value)
-    sb.StringBuilder arg2_sb;
-    arg2_sb.init(128);
-    while (idx < len && (int)raw_cmd[idx] != 13 && (int)raw_cmd[idx] != 10) {
-        arg2_sb.append_char(raw_cmd[idx]);
-        idx = idx + 1;
+                while (idx < len && ((int)raw_cmd[idx] == 13 || (int)raw_cmd[idx] == 10)) {
+                    idx = idx + 1;
+                }
+
+                if (arg_i == 0) {
+                    cmd = elem_val;
+                } else if (arg_i == 1) {
+                    arg1 = elem_val;
+                } else if (arg_i == 2) {
+                    arg2 = elem_val;
+                }
+            }
+            arg_i = arg_i + 1;
+        }
+    } else {
+        // Inline format: CMD arg1 arg2...
+        sb.StringBuilder cmd_sb;
+        cmd_sb.init(16);
+        while (idx < len && raw_cmd[idx] != ' ' && (int)raw_cmd[idx] != 13 && (int)raw_cmd[idx] != 10) {
+            cmd_sb.append_char(raw_cmd[idx]);
+            idx = idx + 1;
+        }
+        cmd = cmd_sb.to_string();
+        cmd_sb.destroy();
+        num_args = 1;
+
+        // Skip whitespace
+        while (idx < len && raw_cmd[idx] == ' ') {
+            idx = idx + 1;
+        }
+
+        if (idx < len && (int)raw_cmd[idx] != 13 && (int)raw_cmd[idx] != 10) {
+            sb.StringBuilder arg1_sb;
+            arg1_sb.init(64);
+            while (idx < len && raw_cmd[idx] != ' ' && (int)raw_cmd[idx] != 13 && (int)raw_cmd[idx] != 10) {
+                arg1_sb.append_char(raw_cmd[idx]);
+                idx = idx + 1;
+            }
+            arg1 = arg1_sb.to_string();
+            arg1_sb.destroy();
+            num_args = 2;
+
+            while (idx < len && raw_cmd[idx] == ' ') {
+                idx = idx + 1;
+            }
+
+            if (idx < len && (int)raw_cmd[idx] != 13 && (int)raw_cmd[idx] != 10) {
+                sb.StringBuilder arg2_sb;
+                arg2_sb.init(128);
+                while (idx < len && (int)raw_cmd[idx] != 13 && (int)raw_cmd[idx] != 10) {
+                    arg2_sb.append_char(raw_cmd[idx]);
+                    idx = idx + 1;
+                }
+                arg2 = arg2_sb.to_string();
+                arg2_sb.destroy();
+                num_args = 3;
+            }
+        }
     }
-    string arg2 = arg2_sb.to_string();
-    arg2_sb.destroy();
 
     // Dispatch commands
     if (str_eq_ci(cmd, "PING")) {
-        if (strlen(arg1) > 0) {
+        if (num_args > 1 && strlen(arg1) > 0) {
             sb.StringBuilder res;
             res.init(64);
             res.append("+");
@@ -107,8 +170,24 @@ fn string daemon_execute_command(store.KvStore* s, string raw_cmd) {
         return "+PONG\r\n";
     }
 
+    if (str_eq_ci(cmd, "ECHO")) {
+        if (num_args < 2) {
+            return "-ERR wrong number of arguments for 'echo' command\r\n";
+        }
+        sb.StringBuilder res;
+        res.init(strlen(arg1) + 16);
+        res.append("$");
+        res.append_int(strlen(arg1));
+        res.append("\r\n");
+        res.append(arg1);
+        res.append("\r\n");
+        string ret = res.to_string();
+        res.destroy();
+        return ret;
+    }
+
     if (str_eq_ci(cmd, "SET")) {
-        if (strlen(arg1) == 0) {
+        if (num_args < 3) {
             return "-ERR wrong number of arguments for 'set' command\r\n";
         }
         store.store_set(s, arg1, arg2);
@@ -116,7 +195,7 @@ fn string daemon_execute_command(store.KvStore* s, string raw_cmd) {
     }
 
     if (str_eq_ci(cmd, "GET")) {
-        if (strlen(arg1) == 0) {
+        if (num_args < 2) {
             return "-ERR wrong number of arguments for 'get' command\r\n";
         }
         if (!store.store_exists(s, arg1)) {
@@ -136,7 +215,7 @@ fn string daemon_execute_command(store.KvStore* s, string raw_cmd) {
     }
 
     if (str_eq_ci(cmd, "DEL")) {
-        if (strlen(arg1) == 0) {
+        if (num_args < 2) {
             return "-ERR wrong number of arguments for 'del' command\r\n";
         }
         bool ok = store.store_del(s, arg1);
@@ -147,7 +226,7 @@ fn string daemon_execute_command(store.KvStore* s, string raw_cmd) {
     }
 
     if (str_eq_ci(cmd, "EXISTS")) {
-        if (strlen(arg1) == 0) {
+        if (num_args < 2) {
             return "-ERR wrong number of arguments for 'exists' command\r\n";
         }
         if (store.store_exists(s, arg1)) {
@@ -163,6 +242,28 @@ fn string daemon_execute_command(store.KvStore* s, string raw_cmd) {
         res.append(":");
         res.append_int(cnt);
         res.append("\r\n");
+        string ret = res.to_string();
+        res.destroy();
+        return ret;
+    }
+
+    if (str_eq_ci(cmd, "KEYS")) {
+        int cnt = store.store_active_count(s);
+        sb.StringBuilder res;
+        res.init(256);
+        res.append("*");
+        res.append_int(cnt);
+        res.append("\r\n");
+        int k_idx = 0;
+        while (k_idx < cnt) {
+            string k_str = store.store_get_key_at(s, k_idx);
+            res.append("$");
+            res.append_int(strlen(k_str));
+            res.append("\r\n");
+            res.append(k_str);
+            res.append("\r\n");
+            k_idx = k_idx + 1;
+        }
         string ret = res.to_string();
         res.destroy();
         return ret;

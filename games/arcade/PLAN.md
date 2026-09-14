@@ -10,5 +10,6 @@ A high-performance, retro-futuristic 2D Vector & Physics Arcade game built nativ
 
 ## 3. Visual & Physics Specs
 - Canvas resolution: 640x480 (or configurable).
-- Pure vector aesthetics: wireframe ship geometry, midpoint circle asteroids, Bresenham laser strokes.
+- Pure vector aesthetics: wireframe ship geometry with damage feedback, midpoint circle asteroids, Bresenham laser strokes.
 - Physics: Symplectic Euler integration, linear momentum, velocity damping, screen border restitution, and AABB collision resolution.
+- Gameplay dynamics: 10-frame post-damage invulnerability buffer preventing immediate multi-drain death, with Game Over state taking strict priority over Victory.

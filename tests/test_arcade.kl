@@ -113,6 +113,34 @@ fn int main_entry() {
     game.arcade_render(g);
     print("  [PASS] Arcade vector rendering pipeline verified");
 
+    // 4. Invulnerability frames and damage test
+    game.ArcadeGame* g2 = game.arcade_new(400, 300);
+    g2->target0->pos.x = g2->player_body->pos.x;
+    g2->target0->pos.y = g2->player_body->pos.y;
+    game.arcade_step(g2, 1);
+    if (g2->lives != 2) {
+        print("FAILED: first hit should reduce lives to 2");
+        return 14;
+    }
+    // Next step within invuln window should NOT drain another life
+    game.arcade_step(g2, 1);
+    if (g2->lives != 2) {
+        print("FAILED: invulnerability frames should protect player from multi-drain");
+        return 15;
+    }
+
+    // 5. Game Over state precedence
+    g2->lives = 0;
+    g2->target0_active = false;
+    g2->target1_active = false;
+    game.arcade_step(g2, 1);
+    if (g2->game_state != 2) { // 2 = GAME OVER
+        print("FAILED: lives <= 0 should take priority as GAME OVER");
+        return 16;
+    }
+    game.arcade_free(g2);
+    print("  [PASS] Invulnerability recovery frames and Game Over precedence verified");
+
     game.arcade_free(g);
     print("ALL GAMES/ARCADE TESTS PASSED PERFECTLY.");
     return 0;

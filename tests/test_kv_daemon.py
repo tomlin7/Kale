@@ -67,5 +67,42 @@ class TestKvDaemon(unittest.TestCase):
         res = self.run_kale_jit(code)
         self.assertEqual(res, 42)
 
+    def test_kv_resp_array_and_arity(self):
+        code = """
+        import "apps/kv/store.kl" as store;
+        import "apps/kv/daemon.kl" as daemon;
+
+        extern int strcmp(string s1, string s2);
+
+        store.KvStore* s = store.store_new(16);
+
+        // Test RESP array commands
+        string r_ping = daemon.daemon_execute_command(s, "*1\\r\\n$4\\r\\nPING\\r\\n");
+        if (strcmp(r_ping, "+PONG\\r\\n") != 0) {
+            return 1;
+        }
+
+        string r_set = daemon.daemon_execute_command(s, "*3\\r\\n$3\\r\\nSET\\r\\n$3\\r\\nkey\\r\\n$5\\r\\nvalue\\r\\n");
+        if (strcmp(r_set, "+OK\\r\\n") != 0) {
+            return 2;
+        }
+
+        string r_get = daemon.daemon_execute_command(s, "*2\\r\\n$3\\r\\nGET\\r\\n$3\\r\\nkey\\r\\n");
+        if (strcmp(r_get, "$5\\r\\nvalue\\r\\n") != 0) {
+            return 3;
+        }
+
+        // Arity validation on SET with no value
+        string r_err = daemon.daemon_execute_command(s, "SET only_key\\r\\n");
+        if (strcmp(r_err, "-ERR wrong number of arguments for 'set' command\\r\\n") != 0) {
+            return 4;
+        }
+
+        store.store_free(s);
+        return 99;
+        """
+        res = self.run_kale_jit(code)
+        self.assertEqual(res, 99)
+
 if __name__ == "__main__":
     unittest.main()

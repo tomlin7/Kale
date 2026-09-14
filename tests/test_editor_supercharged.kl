@@ -110,7 +110,45 @@ fn int main_entry() {
         print("FAILED: terminal pane vertical split width");
         return 23;
     }
+
+    // Test dynamic split resize and percent adjustment
+    ts.split_set_percent(term_pane, 50);
+    layout.IdeLayout lay_50 = layout.calculate_layout(1000, 700, term_pane);
+    if (lay_50.terminal_pane.w != 500) {
+        print("FAILED: split_set_percent dynamic update");
+        return 24;
+    }
+
+    ts.split_resize(term_pane, 120, 40);
+    if (term_pane->cols != 120 || term_pane->rows != 40) {
+        print("FAILED: split_resize cols/rows update");
+        return 25;
+    }
     print("  [PASS] Split Layout dynamic geometry calculations verified");
+
+    // 4. Buffer Manager close and slot compaction test (> 4 buffers)
+    int id2 = bm.bufman_open(mgr, "file3.kl", "file3.kl", "gamma\n");
+    int id3 = bm.bufman_open(mgr, "file4.kl", "file4.kl", "delta\n");
+    int id4 = bm.bufman_open(mgr, "file5.kl", "file5.kl", "epsilon\n");
+    if (mgr->count != 5) {
+        print("FAILED: buffer expansion beyond 4 count mismatch");
+        return 30;
+    }
+
+    // Close buffer at index 1
+    bm.bufman_close(mgr, 1);
+    if (mgr->count != 4) {
+        print("FAILED: buffer count should be 4 after close");
+        return 31;
+    }
+
+    // Re-open another buffer into the compacted list
+    int id_new = bm.bufman_open(mgr, "file6.kl", "file6.kl", "zeta\n");
+    if (id_new != 4 || mgr->count != 5) {
+        print("FAILED: re-opening buffer after close");
+        return 32;
+    }
+    print("  [PASS] Buffer Manager compaction, slot reclamation, and expansion verified");
 
     ts.split_free(term_pane);
     bm.bufman_free(mgr);

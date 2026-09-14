@@ -60,5 +60,44 @@ class TestEditorSupercharged(unittest.TestCase):
         res = self.run_kale_jit(code)
         self.assertEqual(res, 42)
 
+    def test_editor_buffer_compaction_and_resize(self):
+        code = """
+        import "apps/editor/buffer_manager.kl" as bm;
+        import "apps/editor/terminal_split.kl" as ts;
+
+        bm.BufferManager* mgr = bm.bufman_new();
+        bm.bufman_open(mgr, "1.kl", "1.kl", "1");
+        bm.bufman_open(mgr, "2.kl", "2.kl", "2");
+        bm.bufman_open(mgr, "3.kl", "3.kl", "3");
+        bm.bufman_open(mgr, "4.kl", "4.kl", "4");
+        bm.bufman_open(mgr, "5.kl", "5.kl", "5");
+
+        if (mgr->count != 5) {
+            return 1;
+        }
+
+        bm.bufman_close(mgr, 2);
+        if (mgr->count != 4) {
+            return 2;
+        }
+
+        // Test split resize
+        ts.TerminalSplit* term = ts.split_new(80, 24, "term");
+        ts.split_set_percent(term, 45);
+        if (term->split_percent != 45) {
+            return 3;
+        }
+        ts.split_resize(term, 100, 30);
+        if (term->cols != 100 || term->rows != 30) {
+            return 4;
+        }
+
+        ts.split_free(term);
+        bm.bufman_free(mgr);
+        return 88;
+        """
+        res = self.run_kale_jit(code)
+        self.assertEqual(res, 88)
+
 if __name__ == "__main__":
     unittest.main()

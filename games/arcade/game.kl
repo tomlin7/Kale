@@ -21,6 +21,7 @@ struct ArcadeGame {
     bool target1_active;
     int game_state; // 0 = ready, 1 = playing, 2 = game over, 3 = victory
     int frame_count;
+    int invuln_frames;
 }
 
 fn ArcadeGame* arcade_new(int width, int height) {
@@ -55,6 +56,7 @@ fn ArcadeGame* arcade_new(int width, int height) {
     g->target1_active = true;
     g->game_state = 1; // Playing
     g->frame_count = 0;
+    g->invuln_frames = 0;
 
     return g;
 }
@@ -134,23 +136,27 @@ fn void arcade_step(ArcadeGame* g, int dt) {
     }
 
     // 5. Player vs Target Hazard Collision
-    if (g->target0_active && body.body_check_collision(g->player_body, g->target0)) {
-        g->lives = g->lives - 1;
-        g->target0->vel.x = -g->target0->vel.x;
-        g->target0->vel.y = -g->target0->vel.y;
-    }
-
-    if (g->target1_active && body.body_check_collision(g->player_body, g->target1)) {
-        g->lives = g->lives - 1;
-        g->target1->vel.x = -g->target1->vel.x;
-        g->target1->vel.y = -g->target1->vel.y;
+    if (g->invuln_frames > 0) {
+        g->invuln_frames = g->invuln_frames - 1;
+    } else {
+        if (g->target0_active && body.body_check_collision(g->player_body, g->target0)) {
+            g->lives = g->lives - 1;
+            g->invuln_frames = 10;
+            g->target0->vel.x = -g->target0->vel.x;
+            g->target0->vel.y = -g->target0->vel.y;
+        } else if (g->target1_active && body.body_check_collision(g->player_body, g->target1)) {
+            g->lives = g->lives - 1;
+            g->invuln_frames = 10;
+            g->target1->vel.x = -g->target1->vel.x;
+            g->target1->vel.y = -g->target1->vel.y;
+        }
     }
 
     // 6. Win / Loss Condition
-    if (!g->target0_active && !g->target1_active) {
+    if (g->lives <= 0) {
+        g->game_state = 2; // GAME OVER takes precedence
+    } else if (!g->target0_active && !g->target1_active) {
         g->game_state = 3; // VICTORY
-    } else if (g->lives <= 0) {
-        g->game_state = 2; // GAME OVER
     }
 
     g->frame_count = g->frame_count + 1;
@@ -190,10 +196,14 @@ fn void arcade_render(ArcadeGame* g) {
     }
 
     // 5. Render player ship (vector wireframe arrowhead)
+    int ship_color = entity.COLOR_GREEN();
+    if (g->invuln_frames > 0) {
+        ship_color = entity.COLOR_AMBER(); // Damage invulnerability feedback
+    }
     int px = g->player_body->pos.x + 8;
     int py = g->player_body->pos.y + 8;
-    canvas.canvas_draw_line(g->canvas, px, py - 10, px - 8, py + 8, entity.COLOR_GREEN());
-    canvas.canvas_draw_line(g->canvas, px - 8, py + 8, px, py + 4, entity.COLOR_GREEN());
-    canvas.canvas_draw_line(g->canvas, px, py + 4, px + 8, py + 8, entity.COLOR_GREEN());
-    canvas.canvas_draw_line(g->canvas, px + 8, py + 8, px, py - 10, entity.COLOR_GREEN());
+    canvas.canvas_draw_line(g->canvas, px, py - 10, px - 8, py + 8, ship_color);
+    canvas.canvas_draw_line(g->canvas, px - 8, py + 8, px, py + 4, ship_color);
+    canvas.canvas_draw_line(g->canvas, px, py + 4, px + 8, py + 8, ship_color);
+    canvas.canvas_draw_line(g->canvas, px + 8, py + 8, px, py - 10, ship_color);
 }

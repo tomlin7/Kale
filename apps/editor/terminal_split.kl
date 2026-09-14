@@ -65,3 +65,20 @@ fn grid.Cell* split_cell_at(TerminalSplit* ts, int col, int row) {
     }
     return (grid.Cell*)0;
 }
+
+fn void split_set_percent(TerminalSplit* ts, int percent) {
+    if (percent > 0 && percent < 100) {
+        ts->split_percent = percent;
+    }
+}
+
+fn void split_resize(TerminalSplit* ts, int cols, int rows) {
+    if (cols > 0 && rows > 0) {
+        ts->cols = cols;
+        ts->rows = rows;
+        if (ts->terminal != (term.Terminal*)0) {
+            term.term_free(ts->terminal);
+        }
+        ts->terminal = term.term_new(cols, rows, ts->shell_title);
+    }
+}

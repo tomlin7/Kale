@@ -57,6 +57,9 @@ fn int canvas_get_pixel(VgCanvas* c, int x, int y) {
 }
 
 fn void canvas_fill_rect(VgCanvas* c, geom.Rect r, int color) {
+    if (r.w <= 0 || r.h <= 0) {
+        return;
+    }
     int y = r.y;
     while (y < r.y + r.h && y < c->height) {
         int x = r.x;
@@ -72,6 +75,9 @@ fn void canvas_fill_rect(VgCanvas* c, geom.Rect r, int color) {
 }
 
 fn void canvas_draw_rect(VgCanvas* c, geom.Rect r, int color) {
+    if (r.w <= 0 || r.h <= 0) {
+        return;
+    }
     int x0 = r.x;
     int y0 = r.y;
     int x1 = r.x + r.w - 1;

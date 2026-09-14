@@ -56,5 +56,39 @@ class TestArcade(unittest.TestCase):
         res = self.run_kale_jit(code)
         self.assertEqual(res, 42)
 
+    def test_arcade_invulnerability_and_state_precedence(self):
+        code = """
+        import "games/arcade/game.kl" as game;
+
+        game.ArcadeGame* g = game.arcade_new(400, 300);
+        g->target0->pos.x = g->player_body->pos.x;
+        g->target0->pos.y = g->player_body->pos.y;
+
+        game.arcade_step(g, 1);
+        if (g->lives != 2) {
+            return 1;
+        }
+
+        // Second step: protected by invulnerability frames
+        game.arcade_step(g, 1);
+        if (g->lives != 2) {
+            return 2;
+        }
+
+        // Check game over takes precedence
+        g->lives = 0;
+        g->target0_active = false;
+        g->target1_active = false;
+        game.arcade_step(g, 1);
+        if (g->game_state != 2) {
+            return 3;
+        }
+
+        game.arcade_free(g);
+        return 99;
+        """
+        res = self.run_kale_jit(code)
+        self.assertEqual(res, 99)
+
 if __name__ == "__main__":
     unittest.main()

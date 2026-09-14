@@ -131,3 +131,18 @@ fn void store_clear(KvStore* s) {
     }
     s->count = 0;
 }
+
+fn string store_get_key_at(KvStore* s, int active_index) {
+    int cur = 0;
+    int i = 0;
+    while (i < s->count) {
+        if (s->entries[i].active) {
+            if (cur == active_index) {
+                return s->entries[i].key;
+            }
+            cur = cur + 1;
+        }
+        i = i + 1;
+    }
+    return "";
+}

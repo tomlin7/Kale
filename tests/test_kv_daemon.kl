@@ -89,6 +89,47 @@ fn int main_entry() {
         print("FAILED: DBSIZE response");
         return 17;
     }
+
+    // RESP Array command verification
+    string r_resp_ping = daemon.daemon_execute_command(s, "*1\r\n$4\r\nPING\r\n");
+    if (strcmp(r_resp_ping, "+PONG\r\n") != 0) {
+        print("FAILED: RESP array PING response");
+        return 18;
+    }
+
+    string r_resp_set = daemon.daemon_execute_command(s, "*3\r\n$3\r\nSET\r\n$4\r\nrole\r\n$6\r\nmaster\r\n");
+    if (strcmp(r_resp_set, "+OK\r\n") != 0) {
+        print("FAILED: RESP array SET response");
+        return 19;
+    }
+
+    string r_resp_get = daemon.daemon_execute_command(s, "*2\r\n$3\r\nGET\r\n$4\r\nrole\r\n");
+    if (strcmp(r_resp_get, "$6\r\nmaster\r\n") != 0) {
+        print("FAILED: RESP array GET response");
+        return 20;
+    }
+
+    // Arity validation test: SET without value should return ERR
+    string r_err_set = daemon.daemon_execute_command(s, "SET missing_val\r\n");
+    if (strcmp(r_err_set, "-ERR wrong number of arguments for 'set' command\r\n") != 0) {
+        print("FAILED: SET arity validation");
+        return 21;
+    }
+
+    // ECHO test
+    string r_echo = daemon.daemon_execute_command(s, "*2\r\n$4\r\nECHO\r\n$11\r\nhello world\r\n");
+    if (strcmp(r_echo, "$11\r\nhello world\r\n") != 0) {
+        print("FAILED: ECHO response");
+        return 22;
+    }
+
+    // KEYS test
+    string r_keys = daemon.daemon_execute_command(s, "KEYS *\r\n");
+    if (strcmp(r_keys, "*1\r\n$4\r\nrole\r\n") != 0) {
+        print("FAILED: KEYS response");
+        return 23;
+    }
+
     print("  [PASS] RESP protocol command parsing verified");
 
     // 3. Loopback TCP daemon networking test
