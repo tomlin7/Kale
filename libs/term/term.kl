@@ -1,0 +1,38 @@
+import "libs/term/color.kl" as color;
+import "libs/term/grid.kl" as grid;
+import "libs/term/escape.kl" as escape;
+
+struct Terminal {
+    grid.CellGrid* g;
+    escape.EscapeParser* parser;
+    string title;
+}
+
+fn Terminal* term_new(int cols, int rows, string title) {
+    Terminal* t = alloc(Terminal);
+    t->g = grid.grid_new(cols, rows);
+    t->parser = escape.parser_new();
+    t->title = title;
+    return t;
+}
+
+fn void term_free(Terminal* t) {
+    if (t != (Terminal*)0) {
+        grid.grid_free(t->g);
+        escape.parser_free(t->parser);
+        free(t);
+    }
+}
+
+fn void term_write(Terminal* t, string s) {
+    int i = 0;
+    while (s[i] != 0) {
+        escape.parse_feed(t->parser, t->g, s[i]);
+        i = i + 1;
+    }
+}
+
+fn grid.Cell* term_cell_at(Terminal* t, int col, int row) {
+    int idx = (row * t->g->cols) + col;
+    return &t->g->cells[idx];
+}

@@ -1,0 +1,41 @@
+import "libs/term/term.kl" as term;
+import "libs/term/color.kl" as color;
+import "libs/term/grid.kl" as grid;
+
+fn int main_entry() {
+    print("[TEST] Initializing libs/term virtual terminal emulator (80x24)...");
+    term.Terminal* t = term.term_new(80, 24, "Kale Terminal");
+    
+    // 1. Plain text emission
+    term.term_write(t, "Hello, Kale Terminal!\n");
+    grid.Cell* c0 = term.term_cell_at(t, 0, 0);
+    if (c0->ch != 72) { // 'H' == 72
+        print("FAILED: expected 'H' (72) at (0,0)");
+        return 1;
+    }
+    print("  [PASS] Plain text rendering verified");
+    
+    // 2. ANSI SGR 24-bit TrueColor Sequence: Imperial Crimson ESC[38;2;185;28;28m
+    term.term_write(t, "\x1b[38;2;185;28;28mCrimson\x1b[0m");
+    grid.Cell* c_crimson = term.term_cell_at(t, 0, 1);
+    if (c_crimson->fg.r != 185 || c_crimson->fg.g != 28 || c_crimson->fg.b != 28) {
+        print("FAILED: expected TrueColor (185, 28, 28)");
+        return 2;
+    }
+    print("  [PASS] 24-bit TrueColor parsing (185, 28, 28) verified");
+    
+    // 3. Cursor repositioning: ESC[5;10HX -> row 5, col 10
+    term.term_write(t, "\x1b[5;10HX");
+    grid.Cell* c_pos = term.term_cell_at(t, 9, 4); // 0-indexed: col 9, row 4
+    if (c_pos->ch != 88) { // 'X' == 88
+        print("FAILED: expected 'X' at col 9, row 4");
+        return 3;
+    }
+    print("  [PASS] Cursor direct positioning (ESC[5;10H) verified");
+    
+    term.term_free(t);
+    print("ALL LIBS/TERM TESTS PASSED PERFECTLY.");
+    return 0;
+}
+
+main_entry();

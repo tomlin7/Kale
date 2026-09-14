@@ -1,0 +1,122 @@
+import "libs/term/color.kl" as color;
+
+struct Cell {
+    int ch;
+    color.Color fg;
+    color.Color bg;
+    bool bold;
+    bool italic;
+    bool underline;
+    bool reverse;
+}
+
+struct CellGrid {
+    int cols;
+    int rows;
+    Cell* cells;
+    int cursor_col;
+    int cursor_row;
+    color.Color cur_fg;
+    color.Color cur_bg;
+    bool cur_bold;
+    bool cur_underline;
+}
+
+fn CellGrid* grid_new(int cols, int rows) {
+    CellGrid* grid = alloc(CellGrid);
+    grid->cols = cols;
+    grid->rows = rows;
+    int count = cols * rows;
+    grid->cells = alloc(Cell, count);
+    grid->cursor_col = 0;
+    grid->cursor_row = 0;
+    grid->cur_fg = color.color_rgb(220, 220, 220);
+    grid->cur_bg = color.color_rgb(15, 23, 42);
+    grid->cur_bold = false;
+    grid->cur_underline = false;
+    
+    int i = 0;
+    while (i < count) {
+        grid->cells[i].ch = 32;
+        grid->cells[i].fg = grid->cur_fg;
+        grid->cells[i].bg = grid->cur_bg;
+        grid->cells[i].bold = false;
+        grid->cells[i].italic = false;
+        grid->cells[i].underline = false;
+        grid->cells[i].reverse = false;
+        i = i + 1;
+    }
+    return grid;
+}
+
+fn void grid_free(CellGrid* grid) {
+    if (grid != (CellGrid*)0) {
+        if (grid->cells != (Cell*)0) {
+            free(grid->cells);
+        }
+        free(grid);
+    }
+}
+
+fn void grid_clear(CellGrid* grid) {
+    int count = grid->cols * grid->rows;
+    int i = 0;
+    while (i < count) {
+        grid->cells[i].ch = 32;
+        grid->cells[i].fg = grid->cur_fg;
+        grid->cells[i].bg = grid->cur_bg;
+        grid->cells[i].bold = false;
+        grid->cells[i].italic = false;
+        grid->cells[i].underline = false;
+        grid->cells[i].reverse = false;
+        i = i + 1;
+    }
+    grid->cursor_col = 0;
+    grid->cursor_row = 0;
+}
+
+fn void grid_putc(CellGrid* grid, int ch) {
+    if (ch == 10) {
+        grid->cursor_col = 0;
+        grid->cursor_row = grid->cursor_row + 1;
+        if (grid->cursor_row >= grid->rows) {
+            grid->cursor_row = grid->rows - 1;
+        }
+        return;
+    }
+    if (ch == 13) {
+        grid->cursor_col = 0;
+        return;
+    }
+    if (ch == 8) {
+        if (grid->cursor_col > 0) {
+            grid->cursor_col = grid->cursor_col - 1;
+        }
+        return;
+    }
+    
+    if (grid->cursor_col >= grid->cols) {
+        grid->cursor_col = 0;
+        grid->cursor_row = grid->cursor_row + 1;
+        if (grid->cursor_row >= grid->rows) {
+            grid->cursor_row = grid->rows - 1;
+        }
+    }
+    
+    int idx = (grid->cursor_row * grid->cols) + grid->cursor_col;
+    grid->cells[idx].ch = ch;
+    grid->cells[idx].fg = grid->cur_fg;
+    grid->cells[idx].bg = grid->cur_bg;
+    grid->cells[idx].bold = grid->cur_bold;
+    grid->cells[idx].underline = grid->cur_underline;
+    
+    grid->cursor_col = grid->cursor_col + 1;
+}
+
+fn void grid_write_str(CellGrid* grid, string s) {
+    int i = 0;
+    while (s[i] != 0) {
+        grid_putc(grid, s[i]);
+        i = i + 1;
+    }
+}

@@ -1,0 +1,40 @@
+struct Color {
+    int r;
+    int g;
+    int b;
+    bool is_default;
+}
+
+fn Color color_rgb(int r, int g, int b) {
+    Color c;
+    c.r = r;
+    c.g = g;
+    c.b = b;
+    c.is_default = false;
+    return c;
+}
+
+fn Color color_default() {
+    Color c;
+    c.r = 255;
+    c.g = 255;
+    c.b = 255;
+    c.is_default = true;
+    return c;
+}
+
+fn Color color_crimson() {
+    return color_rgb(185, 28, 28);
+}
+
+fn Color color_gold() {
+    return color_rgb(217, 119, 6);
+}
+
+fn Color color_parchment() {
+    return color_rgb(254, 243, 199);
+}
+
+fn Color color_black() {
+    return color_rgb(15, 23, 42);
+}

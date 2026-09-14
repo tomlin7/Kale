@@ -1,0 +1,149 @@
+import "libs/term/color.kl" as color;
+import "libs/term/grid.kl" as grid;
+
+struct EscapeParser {
+    int state;
+    int param_count;
+    int p0;
+    int p1;
+    int p2;
+    int p3;
+    int p4;
+    int intermediate;
+    bool is_private;
+}
+
+fn EscapeParser* parser_new() {
+    EscapeParser* p = alloc(EscapeParser);
+    p->state = 0;
+    p->param_count = 0;
+    p->p0 = 0;
+    p->p1 = 0;
+    p->p2 = 0;
+    p->p3 = 0;
+    p->p4 = 0;
+    p->intermediate = 0;
+    p->is_private = false;
+    return p;
+}
+
+fn void parser_free(EscapeParser* p) {
+    if (p != (EscapeParser*)0) {
+        free(p);
+    }
+}
+
+fn void parser_reset(EscapeParser* p) {
+    p->state = 0;
+    p->param_count = 0;
+    p->p0 = 0;
+    p->p1 = 0;
+    p->p2 = 0;
+    p->p3 = 0;
+    p->p4 = 0;
+    p->intermediate = 0;
+    p->is_private = false;
+}
+
+fn void parse_feed(EscapeParser* p, grid.CellGrid* g, int ch) {
+    if (p->state == 0) {
+        if (ch == 27) {
+            p->state = 1;
+            p->param_count = 0;
+            p->p0 = 0;
+            p->p1 = 0;
+            p->p2 = 0;
+            p->p3 = 0;
+            p->p4 = 0;
+            return;
+        }
+        grid.grid_putc(g, ch);
+        return;
+    }
+    
+    if (p->state == 1) {
+        if (ch == 91) {
+            p->state = 2;
+            p->param_count = 1;
+            p->p0 = 0;
+            return;
+        }
+        parser_reset(p);
+        grid.grid_putc(g, ch);
+        return;
+    }
+    
+    if (p->state == 2) {
+        if (ch >= 48 && ch <= 57) {
+            int digit = ch - 48;
+            if (p->param_count == 1) {
+                p->p0 = (p->p0 * 10) + digit;
+            } else if (p->param_count == 2) {
+                p->p1 = (p->p1 * 10) + digit;
+            } else if (p->param_count == 3) {
+                p->p2 = (p->p2 * 10) + digit;
+            } else if (p->param_count == 4) {
+                p->p3 = (p->p3 * 10) + digit;
+            } else if (p->param_count == 5) {
+                p->p4 = (p->p4 * 10) + digit;
+            }
+            return;
+        }
+        if (ch == 59) {
+            p->param_count = p->param_count + 1;
+            return;
+        }
+        
+        parse_dispatch_csi(p, g, ch);
+        parser_reset(p);
+        return;
+    }
+}
+
+fn void parse_dispatch_csi(EscapeParser* p, grid.CellGrid* g, int final_ch) {
+    if (final_ch == 109) {
+        parse_sgr(p, g);
+        return;
+    }
+    if (final_ch == 72 || final_ch == 102) {
+        int r = p->p0;
+        int c = p->p1;
+        if (r <= 0) { r = 1; }
+        if (c <= 0) { c = 1; }
+        g->cursor_row = r - 1;
+        g->cursor_col = c - 1;
+        if (g->cursor_row >= g->rows) { g->cursor_row = g->rows - 1; }
+        if (g->cursor_col >= g->cols) { g->cursor_col = g->cols - 1; }
+        return;
+    }
+    if (final_ch == 74) {
+        grid.grid_clear(g);
+        return;
+    }
+}
+
+fn void parse_sgr(EscapeParser* p, grid.CellGrid* g) {
+    if (p->param_count == 1 && p->p0 == 0) {
+        g->cur_fg = color.color_rgb(220, 220, 220);
+        g->cur_bg = color.color_rgb(15, 23, 42);
+        g->cur_bold = false;
+        g->cur_underline = false;
+        return;
+    }
+    if (p->p0 == 1) {
+        g->cur_bold = true;
+        return;
+    }
+    if (p->p0 == 4) {
+        g->cur_underline = true;
+        return;
+    }
+    if (p->p0 == 38 && p->p1 == 2 && p->param_count >= 5) {
+        g->cur_fg = color.color_rgb(p->p2, p->p3, p->p4);
+        return;
+    }
+    if (p->p0 == 48 && p->p1 == 2 && p->param_count >= 5) {
+        g->cur_bg = color.color_rgb(p->p2, p->p3, p->p4);
+        return;
+    }
+}

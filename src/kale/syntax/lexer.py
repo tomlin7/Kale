@@ -288,6 +288,23 @@ class Lexer:
                 elif esc == '0':
                     chars.append('\0')
                     self._advance()
+                elif esc == 'e':
+                    chars.append('\x1b')
+                    self._advance()
+                elif esc == 'x':
+                    self._advance() # skip 'x'
+                    hex_digits = ""
+                    if self._cur_char in "0123456789abcdefABCDEF":
+                        hex_digits += self._cur_char
+                        self._advance()
+                    if self._cur_char in "0123456789abcdefABCDEF":
+                        hex_digits += self._cur_char
+                        self._advance()
+                    if len(hex_digits) > 0:
+                        chars.append(chr(int(hex_digits, 16)))
+                    else:
+                        self.diagnostics.report_invalid_escape_sequence(TextSpan(self._position - 2, 2), "x")
+                        chars.append('x')
                 else:
                     self.diagnostics.report_invalid_escape_sequence(TextSpan(self._position - 1, 2), esc)
                     chars.append(esc)
