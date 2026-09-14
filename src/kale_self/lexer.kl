@@ -1,0 +1,289 @@
+// src/kale_self/lexer.kl
+// Self-hosting compiler tokenizer in pure Kale
+
+import "src/kale_self/token.kl" as tok;
+
+extern int strlen(string s);
+extern int strcmp(string s1, string s2);
+extern void* malloc(int size);
+
+fn bool is_alpha(char c) {
+    return (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c == 95; // A-Z, a-z, _
+}
+
+fn bool is_digit(char c) {
+    return c >= 48 && c <= 57; // 0-9
+}
+
+fn bool is_alnum(char c) {
+    return is_alpha(c) || is_digit(c);
+}
+
+fn bool is_whitespace(char c) {
+    return c == 32 || c == 9 || c == 10 || c == 13; // space, tab, nl, cr
+}
+
+fn string substring(string s, int start, int len) {
+    char* buf = (char*)malloc(len + 1);
+    int i = 0;
+    while (i < len) {
+        buf[i] = s[start + i];
+        i = i + 1;
+    }
+    buf[len] = (char)0;
+    return (string)buf;
+}
+
+fn int check_keyword(string s) {
+    if (strcmp(s, "fn") == 0) { return tok.TOK_FN(); }
+    if (strcmp(s, "let") == 0) { return tok.TOK_LET(); }
+    if (strcmp(s, "var") == 0) { return tok.TOK_VAR(); }
+    if (strcmp(s, "struct") == 0) { return tok.TOK_STRUCT(); }
+    if (strcmp(s, "enum") == 0) { return tok.TOK_ENUM(); }
+    if (strcmp(s, "if") == 0) { return tok.TOK_IF(); }
+    if (strcmp(s, "else") == 0) { return tok.TOK_ELSE(); }
+    if (strcmp(s, "while") == 0) { return tok.TOK_WHILE(); }
+    if (strcmp(s, "for") == 0) { return tok.TOK_FOR(); }
+    if (strcmp(s, "return") == 0) { return tok.TOK_RETURN(); }
+    if (strcmp(s, "import") == 0) { return tok.TOK_IMPORT(); }
+    if (strcmp(s, "as") == 0) { return tok.TOK_AS(); }
+    if (strcmp(s, "extern") == 0) { return tok.TOK_EXTERN(); }
+    if (strcmp(s, "true") == 0) { return tok.TOK_TRUE(); }
+    if (strcmp(s, "false") == 0) { return tok.TOK_FALSE(); }
+    return tok.TOK_IDENT();
+}
+
+struct Lexer {
+    string src;
+    int pos;
+    int len;
+    int line;
+    int col;
+}
+
+fn Lexer* lexer_new(string src) {
+    Lexer* l = alloc(Lexer);
+    l->src = src;
+    l->pos = 0;
+    l->len = strlen(src);
+    l->line = 1;
+    l->col = 1;
+    return l;
+}
+
+fn void lexer_free(Lexer* l) {
+    if (l != (Lexer*)0) {
+        free(l);
+    }
+}
+
+fn char lexer_peek(Lexer* l) {
+    if (l->pos >= l->len) {
+        return (char)0;
+    }
+    return l->src[l->pos];
+}
+
+fn char lexer_peek_next(Lexer* l) {
+    if (l->pos + 1 >= l->len) {
+        return (char)0;
+    }
+    return l->src[l->pos + 1];
+}
+
+fn char lexer_advance(Lexer* l) {
+    if (l->pos >= l->len) {
+        return (char)0;
+    }
+    char c = l->src[l->pos];
+    l->pos = l->pos + 1;
+    if (c == 10) { // newline
+        l->line = l->line + 1;
+        l->col = 1;
+    } else {
+        l->col = l->col + 1;
+    }
+    return c;
+}
+
+fn void lexer_skip_whitespace_and_comments(Lexer* l) {
+    bool progress = true;
+    while (progress && l->pos < l->len) {
+        progress = false;
+        char c = lexer_peek(l);
+        // Whitespace
+        if (is_whitespace(c)) {
+            lexer_advance(l);
+            progress = true;
+        }
+        // Single-line comment: // ...
+        else if (c == 47 && lexer_peek_next(l) == 47) { // '/'
+            lexer_advance(l);
+            lexer_advance(l);
+            while (l->pos < l->len && lexer_peek(l) != 10) {
+                lexer_advance(l);
+            }
+            if (l->pos < l->len && lexer_peek(l) == 10) {
+                lexer_advance(l);
+            }
+            progress = true;
+        }
+        // Multi-line comment: /* ... */
+        else if (c == 47 && lexer_peek_next(l) == 42) { // '/*'
+            lexer_advance(l);
+            lexer_advance(l);
+            while (l->pos < l->len) {
+                if (lexer_peek(l) == 42 && lexer_peek_next(l) == 47) {
+                    lexer_advance(l);
+                    lexer_advance(l);
+                    break;
+                }
+                lexer_advance(l);
+            }
+            progress = true;
+        }
+    }
+}
+
+fn tok.Token* lexer_next_token(Lexer* l) {
+    lexer_skip_whitespace_and_comments(l);
+
+    if (l->pos >= l->len) {
+        return tok.token_new(tok.TOK_EOF(), "", 0, l->line, l->col);
+    }
+
+    int start_line = l->line;
+    int start_col = l->col;
+    char c = lexer_peek(l);
+
+    // Number literal
+    if (is_digit(c)) {
+        int start_pos = l->pos;
+        int int_val = 0;
+        while (l->pos < l->len && is_digit(lexer_peek(l))) {
+            char d = lexer_advance(l);
+            int_val = (int_val * 10) + ((int)d - 48);
+        }
+        // Check for float dot
+        if (lexer_peek(l) == 46 && is_digit(lexer_peek_next(l))) {
+            lexer_advance(l); // consume '.'
+            while (l->pos < l->len && is_digit(lexer_peek(l))) {
+                lexer_advance(l);
+            }
+            if (lexer_peek(l) == 102) { // 'f'
+                lexer_advance(l);
+            }
+            int num_len = l->pos - start_pos;
+            string txt = substring(l->src, start_pos, num_len);
+            return tok.token_new(tok.TOK_FLOAT(), txt, int_val, start_line, start_col);
+        }
+        int num_len = l->pos - start_pos;
+        string txt = substring(l->src, start_pos, num_len);
+        return tok.token_new(tok.TOK_INT(), txt, int_val, start_line, start_col);
+    }
+
+    // Identifier or keyword
+    if (is_alpha(c)) {
+        int start_pos = l->pos;
+        while (l->pos < l->len && is_alnum(lexer_peek(l))) {
+            lexer_advance(l);
+        }
+        int id_len = l->pos - start_pos;
+        string txt = substring(l->src, start_pos, id_len);
+        int kind = check_keyword(txt);
+        int int_val = 0;
+        if (kind == tok.TOK_TRUE()) {
+            int_val = 1;
+        }
+        return tok.token_new(kind, txt, int_val, start_line, start_col);
+    }
+
+    // String literal
+    if (c == 34) { // '"'
+        lexer_advance(l); // skip opening quote
+        int start_pos = l->pos;
+        while (l->pos < l->len && lexer_peek(l) != 34) {
+            if (lexer_peek(l) == 92 && l->pos + 1 < l->len) { // '\' escape
+                lexer_advance(l);
+            }
+            lexer_advance(l);
+        }
+        int str_len = l->pos - start_pos;
+        string txt = substring(l->src, start_pos, str_len);
+        if (l->pos < l->len && lexer_peek(l) == 34) {
+            lexer_advance(l); // skip closing quote
+        }
+        return tok.token_new(tok.TOK_STRING(), txt, 0, start_line, start_col);
+    }
+
+    // Char literal
+    if (c == 39) { // '\''
+        lexer_advance(l);
+        char ch_val = lexer_advance(l);
+        if (ch_val == 92 && l->pos < l->len) { // escape
+            char next_ch = lexer_advance(l);
+            if (next_ch == 110) { ch_val = (char)10; }
+            else if (next_ch == 116) { ch_val = (char)9; }
+            else if (next_ch == 48) { ch_val = (char)0; }
+        }
+        if (lexer_peek(l) == 39) {
+            lexer_advance(l);
+        }
+        return tok.token_new(tok.TOK_CHAR(), "'c'", (int)ch_val, start_line, start_col);
+    }
+
+    // Two-character operators
+    char next = lexer_peek_next(l);
+    if (c == 61 && next == 61) { // '=='
+        lexer_advance(l); lexer_advance(l);
+        return tok.token_new(tok.TOK_EQEQ(), "==", 0, start_line, start_col);
+    }
+    if (c == 33 && next == 61) { // '!='
+        lexer_advance(l); lexer_advance(l);
+        return tok.token_new(tok.TOK_NEQ(), "!=", 0, start_line, start_col);
+    }
+    if (c == 60 && next == 61) { // '<='
+        lexer_advance(l); lexer_advance(l);
+        return tok.token_new(tok.TOK_LTE(), "<=", 0, start_line, start_col);
+    }
+    if (c == 62 && next == 61) { // '>='
+        lexer_advance(l); lexer_advance(l);
+        return tok.token_new(tok.TOK_GTE(), ">=", 0, start_line, start_col);
+    }
+    if (c == 45 && next == 62) { // '->'
+        lexer_advance(l); lexer_advance(l);
+        return tok.token_new(tok.TOK_ARROW(), "->", 0, start_line, start_col);
+    }
+    if (c == 38 && next == 38) { // '&&'
+        lexer_advance(l); lexer_advance(l);
+        return tok.token_new(tok.TOK_ANDAND(), "&&", 0, start_line, start_col);
+    }
+    if (c == 124 && next == 124) { // '||'
+        lexer_advance(l); lexer_advance(l);
+        return tok.token_new(tok.TOK_OROR(), "||", 0, start_line, start_col);
+    }
+
+    // Single-character punctuators
+    lexer_advance(l);
+    if (c == 43) { return tok.token_new(tok.TOK_PLUS(), "+", 0, start_line, start_col); }
+    if (c == 45) { return tok.token_new(tok.TOK_MINUS(), "-", 0, start_line, start_col); }
+    if (c == 42) { return tok.token_new(tok.TOK_STAR(), "*", 0, start_line, start_col); }
+    if (c == 47) { return tok.token_new(tok.TOK_SLASH(), "/", 0, start_line, start_col); }
+    if (c == 37) { return tok.token_new(tok.TOK_PERCENT(), "%", 0, start_line, start_col); }
+    if (c == 61) { return tok.token_new(tok.TOK_EQUALS(), "=", 0, start_line, start_col); }
+    if (c == 60) { return tok.token_new(tok.TOK_LT(), "<", 0, start_line, start_col); }
+    if (c == 62) { return tok.token_new(tok.TOK_GT(), ">", 0, start_line, start_col); }
+    if (c == 33) { return tok.token_new(tok.TOK_BANG(), "!", 0, start_line, start_col); }
+    if (c == 46) { return tok.token_new(tok.TOK_DOT(), ".", 0, start_line, start_col); }
+    if (c == 44) { return tok.token_new(tok.TOK_COMMA(), ",", 0, start_line, start_col); }
+    if (c == 58) { return tok.token_new(tok.TOK_COLON(), ":", 0, start_line, start_col); }
+    if (c == 59) { return tok.token_new(tok.TOK_SEMICOLON(), ";", 0, start_line, start_col); }
+    if (c == 40) { return tok.token_new(tok.TOK_LPAREN(), "(", 0, start_line, start_col); }
+    if (c == 41) { return tok.token_new(tok.TOK_RPAREN(), ")", 0, start_line, start_col); }
+    if (c == 123) { return tok.token_new(tok.TOK_LBRACE(), "{", 0, start_line, start_col); }
+    if (c == 125) { return tok.token_new(tok.TOK_RBRACE(), "}", 0, start_line, start_col); }
+    if (c == 91) { return tok.token_new(tok.TOK_LBRACKET(), "[", 0, start_line, start_col); }
+    if (c == 93) { return tok.token_new(tok.TOK_RBRACKET(), "]", 0, start_line, start_col); }
+
+    return tok.token_new(tok.TOK_EOF(), "", 0, start_line, start_col);
+}

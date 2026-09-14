@@ -4,12 +4,14 @@
 import "libs/term/term.kl" as term;
 import "libs/term/grid.kl" as grid;
 import "libs/term/color.kl" as color;
+import "libs/term/executor.kl" as exec;
 
 fn int SPLIT_HORIZONTAL_BOTTOM() { return 0; }
 fn int SPLIT_VERTICAL_RIGHT() { return 1; }
 
 struct TerminalSplit {
     term.Terminal* terminal;
+    exec.CommandExecutor* executor;
     bool is_open;
     int split_direction;
     int split_percent;
@@ -22,6 +24,7 @@ struct TerminalSplit {
 fn TerminalSplit* split_new(int cols, int rows, string title) {
     TerminalSplit* ts = alloc(TerminalSplit);
     ts->terminal = term.term_new(cols, rows, title);
+    ts->executor = exec.executor_new(ts->terminal);
     ts->is_open = true;
     ts->split_direction = SPLIT_HORIZONTAL_BOTTOM();
     ts->split_percent = 35; // 35% bottom split
@@ -34,6 +37,9 @@ fn TerminalSplit* split_new(int cols, int rows, string title) {
 
 fn void split_free(TerminalSplit* ts) {
     if (ts != (TerminalSplit*)0) {
+        if (ts->executor != (exec.CommandExecutor*)0) {
+            exec.executor_free(ts->executor);
+        }
         if (ts->terminal != (term.Terminal*)0) {
             term.term_free(ts->terminal);
         }
@@ -80,5 +86,41 @@ fn void split_resize(TerminalSplit* ts, int cols, int rows) {
             term.term_free(ts->terminal);
         }
         ts->terminal = term.term_new(cols, rows, ts->shell_title);
+        if (ts->executor != (exec.CommandExecutor*)0) {
+            ts->executor->terminal = ts->terminal;
+        }
+    }
+}
+
+fn int split_run_command(TerminalSplit* ts, string cmd) {
+    if (ts != (TerminalSplit*)0 && ts->executor != (exec.CommandExecutor*)0) {
+        return exec.executor_run_cmd(ts->executor, cmd);
+    }
+    return -1;
+}
+
+fn void split_send_input(TerminalSplit* ts, string in_str) {
+    if (ts != (TerminalSplit*)0 && ts->executor != (exec.CommandExecutor*)0) {
+        exec.executor_feed_input(ts->executor, in_str);
+    }
+}
+
+fn int split_last_exit_code(TerminalSplit* ts) {
+    if (ts != (TerminalSplit*)0 && ts->executor != (exec.CommandExecutor*)0) {
+        return ts->executor->last_exit_code;
+    }
+    return -1;
+}
+
+fn int split_commands_count(TerminalSplit* ts) {
+    if (ts != (TerminalSplit*)0 && ts->executor != (exec.CommandExecutor*)0) {
+        return ts->executor->commands_executed;
+    }
+    return 0;
+}
+
+fn void split_clear(TerminalSplit* ts) {
+    if (ts != (TerminalSplit*)0 && ts->executor != (exec.CommandExecutor*)0) {
+        exec.executor_clear_screen(ts->executor);
     }
 }

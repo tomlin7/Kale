@@ -1,0 +1,31 @@
+// examples/self_host_smoke.kl
+// Demonstration of self-hosting compiler tokenizer and parser written in pure Kale
+
+import "src/kale_self/token.kl" as tok;
+import "src/kale_self/lexer.kl" as lx;
+import "src/kale_self/ast.kl" as ast;
+import "src/kale_self/parser.kl" as ps;
+
+fn void run_demo() {
+    print("=== Kale Self-Hosting Compiler Demo ===");
+    string code = "fn add(int a, int b) { return a + b; }";
+    print("Source:", code);
+
+    lx.Lexer* l = lx.lexer_new(code);
+    ps.Parser* p = ps.parser_new(l);
+
+    ast.ASTNode* prog = ps.parser_parse_program(p);
+    if (prog != (ast.ASTNode*)0 && prog->kind == ast.AST_PROGRAM()) {
+        print("[SUCCESS] Program parsed into pure Kale AST tree!");
+        ast.ASTNode* fn_node = prog->body;
+        if (fn_node != (ast.ASTNode*)0) {
+            print("Function name:", fn_node->text);
+        }
+    }
+
+    ast.ast_free(prog);
+    ps.parser_free(p);
+    lx.lexer_free(l);
+}
+
+run_demo();

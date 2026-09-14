@@ -1,0 +1,77 @@
+// packages/std/math/mat2.kl
+// 2x2 Matrix Transformation Primitives for 2D Physics and Linear Algebra
+
+import "packages/std/math/math.kl" as math;
+import "packages/std/math/vec2.kl" as vec2;
+
+struct Mat2 {
+    float m00; float m01;
+    float m10; float m11;
+}
+
+fn Mat2 mat2_new(float m00, float m01, float m10, float m11) {
+    Mat2 m;
+    m.m00 = m00; m.m01 = m01;
+    m.m10 = m10; m.m11 = m11;
+    return m;
+}
+
+fn Mat2 mat2_identity() {
+    return mat2_new(
+        1.0f, 0.0f,
+        0.0f, 1.0f
+    );
+}
+
+fn Mat2 mat2_rotation(float angle_rad) {
+    float c = math.cosf(angle_rad);
+    float s = math.sinf(angle_rad);
+    return mat2_new(
+        c, -s,
+        s,  c
+    );
+}
+
+fn Mat2 mat2_scaling(float sx, float sy) {
+    return mat2_new(
+        sx, 0.0f,
+        0.0f, sy
+    );
+}
+
+fn Mat2 mat2_multiply(Mat2 a, Mat2 b) {
+    return mat2_new(
+        a.m00 * b.m00 + a.m01 * b.m10, a.m00 * b.m01 + a.m01 * b.m11,
+        a.m10 * b.m00 + a.m11 * b.m10, a.m10 * b.m01 + a.m11 * b.m11
+    );
+}
+
+fn vec2.Vec2 mat2_transform(Mat2 m, vec2.Vec2 v) {
+    return vec2.vec2(
+        m.m00 * v.x + m.m01 * v.y,
+        m.m10 * v.x + m.m11 * v.y
+    );
+}
+
+fn float mat2_determinant(Mat2 m) {
+    return m.m00 * m.m11 - m.m01 * m.m10;
+}
+
+fn Mat2 mat2_inverse(Mat2 m) {
+    float det = mat2_determinant(m);
+    if (det == 0.0f) {
+        return mat2_identity();
+    }
+    float inv_det = 1.0f / det;
+    return mat2_new(
+         m.m11 * inv_det, -m.m01 * inv_det,
+        -m.m10 * inv_det,  m.m00 * inv_det
+    );
+}
+
+fn Mat2 mat2_transpose(Mat2 m) {
+    return mat2_new(
+        m.m00, m.m10,
+        m.m01, m.m11
+    );
+}

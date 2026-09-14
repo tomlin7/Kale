@@ -1,0 +1,48 @@
+// packages/std/math/math.kl
+// Standard mathematical constants and scalar functions for Kale
+
+extern float sqrtf(float x);
+extern float sinf(float x);
+extern float cosf(float x);
+extern float tanf(float x);
+extern float atan2f(float y, float x);
+extern float fabsf(float x);
+extern float floorf(float x);
+extern float ceilf(float x);
+
+fn float PI() { return 3.141592653589793f; }
+fn float TWO_PI() { return 6.283185307179586f; }
+fn float HALF_PI() { return 1.5707963267948966f; }
+fn float DEG2RAD() { return 0.017453292519943295f; }
+fn float RAD2DEG() { return 57.29577951308232f; }
+fn float EPSILON() { return 0.00001f; }
+
+fn float deg_to_rad(float deg) {
+    return deg * DEG2RAD();
+}
+
+fn float rad_to_deg(float rad) {
+    return rad * RAD2DEG();
+}
+
+fn float clamp_f(float val, float min_v, float max_v) {
+    if (val < min_v) {
+        return min_v;
+    }
+    if (val > max_v) {
+        return max_v;
+    }
+    return val;
+}
+
+fn float lerp_f(float a, float b, float t) {
+    return a + (b - a) * t;
+}
+
+fn bool approx_eq(float a, float b, float eps) {
+    float diff = a - b;
+    if (diff < 0.0f) {
+        diff = -diff;
+    }
+    return diff <= eps;
+}

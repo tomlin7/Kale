@@ -1,0 +1,163 @@
+// packages/std/math/mat4.kl
+// 4x4 Matrix Transformations for 3D Graphics and Spatial Projections
+
+import "packages/std/math/math.kl" as math;
+import "packages/std/math/vec3.kl" as vec3;
+
+struct Mat4 {
+    float m00; float m01; float m02; float m03;
+    float m10; float m11; float m12; float m13;
+    float m20; float m21; float m22; float m23;
+    float m30; float m31; float m32; float m33;
+}
+
+fn Mat4 mat4_new(
+    float m00, float m01, float m02, float m03,
+    float m10, float m11, float m12, float m13,
+    float m20, float m21, float m22, float m23,
+    float m30, float m31, float m32, float m33
+) {
+    Mat4 m;
+    m.m00 = m00; m.m01 = m01; m.m02 = m02; m.m03 = m03;
+    m.m10 = m10; m.m11 = m11; m.m12 = m12; m.m13 = m13;
+    m.m20 = m20; m.m21 = m21; m.m22 = m22; m.m23 = m23;
+    m.m30 = m30; m.m31 = m31; m.m32 = m32; m.m33 = m33;
+    return m;
+}
+
+fn Mat4 mat4_identity() {
+    return mat4_new(
+        1.0f, 0.0f, 0.0f, 0.0f,
+        0.0f, 1.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 1.0f, 0.0f,
+        0.0f, 0.0f, 0.0f, 1.0f
+    );
+}
+
+fn Mat4 mat4_translation(float tx, float ty, float tz) {
+    return mat4_new(
+        1.0f, 0.0f, 0.0f, tx,
+        0.0f, 1.0f, 0.0f, ty,
+        0.0f, 0.0f, 1.0f, tz,
+        0.0f, 0.0f, 0.0f, 1.0f
+    );
+}
+
+fn Mat4 mat4_scaling(float sx, float sy, float sz) {
+    return mat4_new(
+        sx,   0.0f, 0.0f, 0.0f,
+        0.0f, sy,   0.0f, 0.0f,
+        0.0f, 0.0f, sz,   0.0f,
+        0.0f, 0.0f, 0.0f, 1.0f
+    );
+}
+
+fn Mat4 mat4_rotation_x(float angle_rad) {
+    float c = math.cosf(angle_rad);
+    float s = math.sinf(angle_rad);
+    return mat4_new(
+        1.0f, 0.0f,  0.0f, 0.0f,
+        0.0f, c,    -s,    0.0f,
+        0.0f, s,     c,    0.0f,
+        0.0f, 0.0f,  0.0f, 1.0f
+    );
+}
+
+fn Mat4 mat4_rotation_y(float angle_rad) {
+    float c = math.cosf(angle_rad);
+    float s = math.sinf(angle_rad);
+    return mat4_new(
+        c,    0.0f, s,    0.0f,
+        0.0f, 1.0f, 0.0f, 0.0f,
+       -s,    0.0f, c,    0.0f,
+        0.0f, 0.0f, 0.0f, 1.0f
+    );
+}
+
+fn Mat4 mat4_rotation_z(float angle_rad) {
+    float c = math.cosf(angle_rad);
+    float s = math.sinf(angle_rad);
+    return mat4_new(
+        c,   -s,    0.0f, 0.0f,
+        s,    c,    0.0f, 0.0f,
+        0.0f, 0.0f, 1.0f, 0.0f,
+        0.0f, 0.0f, 0.0f, 1.0f
+    );
+}
+
+fn Mat4 mat4_multiply(Mat4 a, Mat4 b) {
+    return mat4_new(
+        a.m00 * b.m00 + a.m01 * b.m10 + a.m02 * b.m20 + a.m03 * b.m30,
+        a.m00 * b.m01 + a.m01 * b.m11 + a.m02 * b.m21 + a.m03 * b.m31,
+        a.m00 * b.m02 + a.m01 * b.m12 + a.m02 * b.m22 + a.m03 * b.m32,
+        a.m00 * b.m03 + a.m01 * b.m13 + a.m02 * b.m23 + a.m03 * b.m33,
+
+        a.m10 * b.m00 + a.m11 * b.m10 + a.m12 * b.m20 + a.m13 * b.m30,
+        a.m10 * b.m01 + a.m11 * b.m11 + a.m12 * b.m21 + a.m13 * b.m31,
+        a.m10 * b.m02 + a.m11 * b.m12 + a.m12 * b.m22 + a.m13 * b.m32,
+        a.m10 * b.m03 + a.m11 * b.m13 + a.m12 * b.m23 + a.m13 * b.m33,
+
+        a.m20 * b.m00 + a.m21 * b.m10 + a.m22 * b.m20 + a.m23 * b.m30,
+        a.m20 * b.m01 + a.m21 * b.m11 + a.m22 * b.m21 + a.m23 * b.m31,
+        a.m20 * b.m02 + a.m21 * b.m12 + a.m22 * b.m22 + a.m23 * b.m32,
+        a.m20 * b.m03 + a.m21 * b.m13 + a.m22 * b.m23 + a.m23 * b.m33,
+
+        a.m30 * b.m00 + a.m31 * b.m10 + a.m32 * b.m20 + a.m33 * b.m30,
+        a.m30 * b.m01 + a.m31 * b.m11 + a.m32 * b.m21 + a.m33 * b.m31,
+        a.m30 * b.m02 + a.m31 * b.m12 + a.m32 * b.m22 + a.m33 * b.m32,
+        a.m30 * b.m03 + a.m31 * b.m13 + a.m32 * b.m23 + a.m33 * b.m33
+    );
+}
+
+fn Mat4 mat4_transpose(Mat4 m) {
+    return mat4_new(
+        m.m00, m.m10, m.m20, m.m30,
+        m.m01, m.m11, m.m21, m.m31,
+        m.m02, m.m12, m.m22, m.m32,
+        m.m03, m.m13, m.m23, m.m33
+    );
+}
+
+fn Mat4 mat4_ortho(float left, float right, float bottom, float top, float near_val, float far_val) {
+    float rml = right - left;
+    float tmb = top - bottom;
+    float fmn = far_val - near_val;
+    return mat4_new(
+        2.0f / rml, 0.0f,       0.0f,        -(right + left) / rml,
+        0.0f,       2.0f / tmb, 0.0f,        -(top + bottom) / tmb,
+        0.0f,       0.0f,      -2.0f / fmn,  -(far_val + near_val) / fmn,
+        0.0f,       0.0f,       0.0f,         1.0f
+    );
+}
+
+fn Mat4 mat4_perspective(float fov_y_rad, float aspect, float near_val, float far_val) {
+    float f = 1.0f / math.tanf(fov_y_rad * 0.5f);
+    float fmn = near_val - far_val;
+    return mat4_new(
+        f / aspect, 0.0f, 0.0f,                             0.0f,
+        0.0f,       f,    0.0f,                             0.0f,
+        0.0f,       0.0f, (far_val + near_val) / fmn,       (2.0f * far_val * near_val) / fmn,
+        0.0f,       0.0f, -1.0f,                            0.0f
+    );
+}
+
+fn vec3.Vec3 mat4_transform_point(Mat4 m, vec3.Vec3 p) {
+    float w = m.m30 * p.x + m.m31 * p.y + m.m32 * p.z + m.m33;
+    if (w == 0.0f) {
+        w = 1.0f;
+    }
+    float inv_w = 1.0f / w;
+    return vec3.vec3(
+        (m.m00 * p.x + m.m01 * p.y + m.m02 * p.z + m.m03) * inv_w,
+        (m.m10 * p.x + m.m11 * p.y + m.m12 * p.z + m.m13) * inv_w,
+        (m.m20 * p.x + m.m21 * p.y + m.m22 * p.z + m.m23) * inv_w
+    );
+}
+
+fn vec3.Vec3 mat4_transform_vector(Mat4 m, vec3.Vec3 v) {
+    return vec3.vec3(
+        m.m00 * v.x + m.m01 * v.y + m.m02 * v.z,
+        m.m10 * v.x + m.m11 * v.y + m.m12 * v.z,
+        m.m20 * v.x + m.m21 * v.y + m.m22 * v.z
+    );
+}

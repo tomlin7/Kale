@@ -1,0 +1,26 @@
+// examples/matrix_smoke.kl
+// Demonstration of 2D/3D matrix and physics transformation primitives in pure Kale
+
+import "packages/std/math/math.kl" as math;
+import "packages/std/math/vec2.kl" as vec2;
+import "packages/std/math/mat3.kl" as mat3;
+import "libs/matrix/matrix.kl" as lm;
+
+fn void run_demo() {
+    print("=== Kale Matrix & Physics Transformation Demo ===");
+
+    lm.RigidTransform2D body = lm.rigid2d_new(50.0f, 100.0f, 0.0f);
+    vec2.Vec2 local_box_corner = vec2.vec2(10.0f, 5.0f);
+    vec2.Vec2 world_pt = lm.rigid2d_local_to_world(body, local_box_corner);
+
+    print("RigidBody origin: (50, 100)");
+    print("Local corner point: (10, 5)");
+    print("World corner point X:", (int)world_pt.x);
+    print("World corner point Y:", (int)world_pt.y);
+
+    vec2.Vec2 restored = lm.rigid2d_world_to_local(body, world_pt);
+    print("Restored back to local X:", (int)restored.x);
+    print("Restored back to local Y:", (int)restored.y);
+}
+
+run_demo();

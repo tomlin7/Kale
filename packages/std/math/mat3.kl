@@ -1,0 +1,122 @@
+// packages/std/math/mat3.kl
+// 3x3 Affine Transformation Matrix for 2D Graphics and Rigid Body Physics
+
+import "packages/std/math/math.kl" as math;
+import "packages/std/math/vec2.kl" as vec2;
+
+struct Mat3 {
+    float m00; float m01; float m02;
+    float m10; float m11; float m12;
+    float m20; float m21; float m22;
+}
+
+fn Mat3 mat3_new(
+    float m00, float m01, float m02,
+    float m10, float m11, float m12,
+    float m20, float m21, float m22
+) {
+    Mat3 m;
+    m.m00 = m00; m.m01 = m01; m.m02 = m02;
+    m.m10 = m10; m.m11 = m11; m.m12 = m12;
+    m.m20 = m20; m.m21 = m21; m.m22 = m22;
+    return m;
+}
+
+fn Mat3 mat3_identity() {
+    return mat3_new(
+        1.0f, 0.0f, 0.0f,
+        0.0f, 1.0f, 0.0f,
+        0.0f, 0.0f, 1.0f
+    );
+}
+
+fn Mat3 mat3_translation(float tx, float ty) {
+    return mat3_new(
+        1.0f, 0.0f, tx,
+        0.0f, 1.0f, ty,
+        0.0f, 0.0f, 1.0f
+    );
+}
+
+fn Mat3 mat3_rotation(float angle_rad) {
+    float c = math.cosf(angle_rad);
+    float s = math.sinf(angle_rad);
+    return mat3_new(
+        c,   -s,   0.0f,
+        s,    c,   0.0f,
+        0.0f, 0.0f, 1.0f
+    );
+}
+
+fn Mat3 mat3_scaling(float sx, float sy) {
+    return mat3_new(
+        sx,   0.0f, 0.0f,
+        0.0f, sy,   0.0f,
+        0.0f, 0.0f, 1.0f
+    );
+}
+
+fn Mat3 mat3_multiply(Mat3 a, Mat3 b) {
+    return mat3_new(
+        a.m00 * b.m00 + a.m01 * b.m10 + a.m02 * b.m20,
+        a.m00 * b.m01 + a.m01 * b.m11 + a.m02 * b.m21,
+        a.m00 * b.m02 + a.m01 * b.m12 + a.m02 * b.m22,
+
+        a.m10 * b.m00 + a.m11 * b.m10 + a.m12 * b.m20,
+        a.m10 * b.m01 + a.m11 * b.m11 + a.m12 * b.m21,
+        a.m10 * b.m02 + a.m11 * b.m12 + a.m12 * b.m22,
+
+        a.m20 * b.m00 + a.m21 * b.m10 + a.m22 * b.m20,
+        a.m20 * b.m01 + a.m21 * b.m11 + a.m22 * b.m21,
+        a.m20 * b.m02 + a.m21 * b.m12 + a.m22 * b.m22
+    );
+}
+
+fn vec2.Vec2 mat3_transform_point(Mat3 m, vec2.Vec2 p) {
+    return vec2.vec2(
+        m.m00 * p.x + m.m01 * p.y + m.m02,
+        m.m10 * p.x + m.m11 * p.y + m.m12
+    );
+}
+
+fn vec2.Vec2 mat3_transform_vector(Mat3 m, vec2.Vec2 v) {
+    return vec2.vec2(
+        m.m00 * v.x + m.m01 * v.y,
+        m.m10 * v.x + m.m11 * v.y
+    );
+}
+
+fn float mat3_determinant(Mat3 m) {
+    return m.m00 * (m.m11 * m.m22 - m.m12 * m.m21) -
+           m.m01 * (m.m10 * m.m22 - m.m12 * m.m20) +
+           m.m02 * (m.m10 * m.m21 - m.m11 * m.m20);
+}
+
+fn Mat3 mat3_inverse(Mat3 m) {
+    float det = mat3_determinant(m);
+    if (det == 0.0f) {
+        return mat3_identity();
+    }
+    float inv_det = 1.0f / det;
+    return mat3_new(
+        (m.m11 * m.m22 - m.m12 * m.m21) * inv_det,
+        (m.m02 * m.m21 - m.m01 * m.m22) * inv_det,
+        (m.m01 * m.m12 - m.m02 * m.m11) * inv_det,
+
+        (m.m12 * m.m20 - m.m10 * m.m22) * inv_det,
+        (m.m00 * m.m22 - m.m02 * m.m20) * inv_det,
+        (m.m02 * m.m10 - m.m00 * m.m12) * inv_det,
+
+        (m.m10 * m.m21 - m.m11 * m.m20) * inv_det,
+        (m.m01 * m.m20 - m.m00 * m.m21) * inv_det,
+        (m.m00 * m.m11 - m.m01 * m.m10) * inv_det
+    );
+}
+
+fn Mat3 mat3_transpose(Mat3 m) {
+    return mat3_new(
+        m.m00, m.m10, m.m20,
+        m.m01, m.m11, m.m21,
+        m.m02, m.m12, m.m22
+    );
+}

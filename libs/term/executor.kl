@@ -1,0 +1,99 @@
+// libs/term/executor.kl
+// Terminal Command & Process Executor for interactive shell splits
+
+import "libs/term/term.kl" as term;
+import "libs/term/color.kl" as color;
+
+extern int system(string cmd);
+
+struct CommandExecutor {
+    term.Terminal* terminal;
+    string prompt_prefix;
+    int last_exit_code;
+    int commands_executed;
+    bool is_busy;
+    string last_cmd;
+}
+
+fn CommandExecutor* executor_new(term.Terminal* t) {
+    CommandExecutor* ex = alloc(CommandExecutor);
+    ex->terminal = t;
+    ex->prompt_prefix = "kale> ";
+    ex->last_exit_code = 0;
+    ex->commands_executed = 0;
+    ex->is_busy = false;
+    ex->last_cmd = "";
+    return ex;
+}
+
+fn void executor_free(CommandExecutor* ex) {
+    if (ex != (CommandExecutor*)0) {
+        free(ex);
+    }
+}
+
+fn void executor_write_prompt(CommandExecutor* ex) {
+    if (ex->terminal != (term.Terminal*)0) {
+        term.term_write(ex->terminal, "\x1b[32m");
+        term.term_write(ex->terminal, ex->prompt_prefix);
+        term.term_write(ex->terminal, "\x1b[0m");
+    }
+}
+
+fn int executor_run_cmd(CommandExecutor* ex, string cmd) {
+    if (ex->terminal == (term.Terminal*)0) {
+        return -1;
+    }
+    ex->is_busy = true;
+    ex->last_cmd = cmd;
+    
+    // Echo command line
+    executor_write_prompt(ex);
+    term.term_write(ex->terminal, cmd);
+    term.term_write(ex->terminal, "\n");
+
+    int exit_code = 0;
+    // Built-in "clear"
+    if (cmd[0] == 99 && cmd[1] == 108 && cmd[2] == 101 && cmd[3] == 97 && cmd[4] == 114 && cmd[5] == 0) {
+        term.term_write(ex->terminal, "\x1b[2J\x1b[H");
+        exit_code = 0;
+    }
+    // Built-in "echo "
+    else if (cmd[0] == 101 && cmd[1] == 99 && cmd[2] == 104 && cmd[3] == 111 && cmd[4] == 32) {
+        int i = 5;
+        while (cmd[i] != 0) {
+            char[2] ch_buf;
+            ch_buf[0] = cmd[i];
+            ch_buf[1] = (char)0;
+            term.term_write(ex->terminal, (string)&ch_buf[0]);
+            i = i + 1;
+        }
+        term.term_write(ex->terminal, "\n");
+        exit_code = 0;
+    } else {
+        exit_code = system(cmd);
+        if (exit_code != 0) {
+            term.term_write(ex->terminal, "\x1b[31m[Process exited with non-zero status]\x1b[0m\n");
+        }
+    }
+
+    ex->last_exit_code = exit_code;
+    ex->commands_executed = ex->commands_executed + 1;
+
+    ex->is_busy = false;
+    executor_write_prompt(ex);
+    return exit_code;
+}
+
+fn void executor_feed_input(CommandExecutor* ex, string in_str) {
+    if (ex->terminal != (term.Terminal*)0) {
+        term.term_write(ex->terminal, in_str);
+    }
+}
+
+fn void executor_clear_screen(CommandExecutor* ex) {
+    if (ex->terminal != (term.Terminal*)0) {
+        term.term_write(ex->terminal, "\x1b[2J\x1b[H");
+        executor_write_prompt(ex);
+    }
+}

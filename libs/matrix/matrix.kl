@@ -1,0 +1,53 @@
+// libs/matrix/matrix.kl
+// Advanced 2D/3D Matrix Transformation Pipeline for Graphics and Physics
+
+import "packages/std/math/math.kl" as math;
+import "packages/std/math/vec2.kl" as vec2;
+import "packages/std/math/vec3.kl" as vec3;
+import "packages/std/math/mat2.kl" as mat2;
+import "packages/std/math/mat3.kl" as mat3;
+import "packages/std/math/mat4.kl" as mat4;
+import "packages/std/math/transform.kl" as tr;
+
+struct RigidTransform2D {
+    vec2.Vec2 position;
+    float angle;
+}
+
+fn RigidTransform2D rigid2d_new(float x, float y, float angle) {
+    RigidTransform2D r;
+    r.position = vec2.vec2(x, y);
+    r.angle = angle;
+    return r;
+}
+
+fn mat3.Mat3 rigid2d_to_matrix(RigidTransform2D r) {
+    mat3.Mat3 t = mat3.mat3_translation(r.position.x, r.position.y);
+    mat3.Mat3 rot = mat3.mat3_rotation(r.angle);
+    return mat3.mat3_multiply(t, rot);
+}
+
+fn vec2.Vec2 rigid2d_local_to_world(RigidTransform2D r, vec2.Vec2 local_pt) {
+    mat3.Mat3 m = rigid2d_to_matrix(r);
+    return mat3.mat3_transform_point(m, local_pt);
+}
+
+fn vec2.Vec2 rigid2d_world_to_local(RigidTransform2D r, vec2.Vec2 world_pt) {
+    mat3.Mat3 m = rigid2d_to_matrix(r);
+    mat3.Mat3 inv_m = mat3.mat3_inverse(m);
+    return mat3.mat3_transform_point(inv_m, world_pt);
+}
+
+// Computes Model-View-Projection (MVP) matrix: P * V * M
+fn mat4.Mat4 compute_mvp(mat4.Mat4 model, mat4.Mat4 view, mat4.Mat4 projection) {
+    mat4.Mat4 vp = mat4.mat4_multiply(projection, view);
+    return mat4.mat4_multiply(vp, model);
+}
+
+// 2D Camera View Matrix
+fn mat3.Mat3 camera2d_view_matrix(vec2.Vec2 camera_pos, float zoom, float rotation) {
+    mat3.Mat3 t = mat3.mat3_translation(-camera_pos.x, -camera_pos.y);
+    mat3.Mat3 r = mat3.mat3_rotation(-rotation);
+    mat3.Mat3 s = mat3.mat3_scaling(zoom, zoom);
+    return mat3.mat3_multiply(s, mat3.mat3_multiply(r, t));
+}

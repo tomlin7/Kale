@@ -1,0 +1,66 @@
+// packages/std/math/transform.kl
+// 2D and 3D Affine Transformations for Graphics and Physics Simulations
+
+import "packages/std/math/vec2.kl" as vec2;
+import "packages/std/math/vec3.kl" as vec3;
+import "packages/std/math/mat3.kl" as mat3;
+import "packages/std/math/mat4.kl" as mat4;
+
+struct Transform2D {
+    vec2.Vec2 position;
+    float rotation;
+    vec2.Vec2 scale;
+}
+
+fn Transform2D transform2d_new(float px, float py, float rot, float sx, float sy) {
+    Transform2D t;
+    t.position = vec2.vec2(px, py);
+    t.rotation = rot;
+    t.scale = vec2.vec2(sx, sy);
+    return t;
+}
+
+fn mat3.Mat3 transform2d_matrix(Transform2D t) {
+    mat3.Mat3 t_mat = mat3.mat3_translation(t.position.x, t.position.y);
+    mat3.Mat3 r_mat = mat3.mat3_rotation(t.rotation);
+    mat3.Mat3 s_mat = mat3.mat3_scaling(t.scale.x, t.scale.y);
+    return mat3.mat3_multiply(t_mat, mat3.mat3_multiply(r_mat, s_mat));
+}
+
+fn vec2.Vec2 transform2d_apply(Transform2D t, vec2.Vec2 p) {
+    mat3.Mat3 m = transform2d_matrix(t);
+    return mat3.mat3_transform_point(m, p);
+}
+
+struct Transform3D {
+    vec3.Vec3 position;
+    vec3.Vec3 rotation;
+    vec3.Vec3 scale;
+}
+
+fn Transform3D transform3d_new(
+    float px, float py, float pz,
+    float rx, float ry, float rz,
+    float sx, float sy, float sz
+) {
+    Transform3D t;
+    t.position = vec3.vec3(px, py, pz);
+    t.rotation = vec3.vec3(rx, ry, rz);
+    t.scale = vec3.vec3(sx, sy, sz);
+    return t;
+}
+
+fn mat4.Mat4 transform3d_matrix(Transform3D t) {
+    mat4.Mat4 t_mat = mat4.mat4_translation(t.position.x, t.position.y, t.position.z);
+    mat4.Mat4 rx = mat4.mat4_rotation_x(t.rotation.x);
+    mat4.Mat4 ry = mat4.mat4_rotation_y(t.rotation.y);
+    mat4.Mat4 rz = mat4.mat4_rotation_z(t.rotation.z);
+    mat4.Mat4 rot = mat4.mat4_multiply(rz, mat4.mat4_multiply(ry, rx));
+    mat4.Mat4 s_mat = mat4.mat4_scaling(t.scale.x, t.scale.y, t.scale.z);
+    return mat4.mat4_multiply(t_mat, mat4.mat4_multiply(rot, s_mat));
+}
+
+fn vec3.Vec3 transform3d_apply(Transform3D t, vec3.Vec3 p) {
+    mat4.Mat4 m = transform3d_matrix(t);
+    return mat4.mat4_transform_point(m, p);
+}

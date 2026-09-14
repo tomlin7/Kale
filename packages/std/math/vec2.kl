@@ -1,0 +1,70 @@
+// packages/std/math/vec2.kl
+// 2D Single-Precision Floating Point Vector Primitives
+
+import "packages/std/math/math.kl" as math;
+
+struct Vec2 {
+    float x;
+    float y;
+}
+
+fn Vec2 vec2(float x, float y) {
+    Vec2 v;
+    v.x = x;
+    v.y = y;
+    return v;
+}
+
+fn Vec2 vec2_zero() {
+    return vec2(0.0f, 0.0f);
+}
+
+fn Vec2 vec2_add(Vec2 a, Vec2 b) {
+    return vec2(a.x + b.x, a.y + b.y);
+}
+
+fn Vec2 vec2_sub(Vec2 a, Vec2 b) {
+    return vec2(a.x - b.x, a.y - b.y);
+}
+
+fn Vec2 vec2_scale(Vec2 v, float s) {
+    return vec2(v.x * s, v.y * s);
+}
+
+fn float vec2_dot(Vec2 a, Vec2 b) {
+    return a.x * b.x + a.y * b.y;
+}
+
+fn float vec2_cross(Vec2 a, Vec2 b) {
+    return a.x * b.y - a.y * b.x;
+}
+
+fn float vec2_len_sq(Vec2 v) {
+    return v.x * v.x + v.y * v.y;
+}
+
+fn float vec2_len(Vec2 v) {
+    return math.sqrtf(vec2_len_sq(v));
+}
+
+fn Vec2 vec2_normalize(Vec2 v) {
+    float l = vec2_len(v);
+    if (l > 0.00001f) {
+        return vec2(v.x / l, v.y / l);
+    }
+    return vec2_zero();
+}
+
+fn float vec2_dist(Vec2 a, Vec2 b) {
+    return vec2_len(vec2_sub(a, b));
+}
+
+fn Vec2 vec2_lerp(Vec2 a, Vec2 b, float t) {
+    return vec2(math.lerp_f(a.x, b.x, t), math.lerp_f(a.y, b.y, t));
+}
+
+fn Vec2 vec2_rotate(Vec2 v, float angle_rad) {
+    float c = math.cosf(angle_rad);
+    float s = math.sinf(angle_rad);
+    return vec2(v.x * c - v.y * s, v.x * s + v.y * c);
+}

@@ -99,5 +99,42 @@ class TestEditorSupercharged(unittest.TestCase):
         res = self.run_kale_jit(code)
         self.assertEqual(res, 88)
 
+    def test_editor_terminal_executor_commands(self):
+        code = """
+        import "apps/editor/terminal_split.kl" as ts;
+        import "libs/term/grid.kl" as grid;
+
+        ts.TerminalSplit* term = ts.split_new(80, 24, "bash");
+        
+        // Initial state
+        if (ts.split_commands_count(term) != 0) {
+            return 1;
+        }
+
+        // Send input
+        ts.split_send_input(term, "echo kale\\n");
+        grid.Cell* c = ts.split_cell_at(term, 0, 0);
+        if (c->ch != 101) { // 'e' == 101
+            return 2;
+        }
+
+        // Run clear
+        ts.split_clear(term);
+
+        // Run command
+        int ret = ts.split_run_command(term, "echo HelloFromKale");
+        if (ret != 0) {
+            return 3;
+        }
+        if (ts.split_commands_count(term) != 1) {
+            return 4;
+        }
+
+        ts.split_free(term);
+        return 100;
+        """
+        res = self.run_kale_jit(code)
+        self.assertEqual(res, 100)
+
 if __name__ == "__main__":
     unittest.main()

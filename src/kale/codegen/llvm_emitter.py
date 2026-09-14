@@ -218,6 +218,7 @@ class LLVMEmitter:
         func_type = ir.FunctionType(ir.IntType(32), [])
         self._main_func = ir.Function(self.module, func_type, name="main")
         self._current_func = self._main_func
+        self._current_fn_sym = None
         self._entry_block = self._main_func.append_basic_block(name="entry")
         self._builder = ir.IRBuilder(self._entry_block)
 

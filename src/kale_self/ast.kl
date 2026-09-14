@@ -1,0 +1,165 @@
+// src/kale_self/ast.kl
+// Self-hosting compiler AST node structures and tree construction in pure Kale
+
+fn int AST_PROGRAM() { return 1; }
+fn int AST_FN_DECL() { return 2; }
+fn int AST_STRUCT_DECL() { return 3; }
+fn int AST_VAR_DECL() { return 4; }
+fn int AST_BLOCK() { return 5; }
+fn int AST_IF() { return 6; }
+fn int AST_WHILE() { return 7; }
+fn int AST_RETURN() { return 8; }
+fn int AST_EXPR_STMT() { return 9; }
+fn int AST_BINARY() { return 10; }
+fn int AST_UNARY() { return 11; }
+fn int AST_CALL() { return 12; }
+fn int AST_LITERAL() { return 13; }
+fn int AST_IDENT() { return 14; }
+fn int AST_ASSIGN() { return 15; }
+fn int AST_PARAM() { return 16; }
+
+struct ASTNode {
+    int kind;
+    string text;
+    int int_val;
+    int op;
+    ASTNode* left;
+    ASTNode* right;
+    ASTNode* cond;
+    ASTNode* body;
+    ASTNode* else_body;
+    ASTNode* next;
+}
+
+fn ASTNode* ast_node_new(int kind) {
+    ASTNode* node = alloc(ASTNode);
+    node->kind = kind;
+    node->text = "";
+    node->int_val = 0;
+    node->op = 0;
+    node->left = (ASTNode*)0;
+    node->right = (ASTNode*)0;
+    node->cond = (ASTNode*)0;
+    node->body = (ASTNode*)0;
+    node->else_body = (ASTNode*)0;
+    node->next = (ASTNode*)0;
+    return node;
+}
+
+fn ASTNode* ast_literal(int val) {
+    ASTNode* n = ast_node_new(AST_LITERAL());
+    n->int_val = val;
+    return n;
+}
+
+fn ASTNode* ast_ident(string name) {
+    ASTNode* n = ast_node_new(AST_IDENT());
+    n->text = name;
+    return n;
+}
+
+fn ASTNode* ast_binary(int op, ASTNode* left, ASTNode* right) {
+    ASTNode* n = ast_node_new(AST_BINARY());
+    n->op = op;
+    n->left = left;
+    n->right = right;
+    return n;
+}
+
+fn ASTNode* ast_unary(int op, ASTNode* operand) {
+    ASTNode* n = ast_node_new(AST_UNARY());
+    n->op = op;
+    n->left = operand;
+    return n;
+}
+
+fn ASTNode* ast_call(string name, ASTNode* first_arg) {
+    ASTNode* n = ast_node_new(AST_CALL());
+    n->text = name;
+    n->left = first_arg;
+    return n;
+}
+
+fn ASTNode* ast_var_decl(string type_name, string var_name, ASTNode* init_expr) {
+    ASTNode* n = ast_node_new(AST_VAR_DECL());
+    n->text = var_name;
+    n->body = (ASTNode*)0;
+    n->left = init_expr;
+    return n;
+}
+
+fn ASTNode* ast_assign(string var_name, ASTNode* expr) {
+    ASTNode* n = ast_node_new(AST_ASSIGN());
+    n->text = var_name;
+    n->left = expr;
+    return n;
+}
+
+fn ASTNode* ast_if(ASTNode* cond, ASTNode* then_body, ASTNode* else_body) {
+    ASTNode* n = ast_node_new(AST_IF());
+    n->cond = cond;
+    n->body = then_body;
+    n->else_body = else_body;
+    return n;
+}
+
+fn ASTNode* ast_while(ASTNode* cond, ASTNode* body) {
+    ASTNode* n = ast_node_new(AST_WHILE());
+    n->cond = cond;
+    n->body = body;
+    return n;
+}
+
+fn ASTNode* ast_return(ASTNode* val) {
+    ASTNode* n = ast_node_new(AST_RETURN());
+    n->left = val;
+    return n;
+}
+
+fn ASTNode* ast_param(string type_name, string param_name) {
+    ASTNode* n = ast_node_new(AST_PARAM());
+    n->text = param_name;
+    return n;
+}
+
+fn ASTNode* ast_fn_decl(string ret_type, string name, ASTNode* params, ASTNode* body) {
+    ASTNode* n = ast_node_new(AST_FN_DECL());
+    n->text = name;
+    n->left = params;
+    n->body = body;
+    return n;
+}
+
+fn ASTNode* ast_block(ASTNode* first_stmt) {
+    ASTNode* n = ast_node_new(AST_BLOCK());
+    n->body = first_stmt;
+    return n;
+}
+
+fn void ast_block_append(ASTNode* block, ASTNode* stmt) {
+    if (block == (ASTNode*)0 || stmt == (ASTNode*)0) {
+        return;
+    }
+    if (block->body == (ASTNode*)0) {
+        block->body = stmt;
+        return;
+    }
+    ASTNode* cur = block->body;
+    while (cur->next != (ASTNode*)0) {
+        cur = cur->next;
+    }
+    cur->next = stmt;
+}
+
+fn void ast_free(ASTNode* node) {
+    if (node == (ASTNode*)0) {
+        return;
+    }
+    if (node->left != (ASTNode*)0) { ast_free(node->left); }
+    if (node->right != (ASTNode*)0) { ast_free(node->right); }
+    if (node->cond != (ASTNode*)0) { ast_free(node->cond); }
+    if (node->body != (ASTNode*)0) { ast_free(node->body); }
+    if (node->else_body != (ASTNode*)0) { ast_free(node->else_body); }
+    if (node->next != (ASTNode*)0) { ast_free(node->next); }
+    free(node);
+}

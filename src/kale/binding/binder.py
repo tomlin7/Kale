@@ -498,8 +498,13 @@ class Binder:
                     self.diagnostics.report(f.type_token.span, f"Unknown type '{f.type_token.text}' for field '{fname}'.")
                 field_list.append((fname, ftype))
 
-            st_sym = StructTypeSymbol(name=s_name, fields=tuple(field_list))
-            self._struct_types[s_name] = st_sym
+            existing_sym = self._struct_types.get(s_name)
+            if existing_sym is not None:
+                object.__setattr__(existing_sym, "fields", tuple(field_list))
+                st_sym = existing_sym
+            else:
+                st_sym = StructTypeSymbol(name=s_name, fields=tuple(field_list))
+                self._struct_types[s_name] = st_sym
             bound_structs.append(BoundStructDeclaration(st_sym))
 
         # Pass 1: Discover all function declarations (including externs) and register signatures

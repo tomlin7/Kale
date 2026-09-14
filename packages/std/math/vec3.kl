@@ -1,0 +1,74 @@
+// packages/std/math/vec3.kl
+// 3D Single-Precision Floating Point Vector Primitives
+
+import "packages/std/math/math.kl" as math;
+
+struct Vec3 {
+    float x;
+    float y;
+    float z;
+}
+
+fn Vec3 vec3(float x, float y, float z) {
+    Vec3 v;
+    v.x = x;
+    v.y = y;
+    v.z = z;
+    return v;
+}
+
+fn Vec3 vec3_zero() {
+    return vec3(0.0f, 0.0f, 0.0f);
+}
+
+fn Vec3 vec3_add(Vec3 a, Vec3 b) {
+    return vec3(a.x + b.x, a.y + b.y, a.z + b.z);
+}
+
+fn Vec3 vec3_sub(Vec3 a, Vec3 b) {
+    return vec3(a.x - b.x, a.y - b.y, a.z - b.z);
+}
+
+fn Vec3 vec3_scale(Vec3 v, float s) {
+    return vec3(v.x * s, v.y * s, v.z * s);
+}
+
+fn float vec3_dot(Vec3 a, Vec3 b) {
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+fn Vec3 vec3_cross(Vec3 a, Vec3 b) {
+    return vec3(
+        a.y * b.z - a.z * b.y,
+        a.z * b.x - a.x * b.z,
+        a.x * b.y - a.y * b.x
+    );
+}
+
+fn float vec3_len_sq(Vec3 v) {
+    return v.x * v.x + v.y * v.y + v.z * v.z;
+}
+
+fn float vec3_len(Vec3 v) {
+    return math.sqrtf(vec3_len_sq(v));
+}
+
+fn Vec3 vec3_normalize(Vec3 v) {
+    float l = vec3_len(v);
+    if (l > 0.00001f) {
+        return vec3(v.x / l, v.y / l, v.z / l);
+    }
+    return vec3_zero();
+}
+
+fn float vec3_dist(Vec3 a, Vec3 b) {
+    return vec3_len(vec3_sub(a, b));
+}
+
+fn Vec3 vec3_lerp(Vec3 a, Vec3 b, float t) {
+    return vec3(
+        math.lerp_f(a.x, b.x, t),
+        math.lerp_f(a.y, b.y, t),
+        math.lerp_f(a.z, b.z, t)
+    );
+}
