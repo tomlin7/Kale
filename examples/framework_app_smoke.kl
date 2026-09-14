@@ -1,0 +1,52 @@
+// examples/framework_app_smoke.kl
+// Smoke test verifying Milestone 7: Kale GPU Application Framework
+
+import "libs/framework/app.kl" as fw;
+import "libs/ui/widgets.kl" as uiw;
+
+fn int run_app() {
+    fw.AppConfig cfg;
+    cfg.init("Kale Framework v2 - GPU Bootstrap Harness", 960, 640);
+
+    fw.App app;
+    int ok = app.init(cfg);
+    if (ok == 0) {
+        print("Failed to initialize framework App!");
+        return 1;
+    }
+
+    print("Framework App Initialized Successfully! Running 60 FPS loop...");
+
+    int frames = 0;
+    float counter_val = 0.0f;
+
+    while (app.begin_frame() != 0) {
+        // App header bar
+        uiw.ui_panel(&app.ui_ctx, 30.0f, 30.0f, 900.0f, 50.0f, app.ui_ctx.theme.header_bg);
+        uiw.ui_label(&app.ui_ctx, "Kale Framework v2 GPU Desktop Runtime", 50.0f, 44.0f, app.ui_ctx.theme.accent);
+
+        // Content panel
+        uiw.ui_panel(&app.ui_ctx, 30.0f, 100.0f, 900.0f, 500.0f, app.ui_ctx.theme.panel_bg);
+
+        // Interactive framework widgets
+        if (uiw.ui_button(&app.ui_ctx, 101, "Increment Counter", 60.0f, 130.0f, 200.0f, 40.0f) != 0) {
+            counter_val = counter_val + 1.0f;
+            print("Button clicked inside Framework! Counter:", (int)counter_val);
+        }
+
+        uiw.ui_label(&app.ui_ctx, "Sub-millisecond frame loop with automatic GLFW and OpenGL 3.3 sync.", 60.0f, 200.0f, app.ui_ctx.theme.text);
+
+        app.end_frame();
+
+        frames = frames + 1;
+        if (frames > 60) {
+            app.is_running = 0;
+        }
+    }
+
+    app.close();
+    return 0;
+}
+
+int status = run_app();
+print("Framework Smoke Exited With Status:", status);
