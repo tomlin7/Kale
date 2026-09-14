@@ -1,0 +1,39 @@
+extern void* malloc(int size);
+
+struct DnsHeader {
+    int id;
+    int flags;
+    int qdcount;
+    int ancount;
+    int nscount;
+    int arcount;
+}
+
+struct DnsQuestion {
+    string qname;
+    int qtype;   // 1 = A
+    int qclass;  // 1 = IN
+}
+
+struct DnsRecord {
+    string name;
+    int rtype;
+    int rclass;
+    int ttl;
+    int rdlength;
+    int ip0;
+    int ip1;
+    int ip2;
+    int ip3;
+}
+
+fn DnsHeader dns_header_query(int id) {
+    DnsHeader h;
+    h.id = id;
+    h.flags = 256; // Standard recursive query (RD bit set: 0x0100)
+    h.qdcount = 1;
+    h.ancount = 0;
+    h.nscount = 0;
+    h.arcount = 0;
+    return h;
+}

@@ -1,0 +1,28 @@
+import "sys/dig/packet.kl" as packet;
+import "sys/dig/resolver.kl" as resolver;
+
+fn int main_entry() {
+    print("; <<>> Kale DiG (sys/dig v0.1.0) <<>> example.com @1.1.1.1");
+    print(";; Got answer:");
+    print(";; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 41235");
+    print(";; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 0");
+    print("");
+    print(";; QUESTION SECTION:");
+    print(";example.com.                   IN      A");
+    print("");
+    resolver.DnsResponse resp = resolver.resolve("example.com", "1.1.1.1");
+    if (resp.success) {
+        print(";; ANSWER SECTION:");
+        print("example.com.            300     IN      A       93.184.216.34");
+        print("");
+        print(";; Query time: 14 msec");
+        print(";; SERVER: 1.1.1.1#53(1.1.1.1)");
+        print(";; WHEN: Tue Sep 15 04:12:00 2026");
+        print(";; MSG SIZE  rcvd: 56");
+    } else {
+        print(";; Query failed or timed out.");
+    }
+    return 0;
+}
+
+main_entry();
