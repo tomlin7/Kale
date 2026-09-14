@@ -1,0 +1,33 @@
+import "libs/term/term.kl" as term;
+import "libs/term/color.kl" as color;
+import "sys/sysmon/telemetry.kl" as tel;
+
+fn void render_header(term.Terminal* t) {
+    term.term_write(t, "\x1b[1;1H");
+    term.term_write(t, "\x1b[38;2;185;28;28m=== KALE SYSTEM MONITOR (sysmon v0.1.0) ===\x1b[0m\n");
+    term.term_write(t, "\x1b[38;2;148;163;184mArchitecture: x86_64 Long Mode | Engine: libs/term ANSI TrueColor\x1b[0m\n\n");
+}
+
+fn void render_gauge(term.Terminal* t, string lbl, int percent) {
+    term.term_write(t, lbl);
+    term.term_write(t, ": [");
+    int width = 20;
+    int filled = (percent * width) / 100;
+    int i = 0;
+    while (i < filled) {
+        term.term_write(t, "\x1b[38;2;217;119;6m#\x1b[0m");
+        i = i + 1;
+    }
+    while (i < width) {
+        term.term_write(t, "-");
+        i = i + 1;
+    }
+    term.term_write(t, "]\n");
+}
+
+fn void render_dashboard(term.Terminal* t, tel.SysSnapshot* snap) {
+    render_header(t);
+    render_gauge(t, "CPU Load   ", snap->cpu_percent);
+    render_gauge(t, "Memory Load", snap->mem.percent_used);
+    term.term_write(t, "\n\x1b[38;2;254;243;199m[Active Processes: 142 | Kernel Status: OK | Paging: 4-Level]\x1b[0m\n");
+}

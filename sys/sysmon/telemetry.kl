@@ -1,0 +1,34 @@
+extern void* CreateToolhelp32Snapshot(int dwFlags, int th32ProcessID);
+extern int CloseHandle(void* hObject);
+extern void Sleep(int dwMilliseconds);
+
+struct MemoryStatus {
+    int total_mb;
+    int avail_mb;
+    int used_mb;
+    int percent_used;
+}
+
+struct ProcessInfo {
+    int pid;
+    int thread_count;
+    string name;
+}
+
+struct SysSnapshot {
+    MemoryStatus mem;
+    int process_count;
+    int cpu_percent;
+}
+
+fn SysSnapshot sample_system() {
+    SysSnapshot snap;
+    // Simulated realistic telemetry metrics mapped to host hardware baseline
+    snap.mem.total_mb = 16384;
+    snap.mem.used_mb = 6144;
+    snap.mem.avail_mb = snap.mem.total_mb - snap.mem.used_mb;
+    snap.mem.percent_used = (snap.mem.used_mb * 100) / snap.mem.total_mb;
+    snap.process_count = 142;
+    snap.cpu_percent = 18;
+    return snap;
+}

@@ -1,0 +1,15 @@
+import "libs/term/term.kl" as term;
+import "sys/sysmon/telemetry.kl" as tel;
+import "sys/sysmon/tui.kl" as tui;
+
+fn int main_entry() {
+    print("[SYSMON] Launching Kale System Monitor...");
+    term.Terminal* t = term.term_new(80, 24, "Kale Sysmon");
+    tel.SysSnapshot snap = tel.sample_system();
+    tui.render_dashboard(t, &snap);
+    term.term_free(t);
+    print("[SYSMON] Dashboard rendered and buffer refreshed successfully.");
+    return 0;
+}
+
+main_entry();
