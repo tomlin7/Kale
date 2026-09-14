@@ -98,9 +98,33 @@ fn string token_name(int kind) {
     if (kind == 20) { return "import"; }
     if (kind == 21) { return "as"; }
     if (kind == 22) { return "extern"; }
+    if (kind == 23) { return "true"; }
+    if (kind == 24) { return "false"; }
+    if (kind == 30) { return "+"; }
+    if (kind == 31) { return "-"; }
+    if (kind == 32) { return "*"; }
+    if (kind == 33) { return "/"; }
+    if (kind == 34) { return "%"; }
     if (kind == 35) { return "="; }
     if (kind == 36) { return "=="; }
     if (kind == 37) { return "!="; }
+    if (kind == 38) { return "<"; }
+    if (kind == 39) { return "<="; }
+    if (kind == 40) { return ">"; }
+    if (kind == 41) { return ">="; }
+    if (kind == 42) { return "!"; }
+    if (kind == 43) { return "&&"; }
+    if (kind == 44) { return "||"; }
+    if (kind == 45) { return "->"; }
+    if (kind == 46) { return "."; }
+    if (kind == 47) { return ","; }
+    if (kind == 48) { return ":"; }
     if (kind == 49) { return ";"; }
+    if (kind == 50) { return "("; }
+    if (kind == 51) { return ")"; }
+    if (kind == 52) { return "{"; }
+    if (kind == 53) { return "}"; }
+    if (kind == 54) { return "["; }
+    if (kind == 55) { return "]"; }
     return "UNKNOWN";
 }

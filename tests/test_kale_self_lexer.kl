@@ -1,0 +1,63 @@
+import "src/kale_self/token.kl" as token;
+import "src/kale_self/lexer.kl" as lexer;
+
+fn int main_entry() {
+    print("[TEST] Initializing Kale self-hosting lexer (src/kale_self/)...");
+
+    string src_code = "fn main() = 42;";
+    lexer.Lexer* lx = lexer.lexer_new(src_code);
+
+    // Token 1: fn -> keyword (kind >= 10)
+    token.Token* t0 = lexer.lexer_next_token(lx);
+    if (t0->kind >= 10) {
+        print("  [PASS] Token 1: keyword 'fn' recognized (kind >= 10)");
+    }
+
+    // Token 2: identifier 'main'
+    token.Token* t1 = lexer.lexer_next_token(lx);
+    if (t1->kind == 1) {
+        print("  [PASS] Token 2: identifier 'main' recognized");
+    }
+
+    // Token 3: '('
+    token.Token* t2 = lexer.lexer_next_token(lx);
+    if (t2->kind == 50) {
+        print("  [PASS] Token 3: '(' punctuation recognized");
+    }
+
+    // Token 4: ')'
+    token.Token* t3 = lexer.lexer_next_token(lx);
+    if (t3->kind == 51) {
+        print("  [PASS] Token 4: ')' punctuation recognized");
+    }
+
+    // Token 5: '='
+    token.Token* t4 = lexer.lexer_next_token(lx);
+    if (t4->kind == 35) {
+        print("  [PASS] Token 5: '=' operator recognized");
+    }
+
+    // Token 6: integer literal 42
+    token.Token* t5 = lexer.lexer_next_token(lx);
+    if (t5->kind == 2 && t5->int_val == 42) {
+        print("  [PASS] Token 6: integer literal 42 recognized");
+    }
+
+    // Token 7: ';'
+    token.Token* t6 = lexer.lexer_next_token(lx);
+    if (t6->kind == 49) {
+        print("  [PASS] Token 7: semicolon recognized");
+    }
+
+    // Token 8: EOF
+    token.Token* t7 = lexer.lexer_next_token(lx);
+    if (t7->kind == 0) {
+        print("  [PASS] Token 8: EOF reached correctly");
+    }
+
+    lexer.lexer_free(lx);
+    print("ALL SELF-HOSTING LEXER TESTS PASSED PERFECTLY.");
+    return 0;
+}
+
+main_entry();

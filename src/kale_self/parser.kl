@@ -219,6 +219,37 @@ fn ast.ASTNode* parser_parse_statement(Parser* p) {
         return ast.ast_while(cond, body);
     }
 
+    // For statement: for (<init>; <cond>; <post>) <block>
+    if (parser_match(p, tok.TOK_FOR())) {
+        parser_consume(p, tok.TOK_LPAREN());
+        ast.ASTNode* init_stmt = (ast.ASTNode*)0;
+        if (!parser_check(p, tok.TOK_SEMICOLON())) {
+            if (parser_check(p, tok.TOK_LET()) || parser_check(p, tok.TOK_VAR())) {
+                init_stmt = parser_parse_statement(p);
+            } else {
+                init_stmt = parser_parse_expression(p);
+                parser_consume(p, tok.TOK_SEMICOLON());
+            }
+        } else {
+            parser_consume(p, tok.TOK_SEMICOLON());
+        }
+
+        ast.ASTNode* cond = (ast.ASTNode*)0;
+        if (!parser_check(p, tok.TOK_SEMICOLON())) {
+            cond = parser_parse_expression(p);
+        }
+        parser_consume(p, tok.TOK_SEMICOLON());
+
+        ast.ASTNode* post = (ast.ASTNode*)0;
+        if (!parser_check(p, tok.TOK_RPAREN())) {
+            post = parser_parse_expression(p);
+        }
+        parser_consume(p, tok.TOK_RPAREN());
+
+        ast.ASTNode* body = parser_parse_block(p);
+        return ast.ast_for(init_stmt, cond, post, body);
+    }
+
     // Variable declaration: let x = <expr>; or var x = <expr>;
     if (parser_match(p, tok.TOK_LET()) || parser_match(p, tok.TOK_VAR())) {
         tok.Token* id = parser_consume(p, tok.TOK_IDENT());
@@ -242,16 +273,45 @@ fn ast.ASTNode* parser_parse_statement(Parser* p) {
 
 fn ast.ASTNode* parser_parse_fn(Parser* p) {
     parser_consume(p, tok.TOK_FN());
-    tok.Token* id = parser_consume(p, tok.TOK_IDENT());
-    string name = "";
-    if (id != (tok.Token*)0) {
-        name = id->text;
+    if (!parser_check(p, tok.TOK_IDENT())) {
+        p->error_count = p->error_count + 1;
+        return (ast.ASTNode*)0;
     }
+    tok.Token* first_tok = parser_advance(p);
+    string ret_type = "void";
+    string name = "";
+
+    // Check if shorthand fn name(...) or typed fn <type> <name>(...)
+    if (parser_check(p, tok.TOK_LPAREN())) {
+        name = first_tok->text;
+    } else {
+        ret_type = first_tok->text;
+        if (parser_match(p, tok.TOK_DOT())) {
+            if (parser_check(p, tok.TOK_IDENT())) {
+                tok.Token* sub = parser_advance(p);
+                ret_type = sub->text;
+            }
+        }
+        while (parser_match(p, tok.TOK_STAR())) {
+        }
+        tok.Token* name_tok = parser_consume(p, tok.TOK_IDENT());
+        if (name_tok != (tok.Token*)0) {
+            name = name_tok->text;
+        }
+    }
+
     parser_consume(p, tok.TOK_LPAREN());
     ast.ASTNode* first_param = (ast.ASTNode*)0;
     ast.ASTNode* last_param = (ast.ASTNode*)0;
     if (!parser_check(p, tok.TOK_RPAREN())) {
         tok.Token* p_type = parser_consume(p, tok.TOK_IDENT());
+        if (parser_match(p, tok.TOK_DOT())) {
+            if (parser_check(p, tok.TOK_IDENT())) {
+                p_type = parser_advance(p);
+            }
+        }
+        while (parser_match(p, tok.TOK_STAR())) {
+        }
         tok.Token* p_name = parser_consume(p, tok.TOK_IDENT());
         string pt = "";
         string pn = "";
@@ -262,6 +322,13 @@ fn ast.ASTNode* parser_parse_fn(Parser* p) {
 
         while (parser_match(p, tok.TOK_COMMA())) {
             p_type = parser_consume(p, tok.TOK_IDENT());
+            if (parser_match(p, tok.TOK_DOT())) {
+                if (parser_check(p, tok.TOK_IDENT())) {
+                    p_type = parser_advance(p);
+                }
+            }
+            while (parser_match(p, tok.TOK_STAR())) {
+            }
             p_name = parser_consume(p, tok.TOK_IDENT());
             pt = ""; pn = "";
             if (p_type != (tok.Token*)0) { pt = p_type->text; }
@@ -275,7 +342,65 @@ fn ast.ASTNode* parser_parse_fn(Parser* p) {
     }
     parser_consume(p, tok.TOK_RPAREN());
     ast.ASTNode* body = parser_parse_block(p);
-    return ast.ast_fn_decl("void", name, first_param, body);
+    return ast.ast_fn_decl(ret_type, name, first_param, body);
+}
+
+fn ast.ASTNode* parser_parse_struct(Parser* p) {
+    parser_consume(p, tok.TOK_STRUCT());
+    tok.Token* id = parser_consume(p, tok.TOK_IDENT());
+    string name = "";
+    if (id != (tok.Token*)0) {
+        name = id->text;
+    }
+    parser_consume(p, tok.TOK_LBRACE());
+    ast.ASTNode* first_field = (ast.ASTNode*)0;
+    ast.ASTNode* last_field = (ast.ASTNode*)0;
+
+    while (!parser_check(p, tok.TOK_RBRACE()) && !parser_check(p, tok.TOK_EOF())) {
+        tok.Token* f_type = parser_consume(p, tok.TOK_IDENT());
+        if (parser_match(p, tok.TOK_DOT())) {
+            if (parser_check(p, tok.TOK_IDENT())) {
+                f_type = parser_advance(p);
+            }
+        }
+        while (parser_match(p, tok.TOK_STAR())) {
+        }
+        tok.Token* f_name = parser_consume(p, tok.TOK_IDENT());
+        parser_consume(p, tok.TOK_SEMICOLON());
+
+        string ft = ""; string fn = "";
+        if (f_type != (tok.Token*)0) { ft = f_type->text; }
+        if (f_name != (tok.Token*)0) { fn = f_name->text; }
+
+        ast.ASTNode* field = ast.ast_field_decl(ft, fn);
+        if (first_field == (ast.ASTNode*)0) {
+            first_field = field;
+            last_field = field;
+        } else {
+            last_field->next = field;
+            last_field = field;
+        }
+    }
+    parser_consume(p, tok.TOK_RBRACE());
+    return ast.ast_struct_decl(name, first_field);
+}
+
+fn ast.ASTNode* parser_parse_import(Parser* p) {
+    parser_consume(p, tok.TOK_IMPORT());
+    tok.Token* path_tok = parser_consume(p, tok.TOK_STRING());
+    string path = "";
+    if (path_tok != (tok.Token*)0) {
+        path = path_tok->text;
+    }
+    string alias = "";
+    if (parser_match(p, tok.TOK_AS())) {
+        tok.Token* as_tok = parser_consume(p, tok.TOK_IDENT());
+        if (as_tok != (tok.Token*)0) {
+            alias = as_tok->text;
+        }
+    }
+    parser_consume(p, tok.TOK_SEMICOLON());
+    return ast.ast_import(path, alias);
 }
 
 fn ast.ASTNode* parser_parse_program(Parser* p) {
@@ -287,6 +412,10 @@ fn ast.ASTNode* parser_parse_program(Parser* p) {
         ast.ASTNode* item = (ast.ASTNode*)0;
         if (parser_check(p, tok.TOK_FN())) {
             item = parser_parse_fn(p);
+        } else if (parser_check(p, tok.TOK_STRUCT())) {
+            item = parser_parse_struct(p);
+        } else if (parser_check(p, tok.TOK_IMPORT())) {
+            item = parser_parse_import(p);
         } else {
             item = parser_parse_statement(p);
         }

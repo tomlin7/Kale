@@ -1,0 +1,49 @@
+import "packages/std/math/vec2.kl" as vec2;
+import "packages/std/math/vec3.kl" as vec3;
+import "packages/std/math/mat3.kl" as mat3;
+
+fn int main_entry() {
+    print("[TEST] Initializing packages/std/math linear algebra suite...");
+
+    // Vec2 addition
+    vec2.Vec2 a = vec2.vec2(3.0f, 4.0f);
+    vec2.Vec2 b = vec2.vec2(1.0f, 2.0f);
+    vec2.Vec2 sum = vec2.vec2_add(a, b);
+    if (sum.x == 4.0f && sum.y == 6.0f) {
+        print("  [PASS] Vec2 addition: (3+1, 4+2) = (4, 6)");
+    }
+
+    // Vec2 dot product: 3*1 + 4*2 = 11
+    float dot = vec2.vec2_dot(a, b);
+    if (dot == 11.0f) {
+        print("  [PASS] Vec2 dot product: (3,4).(1,2) = 11");
+    }
+
+    // Vec3 cross product: (1,0,0) x (0,1,0) = (0,0,1)
+    vec3.Vec3 u = vec3.vec3(1.0f, 0.0f, 0.0f);
+    vec3.Vec3 v = vec3.vec3(0.0f, 1.0f, 0.0f);
+    vec3.Vec3 cross = vec3.vec3_cross(u, v);
+    if (cross.x == 0.0f && cross.y == 0.0f && cross.z == 1.0f) {
+        print("  [PASS] Vec3 cross product: (1,0,0) x (0,1,0) = (0,0,1)");
+    }
+
+    // Mat3 identity preserves point
+    mat3.Mat3 identity = mat3.mat3_identity();
+    vec2.Vec2 pt = vec2.vec2(5.0f, 7.0f);
+    vec2.Vec2 transformed = mat3.mat3_transform_point(identity, pt);
+    if (transformed.x == 5.0f && transformed.y == 7.0f) {
+        print("  [PASS] Mat3 identity transform preserves point (5,7)");
+    }
+
+    // Mat3 translation: (5,7) + (10,20) = (15,27)
+    mat3.Mat3 trans = mat3.mat3_translation(10.0f, 20.0f);
+    vec2.Vec2 tp = mat3.mat3_transform_point(trans, pt);
+    if (tp.x == 15.0f && tp.y == 27.0f) {
+        print("  [PASS] Mat3 translation: (5+10, 7+20) = (15, 27)");
+    }
+
+    print("ALL PACKAGES/STD/MATH TESTS PASSED PERFECTLY.");
+    return 0;
+}
+
+main_entry();

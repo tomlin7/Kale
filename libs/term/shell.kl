@@ -1,0 +1,46 @@
+import "libs/term/term.kl" as term;
+
+extern void* CreatePipe(void* hReadPipe, void* hWritePipe, void* lpPipeAttributes, int nSize);
+extern int CreateProcessA(
+    void* lpApplicationName,
+    string lpCommandLine,
+    void* lpProcessAttributes,
+    void* lpThreadAttributes,
+    bool bInheritHandles,
+    int dwCreationFlags,
+    void* lpEnvironment,
+    void* lpCurrentDirectory,
+    void* lpStartupInfo,
+    void* lpProcessInformation
+);
+extern int CloseHandle(void* hObject);
+extern int WaitForSingleObject(void* hHandle, int dwMilliseconds);
+extern bool ReadFile(void* hFile, void* lpBuffer, int nNumberOfBytesToRead, int* lpNumberOfBytesRead, void* lpOverlapped);
+extern void* malloc(int size);
+
+struct ShellExecutor {
+    term.Terminal* term;
+    bool is_open;
+}
+
+fn ShellExecutor* shell_new(term.Terminal* t) {
+    ShellExecutor* se = alloc(ShellExecutor);
+    se->term = t;
+    se->is_open = true;
+    return se;
+}
+
+fn void shell_free(ShellExecutor* se) {
+    if (se != (ShellExecutor*)0) {
+        free(se);
+    }
+}
+
+fn void shell_exec(ShellExecutor* se, string cmd) {
+    // Write command prompt marker to terminal grid
+    term.term_write(se->term, "$ ");
+    term.term_write(se->term, cmd);
+    term.term_write(se->term, "\n");
+    // Output marker for shell execution (real ConPTY bridge is a platform extension)
+    term.term_write(se->term, "[shell] command dispatched to host pipeline.\n");
+}

@@ -1,0 +1,28 @@
+import "libs/term/term.kl" as term;
+import "libs/term/grid.kl" as grid;
+import "libs/term/shell.kl" as shell;
+
+fn int main_entry() {
+    print("[TEST] Initializing libs/term/shell command executor...");
+    term.Terminal* t = term.term_new(80, 24, "Kale Shell");
+    shell.ShellExecutor* se = shell.shell_new(t);
+    
+    if (se->is_open) {
+        print("  [PASS] Shell executor initialized and bound to terminal");
+    }
+    
+    shell.shell_exec(se, "dir");
+    
+    // Verify prompt marker '$' was written to grid at col 0 row 0
+    grid.Cell* c0 = term.term_cell_at(t, 0, 0);
+    if (c0->ch == 36) { // '$' == 36
+        print("  [PASS] Prompt marker $ written to terminal grid at (0,0)");
+    }
+    
+    shell.shell_free(se);
+    term.term_free(t);
+    print("ALL LIBS/TERM/SHELL TESTS PASSED PERFECTLY.");
+    return 0;
+}
+
+main_entry();

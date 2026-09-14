@@ -17,10 +17,14 @@ fn int AST_LITERAL() { return 13; }
 fn int AST_IDENT() { return 14; }
 fn int AST_ASSIGN() { return 15; }
 fn int AST_PARAM() { return 16; }
+fn int AST_FOR() { return 17; }
+fn int AST_IMPORT() { return 18; }
+fn int AST_FIELD_DECL() { return 19; }
 
 struct ASTNode {
     int kind;
     string text;
+    string type_name;
     int int_val;
     int op;
     ASTNode* left;
@@ -35,6 +39,7 @@ fn ASTNode* ast_node_new(int kind) {
     ASTNode* node = alloc(ASTNode);
     node->kind = kind;
     node->text = "";
+    node->type_name = "";
     node->int_val = 0;
     node->op = 0;
     node->left = (ASTNode*)0;
@@ -83,6 +88,7 @@ fn ASTNode* ast_call(string name, ASTNode* first_arg) {
 fn ASTNode* ast_var_decl(string type_name, string var_name, ASTNode* init_expr) {
     ASTNode* n = ast_node_new(AST_VAR_DECL());
     n->text = var_name;
+    n->type_name = type_name;
     n->body = (ASTNode*)0;
     n->left = init_expr;
     return n;
@@ -119,14 +125,46 @@ fn ASTNode* ast_return(ASTNode* val) {
 fn ASTNode* ast_param(string type_name, string param_name) {
     ASTNode* n = ast_node_new(AST_PARAM());
     n->text = param_name;
+    n->type_name = type_name;
     return n;
 }
 
 fn ASTNode* ast_fn_decl(string ret_type, string name, ASTNode* params, ASTNode* body) {
     ASTNode* n = ast_node_new(AST_FN_DECL());
     n->text = name;
+    n->type_name = ret_type;
     n->left = params;
     n->body = body;
+    return n;
+}
+
+fn ASTNode* ast_field_decl(string type_name, string field_name) {
+    ASTNode* n = ast_node_new(AST_FIELD_DECL());
+    n->text = field_name;
+    n->type_name = type_name;
+    return n;
+}
+
+fn ASTNode* ast_struct_decl(string name, ASTNode* fields) {
+    ASTNode* n = ast_node_new(AST_STRUCT_DECL());
+    n->text = name;
+    n->body = fields;
+    return n;
+}
+
+fn ASTNode* ast_for(ASTNode* init_stmt, ASTNode* cond, ASTNode* post_expr, ASTNode* body) {
+    ASTNode* n = ast_node_new(AST_FOR());
+    n->left = init_stmt;
+    n->cond = cond;
+    n->right = post_expr;
+    n->body = body;
+    return n;
+}
+
+fn ASTNode* ast_import(string path, string alias) {
+    ASTNode* n = ast_node_new(AST_IMPORT());
+    n->text = path;
+    n->type_name = alias;
     return n;
 }
 
