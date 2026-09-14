@@ -283,6 +283,16 @@ def can_explicit_cast(from_type: TypeSymbol, to_type: TypeSymbol) -> bool:
     # Array <-> Pointer
     if isinstance(from_type, ArrayTypeSymbol) and isinstance(to_type, PointerTypeSymbol):
         return True
+    # Function Pointer <-> Pointer (e.g. void* proc address to function pointer)
+    if isinstance(from_type, FunctionTypeSymbol) and isinstance(to_type, PointerTypeSymbol):
+        return True
+    if isinstance(from_type, PointerTypeSymbol) and isinstance(to_type, FunctionTypeSymbol):
+        return True
+    # Function Pointer <-> Int/Int32 (e.g. casting 0 or integer address to function pointer)
+    if isinstance(from_type, FunctionTypeSymbol) and to_type in (TypeInt, TypeInt32):
+        return True
+    if from_type in (TypeInt, TypeInt32) and isinstance(to_type, FunctionTypeSymbol):
+        return True
     return False
 
 def get_promoted_numeric_type(left: TypeSymbol, right: TypeSymbol) -> TypeSymbol:

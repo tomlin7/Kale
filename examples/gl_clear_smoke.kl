@@ -1,0 +1,60 @@
+// examples/gl_clear_smoke.kl
+// Verification of OpenGL 3.3 context initialization, extension loading, and viewport clear
+
+import "libs/glfw/glfw.kl" as glfw;
+import "libs/glfw/constants.kl" as glc;
+import "libs/gl/gl.kl" as gl;
+import "libs/gl/constants.kl" as kgl;
+import "libs/gl/loader.kl" as glloader;
+
+fn int run_gl_smoke() {
+    int init_res = glfw.glfwInit();
+    if (init_res == 0) {
+        return 1;
+    }
+
+    glfw.glfwWindowHint(glc.GLFW_CONTEXT_VERSION_MAJOR(), 3);
+    glfw.glfwWindowHint(glc.GLFW_CONTEXT_VERSION_MINOR(), 3);
+    glfw.glfwWindowHint(glc.GLFW_OPENGL_PROFILE(), glc.GLFW_OPENGL_CORE_PROFILE());
+
+    void* window = glfw.glfwCreateWindow(800, 600, "Kale Engine - OpenGL 3.3 Core Clear Smoke", (void*)0, (void*)0);
+    if (window == (void*)0) {
+        glfw.glfwTerminate();
+        return 2;
+    }
+
+    glfw.glfwMakeContextCurrent(window);
+    glfw.glfwSwapInterval(1);
+
+    glloader.GLContext gl_ctx;
+    int loaded = gl_ctx.load();
+    if (loaded == 0) {
+        glfw.glfwDestroyWindow(window);
+        glfw.glfwTerminate();
+        return 3;
+    }
+
+    // Set viewport and clear color to a distinctive Kale emerald teal: (0.1f, 0.5f, 0.4f, 1.0f)
+    gl.glViewport(0, 0, 800, 600);
+    gl.glClearColor(0.1f, 0.5f, 0.4f, 1.0f);
+
+    int frames = 0;
+    while (glfw.glfwWindowShouldClose(window) == 0) {
+        gl.glClear(kgl.GL_COLOR_BUFFER_BIT());
+
+        glfw.glfwPollEvents();
+        glfw.glfwSwapBuffers(window);
+
+        frames = frames + 1;
+        if (frames > 60) {
+            glfw.glfwSetWindowShouldClose(window, 1);
+        }
+    }
+
+    glfw.glfwDestroyWindow(window);
+    glfw.glfwTerminate();
+    return 0;
+}
+
+int status = run_gl_smoke();
+print("GL Smoke Exited With Status:", status);

@@ -1,0 +1,92 @@
+// libs/gl/loader.kl
+// OpenGL 3.3 Core Profile Dynamic Extension Table & Loader
+
+import "libs/glfw/glfw.kl" as glfw;
+
+struct GLContext {
+    // Shader & Program
+    fn(int): int CreateShader;
+    fn(int, int, string*, int*): void ShaderSource;
+    fn(int): void CompileShader;
+    fn(int, int, int*): void GetShaderiv;
+    fn(int, int, int*, void*): void GetShaderInfoLog;
+    fn(): int CreateProgram;
+    fn(int, int): void AttachShader;
+    fn(int): void LinkProgram;
+    fn(int, int, int*): void GetProgramiv;
+    fn(int, int, int*, void*): void GetProgramInfoLog;
+    fn(int): void UseProgram;
+    fn(int): void DeleteShader;
+    fn(int): void DeleteProgram;
+
+    // Buffers & VAO
+    fn(int, int*): void GenVertexArrays;
+    fn(int): void BindVertexArray;
+    fn(int, int*): void DeleteVertexArrays;
+    fn(int, int*): void GenBuffers;
+    fn(int, int): void BindBuffer;
+    fn(int, int, void*, int): void BufferData;
+    fn(int, int, int, void*): void BufferSubData;
+    fn(int, int*): void DeleteBuffers;
+
+    // Vertex Attributes
+    fn(int, int, int, int, int, void*): void VertexAttribPointer;
+    fn(int): void EnableVertexAttribArray;
+    fn(int): void DisableVertexAttribArray;
+
+    // Uniforms
+    fn(int, string): int GetUniformLocation;
+    fn(int, int): void Uniform1i;
+    fn(int, float): void Uniform1f;
+    fn(int, float, float): void Uniform2f;
+    fn(int, float, float, float, float): void Uniform4f;
+    fn(int, int, int, float*): void UniformMatrix4fv;
+
+    // Textures
+    fn(int): void ActiveTexture;
+    fn(int): void GenerateMipmap;
+}
+
+fn int GLContext.load() {
+    this->CreateShader = (fn(int): int)glfw.glfwGetProcAddress("glCreateShader");
+    this->ShaderSource = (fn(int, int, string*, int*): void)glfw.glfwGetProcAddress("glShaderSource");
+    this->CompileShader = (fn(int): void)glfw.glfwGetProcAddress("glCompileShader");
+    this->GetShaderiv = (fn(int, int, int*): void)glfw.glfwGetProcAddress("glGetShaderiv");
+    this->GetShaderInfoLog = (fn(int, int, int*, void*): void)glfw.glfwGetProcAddress("glGetShaderInfoLog");
+    this->CreateProgram = (fn(): int)glfw.glfwGetProcAddress("glCreateProgram");
+    this->AttachShader = (fn(int, int): void)glfw.glfwGetProcAddress("glAttachShader");
+    this->LinkProgram = (fn(int): void)glfw.glfwGetProcAddress("glLinkProgram");
+    this->GetProgramiv = (fn(int, int, int*): void)glfw.glfwGetProcAddress("glGetProgramiv");
+    this->GetProgramInfoLog = (fn(int, int, int*, void*): void)glfw.glfwGetProcAddress("glGetProgramInfoLog");
+    this->UseProgram = (fn(int): void)glfw.glfwGetProcAddress("glUseProgram");
+    this->DeleteShader = (fn(int): void)glfw.glfwGetProcAddress("glDeleteShader");
+    this->DeleteProgram = (fn(int): void)glfw.glfwGetProcAddress("glDeleteProgram");
+
+    this->GenVertexArrays = (fn(int, int*): void)glfw.glfwGetProcAddress("glGenVertexArrays");
+    this->BindVertexArray = (fn(int): void)glfw.glfwGetProcAddress("glBindVertexArray");
+    this->DeleteVertexArrays = (fn(int, int*): void)glfw.glfwGetProcAddress("glDeleteVertexArrays");
+    this->GenBuffers = (fn(int, int*): void)glfw.glfwGetProcAddress("glGenBuffers");
+    this->BindBuffer = (fn(int, int): void)glfw.glfwGetProcAddress("glBindBuffer");
+    this->BufferData = (fn(int, int, void*, int): void)glfw.glfwGetProcAddress("glBufferData");
+    this->BufferSubData = (fn(int, int, int, void*): void)glfw.glfwGetProcAddress("glBufferSubData");
+    this->DeleteBuffers = (fn(int, int*): void)glfw.glfwGetProcAddress("glDeleteBuffers");
+
+    this->VertexAttribPointer = (fn(int, int, int, int, int, void*): void)glfw.glfwGetProcAddress("glVertexAttribPointer");
+    this->EnableVertexAttribArray = (fn(int): void)glfw.glfwGetProcAddress("glEnableVertexAttribArray");
+    this->DisableVertexAttribArray = (fn(int): void)glfw.glfwGetProcAddress("glDisableVertexAttribArray");
+
+    this->GetUniformLocation = (fn(int, string): int)glfw.glfwGetProcAddress("glGetUniformLocation");
+    this->Uniform1i = (fn(int, int): void)glfw.glfwGetProcAddress("glUniform1i");
+    this->Uniform1f = (fn(int, float): void)glfw.glfwGetProcAddress("glUniform1f");
+    this->Uniform2f = (fn(int, float, float): void)glfw.glfwGetProcAddress("glUniform2f");
+    this->Uniform4f = (fn(int, float, float, float, float): void)glfw.glfwGetProcAddress("glUniform4f");
+    this->UniformMatrix4fv = (fn(int, int, int, float*): void)glfw.glfwGetProcAddress("glUniformMatrix4fv");
+
+    this->ActiveTexture = (fn(int): void)glfw.glfwGetProcAddress("glActiveTexture");
+    this->GenerateMipmap = (fn(int): void)glfw.glfwGetProcAddress("glGenerateMipmap");
+
+    if (this->CreateShader == (fn(int): int)0 || this->GenBuffers == (fn(int, int*): void)0) {
+        return 0;
+    }
+    return 1;
+}

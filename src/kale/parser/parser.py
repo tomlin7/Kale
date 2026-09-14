@@ -298,6 +298,28 @@ class Parser:
         idx = 1
         if is_type_keyword(k):
             idx = 2
+        elif k == SyntaxKind.FnKeyword:
+            # Function pointer type: fn(...)[: RetType]
+            idx = 2
+            if self._peek(idx).kind == SyntaxKind.OpenParenthesisToken:
+                depth = 1
+                idx += 1
+                while depth > 0:
+                    pk = self._peek(idx).kind
+                    if pk == SyntaxKind.EndOfFileToken:
+                        return False
+                    if pk == SyntaxKind.OpenParenthesisToken:
+                        depth += 1
+                    elif pk == SyntaxKind.CloseParenthesisToken:
+                        depth -= 1
+                    idx += 1
+                if self._peek(idx).kind == SyntaxKind.ColonToken:
+                    idx += 1
+                    # consume return type (basic or pointer)
+                    if is_type_keyword(self._peek(idx).kind) or self._peek(idx).kind == SyntaxKind.IdentifierToken:
+                        idx += 1
+                    while self._peek(idx).kind == SyntaxKind.StarToken:
+                        idx += 1
         elif k == SyntaxKind.IdentifierToken:
             idx = 2
             if self._peek(idx).kind == SyntaxKind.DotToken and self._peek(idx + 1).kind == SyntaxKind.IdentifierToken:

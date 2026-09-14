@@ -1,0 +1,49 @@
+// libs/gl/gl.kl
+// OpenGL 1.1 / Legacy static exports from opengl32.dll
+
+import "libs/gl/constants.kl" as glc;
+
+// ============================================================================
+// State & Clearing
+// ============================================================================
+extern void glClearColor(float red, float green, float blue, float alpha);
+extern void glClear(int mask);
+extern void glViewport(int x, int y, int width, int height);
+extern void glEnable(int cap);
+extern void glDisable(int cap);
+extern int glIsEnabled(int cap);
+extern void glScissor(int x, int y, int width, int height);
+
+// ============================================================================
+// Blending & Depth
+// ============================================================================
+extern void glBlendFunc(int sfactor, int dfactor);
+extern void glDepthFunc(int func);
+extern void glDepthMask(int flag);
+extern void glCullFace(int mode);
+
+// ============================================================================
+// Drawing
+// ============================================================================
+extern void glDrawArrays(int mode, int first, int count);
+extern void glDrawElements(int mode, int count, int type_, void* indices);
+extern void glFlush();
+extern void glFinish();
+
+// ============================================================================
+// Textures (1.1 base)
+// ============================================================================
+extern void glGenTextures(int n, int* textures);
+extern void glDeleteTextures(int n, int* textures);
+extern void glBindTexture(int target, int texture);
+extern void glTexParameteri(int target, int pname, int param);
+extern void glTexImage2D(int target, int level, int internalformat, int width, int height, int border, int format, int type_, void* pixels);
+extern void glTexSubImage2D(int target, int level, int xoffset, int yoffset, int width, int height, int format, int type_, void* pixels);
+extern void glPixelStorei(int pname, int param);
+
+// ============================================================================
+// Errors & Strings
+// ============================================================================
+extern int glGetError();
+extern string glGetString(int name);
+extern void glGetIntegerv(int pname, int* data);
