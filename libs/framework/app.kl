@@ -1,0 +1,144 @@
+// libs/framework/app.kl
+// Kale Native Application Framework & Bootstrap Runtime
+
+import "packages/bindings/win32/window.kl" as win;
+import "packages/bindings/win32/user32.kl" as u32;
+import "packages/bindings/win32/gdi32.kl" as gdi;
+import "libs/ui/geom.kl" as geom;
+import "libs/ui/event.kl" as ev;
+import "libs/ui/canvas.kl" as cv;
+
+extern int Sleep(int ms);
+
+struct AppConfig {
+    string title;
+    int width;
+    int height;
+    int target_fps;
+}
+
+fn void AppConfig.init(string title, int w, int h) {
+    this->title = title;
+    this->width = w;
+    this->height = h;
+    this->target_fps = 60;
+}
+
+struct App {
+    win.Window window;
+    cv.Canvas canvas;
+    void* screen_hdc;
+    int width;
+    int height;
+    bool is_running;
+}
+
+fn void App.init(AppConfig config) {
+    this->width = config.width;
+    this->height = config.height;
+    this->is_running = false;
+    this->screen_hdc = (void*)0;
+
+    this->window.init(config.width, config.height);
+    bool ok = this->window.create(config.title, "KaleFrameworkWindowClass");
+    if (!ok) {
+        return;
+    }
+
+    this->screen_hdc = u32.GetDC(this->window.hwnd);
+    this->canvas.init(this->screen_hdc, config.width, config.height);
+    this->is_running = true;
+}
+
+fn bool App.poll_event(ev.Event* out_event) {
+    out_event->init();
+    if (!this->is_running || this->window.hwnd == (void*)0) {
+        return false;
+    }
+
+    win.MSG msg;
+    if (u32.PeekMessageA((void*)&msg, (void*)0, 0, 0, u32.pm_remove()) != 0) {
+        if (msg.message == 18 || msg.message == 16 || msg.message == 2) { // WM_QUIT, WM_CLOSE, WM_DESTROY
+            out_event->kind = ev.event_close();
+            this->is_running = false;
+            this->window.is_open = false;
+            return true;
+        }
+
+        if (msg.message == 256) { // WM_KEYDOWN
+            out_event->kind = ev.event_key_down();
+            out_event->key_code = (int)msg.wParam;
+            u32.TranslateMessage((void*)&msg);
+            u32.DispatchMessageA((void*)&msg);
+            return true;
+        }
+
+        if (msg.message == 257) { // WM_KEYUP
+            out_event->kind = ev.event_key_up();
+            out_event->key_code = (int)msg.wParam;
+            u32.TranslateMessage((void*)&msg);
+            u32.DispatchMessageA((void*)&msg);
+            return true;
+        }
+
+        if (msg.message == 258) { // WM_CHAR
+            out_event->kind = ev.event_char();
+            out_event->char_code = (int)msg.wParam;
+            u32.TranslateMessage((void*)&msg);
+            u32.DispatchMessageA((void*)&msg);
+            return true;
+        }
+
+        if (msg.message == 512) { // WM_MOUSEMOVE
+            out_event->kind = ev.event_mouse_move();
+            int lp = (int)msg.lParam;
+            out_event->mouse_x = lp & 65535;
+            out_event->mouse_y = (lp >> 16) & 65535;
+            u32.TranslateMessage((void*)&msg);
+            u32.DispatchMessageA((void*)&msg);
+            return true;
+        }
+
+        if (msg.message == 513) { // WM_LBUTTONDOWN
+            out_event->kind = ev.event_mouse_down();
+            out_event->button = 1;
+            int lp = (int)msg.lParam;
+            out_event->mouse_x = lp & 65535;
+            out_event->mouse_y = (lp >> 16) & 65535;
+            u32.TranslateMessage((void*)&msg);
+            u32.DispatchMessageA((void*)&msg);
+            return true;
+        }
+
+        if (msg.message == 514) { // WM_LBUTTONUP
+            out_event->kind = ev.event_mouse_up();
+            out_event->button = 1;
+            int lp = (int)msg.lParam;
+            out_event->mouse_x = lp & 65535;
+            out_event->mouse_y = (lp >> 16) & 65535;
+            u32.TranslateMessage((void*)&msg);
+            u32.DispatchMessageA((void*)&msg);
+            return true;
+        }
+
+        u32.TranslateMessage((void*)&msg);
+        u32.DispatchMessageA((void*)&msg);
+    }
+    return false;
+}
+
+fn void App.present() {
+    if (this->screen_hdc != (void*)0) {
+        this->canvas.blit_to_screen(this->screen_hdc, 0, 0);
+    }
+}
+
+fn void App.close() {
+    this->is_running = false;
+    this->canvas.destroy();
+    if (this->screen_hdc != (void*)0) {
+        u32.ReleaseDC(this->window.hwnd, this->screen_hdc);
+        this->screen_hdc = (void*)0;
+    }
+    this->window.close();
+}

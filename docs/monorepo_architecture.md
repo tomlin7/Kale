@@ -6,7 +6,7 @@ This document establishes the repository structure, conventions, and guidelines 
 
 ## 1. Directory Taxonomy
 
-`
+```
 kale/
 ├── packages/                      # Core Compiler, Runtime & Toolchain
 │   ├── std/                       # Official Standard Library (.kl)
@@ -41,7 +41,7 @@ kale/
 ├── examples/                      # Language showcases and sample programs
 ├── tests/                         # Unit, integration, and end-to-end compiler test suites
 └── src/                           # Compiler implementation (Python bootstrap / self-hosting)
-`
+```
 
 ---
 

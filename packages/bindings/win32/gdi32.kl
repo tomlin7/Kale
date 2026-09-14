@@ -10,10 +10,20 @@ extern int SetBkColor(void* hdc, int color);
 extern int SetBkMode(void* hdc, int mode);
 extern int TextOutA(void* hdc, int x, int y, string lpString, int c);
 extern int Rectangle(void* hdc, int left, int top, int right, int bottom);
+extern void* CreateCompatibleDC(void* hdc);
+extern void* CreateCompatibleBitmap(void* hdc, int cx, int cy);
+extern int BitBlt(void* hdcDest, int xDest, int yDest, int w, int h, void* hdcSrc, int xSrc, int ySrc, int rop);
+extern int MoveToEx(void* hdc, int x, int y, void* lppt);
+extern int LineTo(void* hdc, int x, int y);
 
 // Helper for RGB color pack: 0x00BBGGRR in Win32 COLORREF format
 int rgb(int r, int g, int b) {
     return (r & 255) | ((g & 255) << 8) | ((b & 255) << 16);
+}
+
+// Raster operation codes
+int srccopy() {
+    return 13369376; // 0x00CC0020 (SRCCOPY)
 }
 
 // Background modes

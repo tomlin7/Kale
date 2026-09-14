@@ -17,6 +17,8 @@ extern int SetForegroundWindow(void* hWnd);
 extern void* SetFocus(void* hWnd);
 extern void PostQuitMessage(int nExitCode);
 extern int DestroyWindow(void* hWnd);
+extern int GetClientRect(void* hWnd, void* lpRect);
+extern int InvalidateRect(void* hWnd, void* lpRect, int bErase);
 
 // Window creation & message pump externs
 extern void* CreateWindowExA(

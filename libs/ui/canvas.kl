@@ -1,0 +1,137 @@
+// libs/ui/canvas.kl
+// Double-Buffered Offscreen 2D Graphics Canvas for Kale UI
+
+import "packages/bindings/win32/gdi32.kl" as gdi;
+import "packages/bindings/win32/user32.kl" as u32;
+import "libs/ui/geom.kl" as geom;
+
+extern int strlen(string s);
+
+struct Canvas {
+    void* mem_dc;
+    void* mem_bmp;
+    void* old_bmp;
+    int width;
+    int height;
+}
+
+fn void Canvas.init(void* screen_hdc, int w, int h) {
+    this->width = w;
+    this->height = h;
+    this->mem_dc = gdi.CreateCompatibleDC(screen_hdc);
+    this->mem_bmp = gdi.CreateCompatibleBitmap(screen_hdc, w, h);
+    this->old_bmp = gdi.SelectObject(this->mem_dc, this->mem_bmp);
+}
+
+fn void Canvas.resize(void* screen_hdc, int w, int h) {
+    if (w == this->width && h == this->height) {
+        return;
+    }
+    if (this->mem_dc == (void*)0) {
+        this->init(screen_hdc, w, h);
+        return;
+    }
+    // Deselect old bitmap
+    if (this->old_bmp != (void*)0) {
+        gdi.SelectObject(this->mem_dc, this->old_bmp);
+    }
+    if (this->mem_bmp != (void*)0) {
+        gdi.DeleteObject(this->mem_bmp);
+    }
+    this->width = w;
+    this->height = h;
+    this->mem_bmp = gdi.CreateCompatibleBitmap(screen_hdc, w, h);
+    this->old_bmp = gdi.SelectObject(this->mem_dc, this->mem_bmp);
+}
+
+fn void Canvas.fill_rect(int x, int y, int w, int h, geom.Color color) {
+    if (this->mem_dc == (void*)0) {
+        return;
+    }
+    int cref = color.to_colorref();
+    void* brush = gdi.CreateSolidBrush(cref);
+    void* pen = gdi.CreatePen(0, 1, cref);
+    void* old_brush = gdi.SelectObject(this->mem_dc, brush);
+    void* old_pen = gdi.SelectObject(this->mem_dc, pen);
+
+    gdi.Rectangle(this->mem_dc, x, y, x + w, y + h);
+
+    gdi.SelectObject(this->mem_dc, old_brush);
+    gdi.SelectObject(this->mem_dc, old_pen);
+    gdi.DeleteObject(brush);
+    gdi.DeleteObject(pen);
+}
+
+fn void Canvas.draw_rect(int x, int y, int w, int h, geom.Color color, int border_width) {
+    if (this->mem_dc == (void*)0) {
+        return;
+    }
+    int cref = color.to_colorref();
+    void* pen = gdi.CreatePen(0, border_width, cref);
+    void* old_pen = gdi.SelectObject(this->mem_dc, pen);
+
+    // Top
+    gdi.MoveToEx(this->mem_dc, x, y, (void*)0);
+    gdi.LineTo(this->mem_dc, x + w, y);
+    // Right
+    gdi.LineTo(this->mem_dc, x + w, y + h);
+    // Bottom
+    gdi.LineTo(this->mem_dc, x, y + h);
+    // Left
+    gdi.LineTo(this->mem_dc, x, y);
+
+    gdi.SelectObject(this->mem_dc, old_pen);
+    gdi.DeleteObject(pen);
+}
+
+fn void Canvas.draw_line(int x1, int y1, int x2, int y2, geom.Color color, int width) {
+    if (this->mem_dc == (void*)0) {
+        return;
+    }
+    int cref = color.to_colorref();
+    void* pen = gdi.CreatePen(0, width, cref);
+    void* old_pen = gdi.SelectObject(this->mem_dc, pen);
+
+    gdi.MoveToEx(this->mem_dc, x1, y1, (void*)0);
+    gdi.LineTo(this->mem_dc, x2, y2);
+
+    gdi.SelectObject(this->mem_dc, old_pen);
+    gdi.DeleteObject(pen);
+}
+
+fn void Canvas.draw_text(string text, int x, int y, geom.Color fg, geom.Color bg) {
+    if (this->mem_dc == (void*)0) {
+        return;
+    }
+    gdi.SetTextColor(this->mem_dc, fg.to_colorref());
+    gdi.SetBkColor(this->mem_dc, bg.to_colorref());
+    gdi.TextOutA(this->mem_dc, x, y, text, strlen(text));
+}
+
+fn void Canvas.blit_to_screen(void* screen_hdc, int dest_x, int dest_y) {
+    if (this->mem_dc == (void*)0 || screen_hdc == (void*)0) {
+        return;
+    }
+    gdi.BitBlt(
+        screen_hdc,
+        dest_x, dest_y,
+        this->width, this->height,
+        this->mem_dc,
+        0, 0,
+        gdi.srccopy()
+    );
+}
+
+fn void Canvas.destroy() {
+    if (this->mem_dc != (void*)0) {
+        if (this->old_bmp != (void*)0) {
+            gdi.SelectObject(this->mem_dc, this->old_bmp);
+        }
+        if (this->mem_bmp != (void*)0) {
+            gdi.DeleteObject(this->mem_bmp);
+            this->mem_bmp = (void*)0;
+        }
+        // gdi.DeleteDC is standard; ReleaseDC is for window DCs
+        this->mem_dc = (void*)0;
+    }
+}

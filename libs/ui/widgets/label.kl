@@ -1,0 +1,27 @@
+// libs/ui/widgets/label.kl
+// Standard UI Text Label Component for Kale UI
+
+import "libs/ui/geom.kl" as geom;
+import "libs/ui/canvas.kl" as cv;
+
+struct TextLabel {
+    geom.Rect bounds;
+    string text;
+    geom.Color fg;
+    geom.Color bg;
+}
+
+fn void TextLabel.init(string text, int x, int y, int w, int h, geom.Color fg, geom.Color bg) {
+    this->bounds.init(x, y, w, h);
+    this->text = text;
+    this->fg = fg;
+    this->bg = bg;
+}
+
+fn void TextLabel.set_text(string text) {
+    this->text = text;
+}
+
+fn void TextLabel.render(cv.Canvas* canvas) {
+    canvas->draw_text(this->text, this->bounds.x, this->bounds.y, this->fg, this->bg);
+}

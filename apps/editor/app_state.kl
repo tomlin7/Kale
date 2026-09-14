@@ -1,0 +1,119 @@
+// apps/editor/app_state.kl
+// State Management for Kale Code Editor
+
+import "packages/std/text/piece_table.kl" as pt;
+
+extern int strlen(string s);
+
+struct EditorState {
+    pt.PieceTable buffer;
+    int cursor_row;
+    int cursor_col;
+    int scroll_row;
+    int scroll_col;
+    string file_path;
+    bool is_dirty;
+}
+
+fn void EditorState.init(string initial_code, string file_path) {
+    this->buffer.init(initial_code);
+    this->cursor_row = 0;
+    this->cursor_col = 0;
+    this->scroll_row = 0;
+    this->scroll_col = 0;
+    this->file_path = file_path;
+    this->is_dirty = false;
+}
+
+fn void EditorState.move_cursor(int d_row, int d_col, int visible_rows) {
+    int lines = this->buffer.line_count();
+    this->cursor_row = this->cursor_row + d_row;
+    if (this->cursor_row < 0) {
+        this->cursor_row = 0;
+    }
+    if (this->cursor_row >= lines && lines > 0) {
+        this->cursor_row = lines - 1;
+    }
+
+    // Clamp column to current line length
+    string current_line = this->buffer.get_line(this->cursor_row);
+    int line_len = strlen(current_line);
+    this->cursor_col = this->cursor_col + d_col;
+    if (this->cursor_col < 0) {
+        this->cursor_col = 0;
+    }
+    if (this->cursor_col > line_len) {
+        this->cursor_col = line_len;
+    }
+
+    // Auto-scroll viewport to keep cursor visible
+    if (this->cursor_row < this->scroll_row) {
+        this->scroll_row = this->cursor_row;
+    }
+    if (this->cursor_row >= this->scroll_row + visible_rows) {
+        this->scroll_row = this->cursor_row - visible_rows + 1;
+    }
+}
+
+fn void EditorState.insert_char(string ch) {
+    int lines = this->buffer.line_count();
+    int byte_offset = 0;
+    int row = 0;
+    while (row < this->cursor_row && row < lines) {
+        string l = this->buffer.get_line(row);
+        byte_offset = byte_offset + strlen(l) + 1; // +1 for \n
+        row = row + 1;
+    }
+    byte_offset = byte_offset + this->cursor_col;
+    this->buffer.insert(byte_offset, ch);
+    this->cursor_col = this->cursor_col + strlen(ch);
+    this->is_dirty = true;
+}
+
+fn void EditorState.insert_newline() {
+    this->insert_char("\n");
+    this->cursor_row = this->cursor_row + 1;
+    this->cursor_col = 0;
+}
+
+fn void EditorState.backspace() {
+    if (this->cursor_col > 0) {
+        int lines = this->buffer.line_count();
+        int byte_offset = 0;
+        int row = 0;
+        while (row < this->cursor_row && row < lines) {
+            string l = this->buffer.get_line(row);
+            byte_offset = byte_offset + strlen(l) + 1;
+            row = row + 1;
+        }
+        byte_offset = byte_offset + this->cursor_col - 1;
+        this->buffer.delete(byte_offset, 1);
+        this->cursor_col = this->cursor_col - 1;
+        this->is_dirty = true;
+    } else {
+        if (this->cursor_row > 0) {
+            // Join with previous line
+            int prev_row = this->cursor_row - 1;
+            string prev_line = this->buffer.get_line(prev_row);
+            int prev_len = strlen(prev_line);
+
+            int lines = this->buffer.line_count();
+            int byte_offset = 0;
+            int row = 0;
+            while (row < prev_row && row < lines) {
+                string l = this->buffer.get_line(row);
+                byte_offset = byte_offset + strlen(l) + 1;
+                row = row + 1;
+            }
+            byte_offset = byte_offset + prev_len; // Point to newline
+            this->buffer.delete(byte_offset, 1); // Delete newline
+            this->cursor_row = prev_row;
+            this->cursor_col = prev_len;
+            this->is_dirty = true;
+        }
+    }
+}
+
+fn void EditorState.destroy() {
+    this->buffer.destroy();
+}

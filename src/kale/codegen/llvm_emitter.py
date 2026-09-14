@@ -153,14 +153,21 @@ class LLVMEmitter:
         }
         self._struct_types = {}
 
-        # Pass 0: Register identified struct types
+        # Pass 0: Register identified struct types (deduplicating by name)
+        seen_struct_names = set()
+        unique_structs = []
         for st_decl in program.structs:
+            if st_decl.struct_type.name not in seen_struct_names:
+                seen_struct_names.add(st_decl.struct_type.name)
+                unique_structs.append(st_decl)
+
+        for st_decl in unique_structs:
             s_name = f"struct.{st_decl.struct_type.name}"
             llvm_struct = self.module.context.get_identified_type(s_name)
             self._struct_types[st_decl.struct_type.name] = llvm_struct
 
         # Set struct body element types
-        for st_decl in program.structs:
+        for st_decl in unique_structs:
             llvm_struct = self._struct_types[st_decl.struct_type.name]
             field_types = [to_llvm_type(ftype, self._struct_types) for _, ftype in st_decl.struct_type.fields]
             llvm_struct.set_body(*field_types)
@@ -247,6 +254,8 @@ class LLVMEmitter:
             if statement.initializer is not None:
                 val = self._emit_expression(statement.initializer)
                 val = self._coerce_type(val, statement.initializer.type, statement.variable.type)
+                if isinstance(statement.variable.type, StructTypeSymbol) and isinstance(val.type, ir.PointerType) and val.type.pointee == llvm_t:
+                    val = self._builder.load(val)
                 self._builder.store(val, alloca)
             elif isinstance(statement.variable.type, StructTypeSymbol):
                 # Structs are cleanly zero-initialized by default
@@ -580,6 +589,8 @@ class LLVMEmitter:
                 val = self._emit_expression(arg)
                 expected_type = expr.function.parameters[i].type
                 val = self._coerce_type(val, arg.type, expected_type)
+                if isinstance(expected_type, StructTypeSymbol) and isinstance(val.type, ir.PointerType):
+                    val = self._builder.load(val)
                 arg_values.append(val)
 
             call_name = f"call_{fn_name}" if llvm_func.function_type.return_type != ir.VoidType() else ""
@@ -613,6 +624,8 @@ class LLVMEmitter:
                 val = self._emit_expression(arg)
                 if i < len(param_types):
                     val = self._coerce_type(val, arg.type, param_types[i])
+                    if isinstance(param_types[i], StructTypeSymbol) and isinstance(val.type, ir.PointerType):
+                        val = self._builder.load(val)
                 arg_values.append(val)
 
             call_name = "indirect_call" if llvm_ret_t != ir.VoidType() else ""
@@ -692,6 +705,9 @@ class LLVMEmitter:
             if op != "=":
                 old_val = self._builder.load(field_ptr, name="old_field_val")
                 val = self._apply_compound_op(op, old_val, val, expr.member_type)
+
+            if isinstance(expr.member_type, StructTypeSymbol) and isinstance(val.type, ir.PointerType) and val.type.pointee == field_ptr.type.pointee:
+                val = self._builder.load(val)
 
             self._builder.store(val, field_ptr)
             return val
@@ -815,6 +831,8 @@ class LLVMEmitter:
                 right_val = self._apply_compound_op(op, old_val, right_val, expr.variable.type)
 
             right_val = self._coerce_type(right_val, expr.expression.type, expr.variable.type)
+            if isinstance(expr.variable.type, StructTypeSymbol) and isinstance(right_val.type, ir.PointerType) and right_val.type.pointee == alloca.type.pointee:
+                right_val = self._builder.load(right_val)
             self._builder.store(right_val, alloca)
             return right_val
 

@@ -1,0 +1,72 @@
+import "libs/framework/app.kl" as fw;
+import "libs/ui/geom.kl" as geom;
+import "libs/ui/event.kl" as ev;
+import "libs/ui/widgets/button.kl" as btn;
+import "libs/ui/widgets/label.kl" as lbl;
+import "libs/ui/widgets/container.kl" as cnt;
+
+extern int Sleep(int ms);
+
+fw.AppConfig config;
+config.init("Kale Framework & Native UI", 900, 600);
+
+fw.App app;
+app.init(config);
+
+geom.Color dark_bg;
+dark_bg.init(30, 30, 30, 255);
+
+geom.Color title_fg;
+title_fg.init(240, 240, 240, 255);
+
+lbl.TextLabel title;
+title.init("Kale Native Application Framework", 30, 25, 400, 30, title_fg, dark_bg);
+
+lbl.TextLabel subtitle;
+geom.Color sub_fg;
+sub_fg.init(150, 150, 150, 255);
+subtitle.init("Double-buffered, 60 FPS native Windows UI engine", 30, 55, 400, 20, sub_fg, dark_bg);
+
+btn.Button button1;
+geom.Color btn_bg;
+btn_bg.init(0, 122, 204, 255);
+geom.Color btn_hover;
+btn_hover.init(28, 151, 234, 255);
+geom.Color white;
+white.init(255, 255, 255, 255);
+button1.init("Run App", 30, 100, 120, 36, btn_bg, btn_hover, white);
+
+btn.Button button2;
+geom.Color btn2_bg;
+btn2_bg.init(60, 60, 60, 255);
+geom.Color btn2_hover;
+btn2_hover.init(80, 80, 80, 255);
+button2.init("Settings", 165, 100, 120, 36, btn2_bg, btn2_hover, white);
+
+ev.Event e;
+
+int frame = 0;
+while (app.is_running && frame < 50) {
+    while (app.poll_event(&e)) {
+        if (e.kind == ev.event_close()) {
+            app.is_running = false;
+        }
+        button1.handle_event(&e);
+        button2.handle_event(&e);
+    }
+
+    // Render frame
+    app.canvas.fill_rect(0, 0, app.width, app.height, dark_bg);
+    title.render(&app.canvas);
+    subtitle.render(&app.canvas);
+    button1.render(&app.canvas);
+    button2.render(&app.canvas);
+
+    // Present atomically (double-buffered BitBlt)
+    app.present();
+
+    Sleep(16);
+    frame = frame + 1;
+}
+
+app.close();

@@ -1,0 +1,169 @@
+// apps/editor/main.kl
+// Flagship Native Code Editor for Kale written with Kale Framework & Kale UI
+
+import "libs/framework/app.kl" as fw;
+import "libs/ui/geom.kl" as geom;
+import "libs/ui/event.kl" as ev;
+import "apps/editor/app_state.kl" as st;
+import "apps/editor/gutter.kl" as gt;
+import "apps/editor/status_bar.kl" as sb;
+import "apps/editor/text_viewport.kl" as vp;
+import "packages/std/text/string_builder.kl" as strb;
+
+extern int strlen(string s);
+extern int Sleep(int ms);
+
+fn void run_editor() {
+    int app_w = 1080;
+    int app_h = 720;
+
+    fw.AppConfig config;
+    config.init("Kale Code Editor - Flagship IDE", app_w, app_h);
+
+    fw.App app;
+    app.init(config);
+
+    string sample_code = "// ========================================================\n// Welcome to the Kale Native Code Editor (kale/edit)\n// Written in Kale, powered by kale/framework & kale/ui\n// ========================================================\n\nimport \"packages/std/text/piece_table.kl\" as pt;\nimport \"libs/ui/canvas.kl\" as cv;\n\nstruct Vector3 {\n    float x;\n    float y;\n    float z;\n}\n\nfn int fibonacci(int n) {\n    if (n <= 1) {\n        return n;\n    }\n    return fibonacci(n - 1) + fibonacci(n - 2);\n}\n\nfn void start_application() {\n    // Live native rendering with zero dependencies\n    int speed = 60; // 60 FPS\n    string status = \"Operational\";\n}\n";
+
+    st.EditorState state;
+    state.init(sample_code, "editor_main.kl");
+
+    int header_h = 36;
+    int status_h = 24;
+    int gutter_w = 54;
+    int line_h = 18;
+    int char_w = 8;
+
+    int content_h = app_h - header_h - status_h;
+    int visible_rows = content_h / line_h;
+
+    gt.Gutter gutter;
+    gutter.init(0, header_h, gutter_w, content_h, line_h);
+
+    vp.TextViewport viewport;
+    viewport.init(gutter_w, header_h, app_w - gutter_w, content_h, line_h, char_w);
+
+    sb.StatusBar status_bar;
+    status_bar.init(0, app_h - status_h, app_w, status_h);
+
+    geom.Color header_bg;
+    header_bg.init(37, 37, 38, 255); // #252526
+    geom.Color header_tab_bg;
+    header_tab_bg.init(30, 30, 30, 255); // #1E1E1E
+    geom.Color header_fg;
+    header_fg.init(200, 200, 200, 255);
+    geom.Color header_border;
+    header_border.init(45, 45, 45, 255);
+
+    ev.Event e;
+
+    while (app.is_running) {
+        while (app.poll_event(&e)) {
+            if (e.kind == ev.event_close()) {
+                app.is_running = false;
+            }
+
+            if (e.kind == ev.event_key_down()) {
+                if (e.key_code == ev.key_up()) {
+                    state.move_cursor(-1, 0, visible_rows);
+                }
+                if (e.key_code == ev.key_down()) {
+                    state.move_cursor(1, 0, visible_rows);
+                }
+                if (e.key_code == ev.key_left()) {
+                    state.move_cursor(0, -1, visible_rows);
+                }
+                if (e.key_code == ev.key_right()) {
+                    state.move_cursor(0, 1, visible_rows);
+                }
+                if (e.key_code == ev.key_backspace()) {
+                    state.backspace();
+                }
+                if (e.key_code == ev.key_enter()) {
+                    state.insert_newline();
+                }
+                if (e.key_code == ev.key_page_up()) {
+                    state.move_cursor(-10, 0, visible_rows);
+                }
+                if (e.key_code == ev.key_page_down()) {
+                    state.move_cursor(10, 0, visible_rows);
+                }
+                if (e.key_code == ev.key_home()) {
+                    state.cursor_col = 0;
+                }
+                if (e.key_code == ev.key_end()) {
+                    string l = state.buffer.get_line(state.cursor_row);
+                    state.cursor_col = strlen(l);
+                }
+            }
+
+            if (e.kind == ev.event_char()) {
+                int c = e.char_code;
+                if (c >= 32 && c <= 126) {
+                    strb.StringBuilder char_sb;
+                    char_sb.init(2);
+                    char_sb.append_char((char)c);
+                    string ch_str = char_sb.to_string();
+                    state.insert_char(ch_str);
+                    char_sb.destroy();
+                }
+            }
+
+            if (e.kind == ev.event_mouse_down()) {
+                int click_x = e.mouse_x;
+                int click_y = e.mouse_y;
+                if (click_y >= header_h && click_y < app_h - status_h) {
+                    int clicked_row = state.scroll_row + ((click_y - header_h) / line_h);
+                    int clicked_col = 0;
+                    if (click_x > gutter_w) {
+                        clicked_col = (click_x - gutter_w - 8) / char_w;
+                    }
+                    int total = state.buffer.line_count();
+                    if (clicked_row < total) {
+                        state.cursor_row = clicked_row;
+                        string l = state.buffer.get_line(state.cursor_row);
+                        int l_len = strlen(l);
+                        if (clicked_col < 0) {
+                            clicked_col = 0;
+                        }
+                        if (clicked_col > l_len) {
+                            clicked_col = l_len;
+                        }
+                        state.cursor_col = clicked_col;
+                    }
+                }
+            }
+        }
+
+        // 1. Render Header / Tab Bar
+        app.canvas.fill_rect(0, 0, app_w, header_h, header_bg);
+        // Active file tab
+        app.canvas.fill_rect(8, 6, 180, header_h - 6, header_tab_bg);
+        string tab_title = "editor_main.kl";
+        if (state.is_dirty) {
+            tab_title = "editor_main.kl *";
+        }
+        app.canvas.draw_text(tab_title, 24, 12, header_fg, header_tab_bg);
+        app.canvas.draw_line(0, header_h - 1, app_w, header_h - 1, header_border, 1);
+
+        // 2. Render Line Number Gutter
+        int total_lines = state.buffer.line_count();
+        gutter.render(&app.canvas, state.scroll_row, state.cursor_row, total_lines);
+
+        // 3. Render Text Viewport
+        viewport.render(&app.canvas, &state.buffer, state.scroll_row, state.cursor_row, state.cursor_col);
+
+        // 4. Render Status Bar
+        status_bar.render(&app.canvas, state.cursor_row, state.cursor_col, total_lines, state.is_dirty);
+
+        // 5. Present Frame (Double-Buffered Atomic BitBlt)
+        app.present();
+
+        Sleep(16); // 60 FPS smooth animation & cursor blink
+    }
+
+    state.destroy();
+    app.close();
+}
+
+run_editor();

@@ -1,0 +1,109 @@
+// apps/editor/text_viewport.kl
+// Interactive Syntax-Highlighted Text Canvas Viewport for Kale Code Editor
+
+import "libs/ui/geom.kl" as geom;
+import "libs/ui/canvas.kl" as cv;
+import "packages/std/text/piece_table.kl" as pt;
+import "packages/std/text/string_builder.kl" as sb;
+import "packages/editor/theme.kl" as th;
+import "packages/editor/syntax.kl" as syn;
+
+extern int strlen(string s);
+
+struct TextViewport {
+    geom.Rect bounds;
+    th.Theme theme;
+    int char_width;
+    int line_height;
+    geom.Color cursor_color;
+    geom.Color current_line_bg;
+}
+
+fn void TextViewport.init(int x, int y, int w, int h, int line_h, int char_w) {
+    this->bounds.init(x, y, w, h);
+    this->line_height = line_h;
+    this->char_width = char_w;
+    this->theme.init_dark();
+    this->cursor_color.init(255, 255, 255, 255);
+    this->current_line_bg.init(38, 40, 48, 255); // Subtle active line tint
+}
+
+fn void TextViewport.render(cv.Canvas* canvas, pt.PieceTable* buffer, int scroll_row, int cursor_row, int cursor_col) {
+    geom.Color bg;
+    bg.init(30, 30, 30, 255); // Dark theme #1E1E1E
+
+    // Clear viewport background
+    canvas->fill_rect(this->bounds.x, this->bounds.y, this->bounds.width, this->bounds.height, bg);
+
+    int total_lines = buffer->line_count();
+    int visible_lines = this->bounds.height / this->line_height;
+    int row_idx = 0;
+
+    while (row_idx < visible_lines) {
+        int current_line_num = scroll_row + row_idx;
+        int y = this->bounds.y + (row_idx * this->line_height) + 2;
+
+        if (current_line_num < total_lines) {
+            // Highlight active line background
+            if (current_line_num == cursor_row) {
+                canvas->fill_rect(this->bounds.x, y - 2, this->bounds.width, this->line_height, this->current_line_bg);
+            }
+
+            string line_str = buffer->get_line(current_line_num);
+            int len = strlen(line_str);
+
+            // Syntax highlight line
+            syn.LineHighlighter hl;
+            hl.init();
+            hl.highlight_line(line_str);
+            int span_count = hl.get_count();
+
+            geom.Color line_bg = bg;
+            if (current_line_num == cursor_row) {
+                line_bg = this->current_line_bg;
+            }
+
+            if (span_count == 0) {
+                // Fallback / plain text
+                geom.Color default_fg;
+                default_fg.init(212, 212, 212, 255);
+                canvas->draw_text(line_str, this->bounds.x + 8, y, default_fg, line_bg);
+            } else {
+                int s_idx = 0;
+                while (s_idx < span_count) {
+                    syn.TokenSpan span = hl.get_span(s_idx);
+                    int col_color = this->theme.get_token_color(span.token_type);
+
+                    // Convert Win32 COLORREF (0x00BBGGRR) to Color struct
+                    geom.Color token_color;
+                    token_color.init(col_color & 255, (col_color >> 8) & 255, (col_color >> 16) & 255, 255);
+
+                    sb.StringBuilder span_sb;
+                    span_sb.init(span.length + 1);
+                    int ch_i = 0;
+                    while (ch_i < span.length && span.start_col + ch_i < len) {
+                        span_sb.append_char(line_str[span.start_col + ch_i]);
+                        ch_i = ch_i + 1;
+                    }
+                    string token_text = span_sb.to_string();
+                    int x_pos = this->bounds.x + 8 + (span.start_col * this->char_width);
+                    canvas->draw_text(token_text, x_pos, y, token_color, line_bg);
+                    span_sb.destroy();
+
+                    s_idx = s_idx + 1;
+                }
+            }
+            hl.destroy();
+        }
+
+        row_idx = row_idx + 1;
+    }
+
+    // Draw blinking / active text caret (cursor)
+    int cursor_visual_row = cursor_row - scroll_row;
+    if (cursor_visual_row >= 0 && cursor_visual_row < visible_lines) {
+        int caret_x = this->bounds.x + 8 + (cursor_col * this->char_width);
+        int caret_y = this->bounds.y + (cursor_visual_row * this->line_height) + 2;
+        canvas->fill_rect(caret_x, caret_y, 2, this->line_height - 2, this->cursor_color);
+    }
+}

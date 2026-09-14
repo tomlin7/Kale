@@ -1,0 +1,49 @@
+// libs/ui/event.kl
+// Event Dispatching and Input Models for Kale UI
+
+struct Event {
+    int kind;
+    int mouse_x;
+    int mouse_y;
+    int key_code;
+    int char_code;
+    int button;
+    bool handled;
+}
+
+fn void Event.init() {
+    this->kind = 0;
+    this->mouse_x = 0;
+    this->mouse_y = 0;
+    this->key_code = 0;
+    this->char_code = 0;
+    this->button = 0;
+    this->handled = false;
+}
+
+// Event kind constants
+int event_none() { return 0; }
+int event_key_down() { return 1; }
+int event_key_up() { return 2; }
+int event_char() { return 3; }
+int event_mouse_down() { return 4; }
+int event_mouse_up() { return 5; }
+int event_mouse_move() { return 6; }
+int event_resize() { return 7; }
+int event_close() { return 8; }
+
+// Key code constants (Win32 virtual keys)
+int key_backspace() { return 8; }
+int key_tab() { return 9; }
+int key_enter() { return 13; }
+int key_escape() { return 27; }
+int key_space() { return 32; }
+int key_page_up() { return 33; }
+int key_page_down() { return 34; }
+int key_end() { return 35; }
+int key_home() { return 36; }
+int key_left() { return 37; }
+int key_up() { return 38; }
+int key_right() { return 39; }
+int key_down() { return 40; }
+int key_delete() { return 46; }

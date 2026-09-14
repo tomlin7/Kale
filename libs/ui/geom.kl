@@ -1,0 +1,102 @@
+// libs/ui/geom.kl
+// 2D Geometry, Dimensions, Colors, and Layout Primitives for Kale UI
+
+struct Point {
+    int x;
+    int y;
+}
+
+fn void Point.init(int x, int y) {
+    this->x = x;
+    this->y = y;
+}
+
+struct Size {
+    int width;
+    int height;
+}
+
+fn void Size.init(int w, int h) {
+    this->width = w;
+    this->height = h;
+}
+
+struct Rect {
+    int x;
+    int y;
+    int width;
+    int height;
+}
+
+fn void Rect.init(int x, int y, int w, int h) {
+    this->x = x;
+    this->y = y;
+    this->width = w;
+    this->height = h;
+}
+
+fn bool Rect.contains(int px, int py) {
+    if (px < this->x || py < this->y) {
+        return false;
+    }
+    if (px >= this->x + this->width || py >= this->y + this->height) {
+        return false;
+    }
+    return true;
+}
+
+fn void Rect.inset(int dx, int dy) {
+    this->x = this->x + dx;
+    this->y = this->y + dy;
+    this->width = this->width - (dx * 2);
+    this->height = this->height - (dy * 2);
+    if (this->width < 0) {
+        this->width = 0;
+    }
+    if (this->height < 0) {
+        this->height = 0;
+    }
+}
+
+struct Color {
+    int r;
+    int g;
+    int b;
+    int a;
+}
+
+fn void Color.init(int r, int g, int b, int a) {
+    this->r = r;
+    this->g = g;
+    this->b = b;
+    this->a = a;
+}
+
+fn int Color.to_colorref() {
+    // Win32 COLORREF is 0x00BBGGRR
+    int red = this->r & 255;
+    int green = (this->g & 255) << 8;
+    int blue = (this->b & 255) << 16;
+    return red | green | blue;
+}
+
+struct Padding {
+    int top;
+    int right;
+    int bottom;
+    int left;
+}
+
+fn void Padding.init(int t, int r, int b, int l) {
+    this->top = t;
+    this->right = r;
+    this->bottom = b;
+    this->left = l;
+}
+
+fn void Padding.all(int p) {
+    this->top = p;
+    this->right = p;
+    this->bottom = p;
+    this->left = p;
+}

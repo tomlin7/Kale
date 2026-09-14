@@ -212,6 +212,10 @@ def can_convert(from_type: TypeSymbol, to_type: TypeSymbol) -> bool:
     if isinstance(from_type, FunctionTypeSymbol) and isinstance(to_type, PointerTypeSymbol):
         if to_type.base_type == TypeVoid:
             return True
+    # void* (null pointer) converting to function pointer
+    if isinstance(from_type, PointerTypeSymbol) and isinstance(to_type, FunctionTypeSymbol):
+        if from_type.base_type == TypeVoid:
+            return True
     # Pointer conversions (int* to int*, or array decaying to pointer int[] -> int*)
     if isinstance(from_type, PointerTypeSymbol) and isinstance(to_type, PointerTypeSymbol):
         return can_convert(from_type.base_type, to_type.base_type)

@@ -1,0 +1,33 @@
+// libs/ui/widgets/container.kl
+// Box Container Layout Component for Kale UI
+
+import "libs/ui/geom.kl" as geom;
+import "libs/ui/canvas.kl" as cv;
+
+struct Container {
+    geom.Rect bounds;
+    geom.Color bg;
+    geom.Color border_color;
+    int border_width;
+    geom.Padding padding;
+}
+
+fn void Container.init(int x, int y, int w, int h, geom.Color bg) {
+    this->bounds.init(x, y, w, h);
+    this->bg = bg;
+    this->border_color = bg;
+    this->border_width = 0;
+    this->padding.all(0);
+}
+
+fn void Container.set_border(geom.Color color, int width) {
+    this->border_color = color;
+    this->border_width = width;
+}
+
+fn void Container.render(cv.Canvas* canvas) {
+    canvas->fill_rect(this->bounds.x, this->bounds.y, this->bounds.width, this->bounds.height, this->bg);
+    if (this->border_width > 0) {
+        canvas->draw_rect(this->bounds.x, this->bounds.y, this->bounds.width, this->bounds.height, this->border_color, this->border_width);
+    }
+}
