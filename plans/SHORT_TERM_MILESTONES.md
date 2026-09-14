@@ -9,13 +9,13 @@ This document provides actionable, discrete milestones designed to be dispatched
 | ID | Title | Assigned Role | Dependencies | Status |
 |---|---|---|---|---|
 | **M0** | Housekeeping & Monorepo Alignment | Architect | None | 🟢 Complete |
-| **M1** | PythonKale Compiler Stabilization | Compiler Engineer | M0 | 🟡 Next Up |
-| **M2** | `libs/glfw` Windowing FFI Bindings | Systems Engineer | M1 | 🔴 Not Started |
-| **M3** | `libs/gl` OpenGL 3.3 Core FFI & Loader | Graphics Engineer | M2 | 🔴 Not Started |
-| **M4** | `libs/stb` stb_truetype & stb_image FFI | Systems Engineer | M1 | 🔴 Not Started |
-| **M5** | `libs/render` 2D Batched GPU Graphics & Font Engine | Graphics Engineer | M2, M3, M4 | 🔴 Not Started |
-| **M6** | `libs/ui` GPU Immediate-Mode Widget Toolkit | UI Engineer | M5 | 🔴 Not Started |
-| **M7** | `libs/framework` v2 GPU App Harness | Framework Engineer | M6 | 🔴 Not Started |
+| **M1** | PythonKale Compiler Stabilization | Compiler Engineer | M0 | 🟢 Complete |
+| **M2** | `libs/glfw` Windowing FFI Bindings | Systems Engineer | M1 | 🟢 Complete |
+| **M3** | `libs/gl` OpenGL 3.3 Core FFI & Loader | Graphics Engineer | M2 | 🟢 Complete |
+| **M4** | `libs/stb` stb_truetype & stb_image FFI | Systems Engineer | M1 | 🟢 Complete |
+| **M5** | `libs/render` 2D Batched GPU Graphics & Font Engine | Graphics Engineer | M2, M3, M4 | 🟢 Complete |
+| **M6** | `libs/ui` GPU Immediate-Mode Widget Toolkit | UI Engineer | M5 | 🟢 Complete |
+| **M7** | `libs/framework` v2 GPU App Harness | Framework Engineer | M6 | 🟡 Next Up |
 | **M8** | `libs/net` Sockets & HTTP/1.1 Client/Server | Network Engineer | M1 | 🔴 Not Started |
 | **M9** | `libs/web` Routing, Middleware & Templates | Web Engineer | M8 | 🔴 Not Started |
 | **M10** | `libs/sql` SQLite3 Driver & Query Builder | Database Engineer | M1 | 🔴 Not Started |
