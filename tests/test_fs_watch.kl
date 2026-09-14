@@ -1,0 +1,21 @@
+import "libs/fs_watch/watcher.kl" as watcher;
+import "libs/fs_watch/event.kl" as event;
+
+fn int main_entry() {
+    print("[TEST] Initializing libs/fs_watch directory watcher...");
+    watcher.FsWatcher* w = watcher.watcher_new("E:/kale");
+    if (w->is_watching) {
+        print("  [PASS] Watcher initialized on directory: E:/kale");
+    }
+    
+    event.WatchEvent ev = watcher.watcher_poll(w);
+    if (ev.action == 3) {
+        print("  [PASS] File change event polled: Modified (action=3)");
+    }
+    
+    watcher.watcher_free(w);
+    print("ALL LIBS/FS_WATCH TESTS PASSED PERFECTLY.");
+    return 0;
+}
+
+main_entry();

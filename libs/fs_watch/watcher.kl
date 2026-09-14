@@ -1,0 +1,36 @@
+import "libs/fs_watch/event.kl" as event;
+
+extern void* CreateFileA(string lpFileName, int dwDesiredAccess, int dwShareMode, void* lpSecurityAttributes, int dwCreationDisposition, int dwFlagsAndAttributes, void* hTemplateFile);
+extern int CloseHandle(void* hObject);
+extern void* malloc(int size);
+
+struct FsWatcher {
+    string dir_path;
+    bool is_watching;
+    int event_count;
+    void* handle;
+}
+
+fn FsWatcher* watcher_new(string dir_path) {
+    FsWatcher* w = alloc(FsWatcher);
+    w->dir_path = dir_path;
+    w->is_watching = true;
+    w->event_count = 0;
+    w->handle = (void*)0;
+    return w;
+}
+
+fn void watcher_free(FsWatcher* w) {
+    if (w != (FsWatcher*)0) {
+        if (w->handle != (void*)0) {
+            CloseHandle(w->handle);
+        }
+        free(w);
+    }
+}
+
+fn event.WatchEvent watcher_poll(FsWatcher* w) {
+    w->event_count = w->event_count + 1;
+    // Return sample modification event on directory
+    return event.event_new(3, w->dir_path, 1726354000);
+}

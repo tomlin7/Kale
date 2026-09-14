@@ -1,0 +1,13 @@
+struct WatchEvent {
+    int action;       // 1=Added, 2=Removed, 3=Modified, 4=RenamedOld, 5=RenamedNew
+    string file_path;
+    int timestamp;
+}
+
+fn WatchEvent event_new(int action, string path, int timestamp) {
+    WatchEvent ev;
+    ev.action = action;
+    ev.file_path = path;
+    ev.timestamp = timestamp;
+    return ev;
+}
