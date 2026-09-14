@@ -145,6 +145,8 @@ cython_debug/
 *.bc
 *.o
 *.obj
+bin/
+
 
 
 # Jetbrains
