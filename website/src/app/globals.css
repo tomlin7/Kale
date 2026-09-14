@@ -2,28 +2,23 @@
 
 @layer base {
   :root {
-    --bg-deep: #050814;
-    --bg-card: #0c1328;
-    --bg-card-hover: #121c3b;
-    --border-subtle: #1c274c;
-    --border-highlight: #b91c1c;
-    --text-primary: #f8fafc;
-    --text-secondary: #94a3b8;
-    --text-muted: #64748b;
-    --crimson: #b91c1c;
-    --crimson-glow: rgba(185, 28, 28, 0.4);
-    --gold: #d97706;
-    --gold-glow: rgba(217, 119, 6, 0.25);
+    --bg-deep: #162b6b;
+    --bg-card: #0d173d;
+    --bg-card-subtle: #0a1333;
+    --border-subtle: #243b82;
+    --border-highlight: rgba(255, 255, 255, 0.25);
+    --text-primary: #ffffff;
+    --text-muted: rgba(255, 255, 255, 0.7);
   }
 
   body {
-    background-color: var(--bg-deep);
-    color: var(--text-primary);
+    background-color: #162b6b;
+    color: #ffffff;
     font-family: ui-sans-serif, system-ui, sans-serif;
     overflow-x: hidden;
   }
 
-  /* Classical Renaissance Serif Styling */
+  /* Classical Architectural Serif Styling */
   .font-renaissance {
     font-family: "Cinzel", "Playfair Display", "Georgia", serif;
   }
