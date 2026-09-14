@@ -1,0 +1,121 @@
+// libs/stb/truetype.kl
+// stb_truetype Font Parsing & Rasterization FFI Bindings
+
+// ============================================================================
+// Font Handle & Metric Structs
+// ============================================================================
+
+struct FontVMetrics {
+    int ascent;
+    int descent;
+    int line_gap;
+}
+
+struct GlyphHMetrics {
+    int advance_width;
+    int left_side_bearing;
+}
+
+struct GlyphBitmap {
+    void* pixels;
+    int width;
+    int height;
+    int xoff;
+    int yoff;
+}
+
+// ============================================================================
+// C ABI Extern Declarations
+// ============================================================================
+
+extern void* kale_font_init_from_memory(void* data, int data_len);
+extern void* kale_font_init_from_file(string filepath);
+extern void kale_font_free(void* font);
+extern float kale_font_scale_for_pixel_height(void* font, float pixels);
+extern void kale_font_get_vmetrics(void* font, int* ascent, int* descent, int* line_gap);
+extern int kale_font_find_glyph_index(void* font, int unicode_codepoint);
+extern void kale_font_get_hmetrics(void* font, int glyph_index, int* advance_width, int* left_side_bearing);
+extern int kale_font_get_kern_advance(void* font, int glyph1, int glyph2);
+extern void* kale_font_render_glyph_bitmap(void* font, int glyph_index, float scale, int* width, int* height, int* xoff, int* yoff);
+extern void kale_font_free_bitmap(void* bitmap);
+
+// ============================================================================
+// Idiomatic Font Struct Wrapper
+// ============================================================================
+
+struct TrueTypeFont {
+    void* handle;
+    float pixel_height;
+    float scale;
+    int ascent;
+    int descent;
+    int line_gap;
+}
+
+fn int TrueTypeFont.load_file(string filepath, float pixel_height) {
+    this->handle = kale_font_init_from_file(filepath);
+    if (this->handle == (void*)0) {
+        return 0;
+    }
+    this->pixel_height = pixel_height;
+    this->scale = kale_font_scale_for_pixel_height(this->handle, pixel_height);
+
+    int asc = 0;
+    int desc = 0;
+    int gap = 0;
+    kale_font_get_vmetrics(this->handle, &asc, &desc, &gap);
+    this->ascent = asc;
+    this->descent = desc;
+    this->line_gap = gap;
+    return 1;
+}
+
+fn void TrueTypeFont.destroy() {
+    if (this->handle != (void*)0) {
+        kale_font_free(this->handle);
+        this->handle = (void*)0;
+    }
+}
+
+fn int TrueTypeFont.find_glyph(int codepoint) {
+    if (this->handle == (void*)0) {
+        return 0;
+    }
+    return kale_font_find_glyph_index(this->handle, codepoint);
+}
+
+fn GlyphHMetrics TrueTypeFont.get_glyph_metrics(int glyph_idx) {
+    GlyphHMetrics metrics;
+    int adv = 0;
+    int lsb = 0;
+    if (this->handle != (void*)0) {
+        kale_font_get_hmetrics(this->handle, glyph_idx, &adv, &lsb);
+    }
+    metrics.advance_width = adv;
+    metrics.left_side_bearing = lsb;
+    return metrics;
+}
+
+fn GlyphBitmap TrueTypeFont.rasterize_glyph(int glyph_idx) {
+    GlyphBitmap bmp;
+    int w = 0;
+    int h = 0;
+    int xo = 0;
+    int yo = 0;
+    void* px = (void*)0;
+    if (this->handle != (void*)0) {
+        px = kale_font_render_glyph_bitmap(this->handle, glyph_idx, this->scale, &w, &h, &xo, &yo);
+    }
+    bmp.pixels = px;
+    bmp.width = w;
+    bmp.height = h;
+    bmp.xoff = xo;
+    bmp.yoff = yo;
+    return bmp;
+}
+
+fn void TrueTypeFont.free_glyph_bitmap(GlyphBitmap bmp) {
+    if (bmp.pixels != (void*)0) {
+        kale_font_free_bitmap(bmp.pixels);
+    }
+}

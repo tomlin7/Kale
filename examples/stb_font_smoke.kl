@@ -1,0 +1,37 @@
+// examples/stb_font_smoke.kl
+// Smoke test verifying stb_truetype font loading, metrics calculation, and glyph rasterization
+
+import "libs/stb/truetype.kl" as ttf;
+
+fn int run_font_smoke() {
+    ttf.TrueTypeFont font;
+    int loaded = font.load_file("C:\\Windows\\Fonts\\consola.ttf", 24.0f);
+    if (loaded == 0) {
+        print("Failed to open font file!");
+        return 1;
+    }
+
+    print("Font Loaded Successfully! Ascent:", font.ascent, "Descent:", font.descent);
+
+    // Find glyph for 'A' (ASCII 65)
+    int glyph_a = font.find_glyph(65);
+    print("Glyph index for 'A':", glyph_a);
+
+    ttf.GlyphHMetrics hmetrics = font.get_glyph_metrics(glyph_a);
+    print("Glyph 'A' Advance Width:", hmetrics.advance_width);
+
+    // Rasterize glyph 'A'
+    ttf.GlyphBitmap bmp = font.rasterize_glyph(glyph_a);
+    print("Rasterized Glyph 'A': width =", bmp.width, "height =", bmp.height);
+
+    if (bmp.width > 0 && bmp.height > 0) {
+        print("Glyph bitmap rendered with non-zero dimensions!");
+    }
+
+    font.free_glyph_bitmap(bmp);
+    font.destroy();
+    return 0;
+}
+
+int status = run_font_smoke();
+print("Font Smoke Exited With Status:", status);
