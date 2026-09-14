@@ -1,0 +1,60 @@
+import "libs/physics/body.kl" as body;
+
+struct World {
+    int gravity_y;
+    int body_count;
+    body.RigidBody* b0;
+    body.RigidBody* b1;
+    body.RigidBody* b2;
+    body.RigidBody* b3;
+}
+
+fn World* world_new(int gravity_y) {
+    World* w = alloc(World);
+    w->gravity_y = gravity_y;
+    w->body_count = 0;
+    w->b0 = (body.RigidBody*)0;
+    w->b1 = (body.RigidBody*)0;
+    w->b2 = (body.RigidBody*)0;
+    w->b3 = (body.RigidBody*)0;
+    return w;
+}
+
+fn void world_free(World* w) {
+    if (w != (World*)0) {
+        free(w);
+    }
+}
+
+fn void world_add_body(World* w, body.RigidBody* b) {
+    if (w->body_count == 0) {
+        w->b0 = b;
+        w->body_count = 1;
+    } else if (w->body_count == 1) {
+        w->b1 = b;
+        w->body_count = 2;
+    } else if (w->body_count == 2) {
+        w->b2 = b;
+        w->body_count = 3;
+    } else if (w->body_count == 3) {
+        w->b3 = b;
+        w->body_count = 4;
+    }
+}
+
+fn void world_step(World* w, int dt) {
+    if (w->body_count >= 1 && w->b0 != (body.RigidBody*)0) {
+        if (!w->b0->is_static) {
+            w->b0->vel.y = w->b0->vel.y + (w->gravity_y * dt);
+            w->b0->pos.x = w->b0->pos.x + (w->b0->vel.x * dt);
+            w->b0->pos.y = w->b0->pos.y + (w->b0->vel.y * dt);
+        }
+    }
+    if (w->body_count >= 2 && w->b1 != (body.RigidBody*)0) {
+        if (!w->b1->is_static) {
+            w->b1->vel.y = w->b1->vel.y + (w->gravity_y * dt);
+            w->b1->pos.x = w->b1->pos.x + (w->b1->vel.x * dt);
+            w->b1->pos.y = w->b1->pos.y + (w->b1->vel.y * dt);
+        }
+    }
+}

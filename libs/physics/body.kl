@@ -1,0 +1,37 @@
+struct Vec2 {
+    int x;
+    int y;
+}
+
+struct RigidBody {
+    Vec2 pos;
+    Vec2 vel;
+    int mass;
+    int width;
+    int height;
+    bool is_static;
+}
+
+fn Vec2 vec2_new(int x, int y) {
+    Vec2 v;
+    v.x = x;
+    v.y = y;
+    return v;
+}
+
+fn RigidBody* body_new(int x, int y, int mass, int w, int h) {
+    RigidBody* b = alloc(RigidBody);
+    b->pos = vec2_new(x, y);
+    b->vel = vec2_new(0, 0);
+    b->mass = mass;
+    b->width = w;
+    b->height = h;
+    b->is_static = (mass == 0);
+    return b;
+}
+
+fn void body_free(RigidBody* b) {
+    if (b != (RigidBody*)0) {
+        free(b);
+    }
+}

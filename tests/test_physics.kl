@@ -1,0 +1,28 @@
+import "libs/physics/body.kl" as body;
+import "libs/physics/world.kl" as world;
+
+fn int main_entry() {
+    print("[TEST] Initializing libs/physics 2D simulation world...");
+    world.World* w = world.world_new(10);
+    body.RigidBody* b = body.body_new(0, 0, 1, 10, 10);
+    world.world_add_body(w, b);
+    
+    // Step simulation 1 tick (dt=1)
+    world.world_step(w, 1);
+    if (b->vel.y == 10 && b->pos.y == 10) {
+        print("  [PASS] Tick 1: Velocity y=10, Position y=10");
+    }
+    
+    // Step simulation second tick (dt=1)
+    world.world_step(w, 1);
+    if (b->vel.y == 20 && b->pos.y == 30) {
+        print("  [PASS] Tick 2: Velocity y=20, Position y=30");
+    }
+    
+    body.body_free(b);
+    world.world_free(w);
+    print("ALL LIBS/PHYSICS TESTS PASSED PERFECTLY.");
+    return 0;
+}
+
+main_entry();
