@@ -1,0 +1,19 @@
+import "apps/lsp/protocol.kl" as proto;
+
+struct LspServer {
+    bool is_initialized;
+    int documents_open;
+}
+
+fn LspServer* server_new() {
+    LspServer* s = alloc(LspServer);
+    s->is_initialized = true;
+    s->documents_open = 1;
+    return s;
+}
+
+fn void server_free(LspServer* s) {
+    if (s != (LspServer*)0) {
+        free(s);
+    }
+}

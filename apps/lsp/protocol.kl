@@ -1,0 +1,26 @@
+struct LspPosition {
+    int line;
+    int character;
+}
+
+struct LspRange {
+    LspPosition start;
+    LspPosition end;
+}
+
+struct LspDiagnostic {
+    LspRange range;
+    int severity;    // 1=Error, 2=Warning, 3=Info, 4=Hint
+    string message;
+}
+
+fn LspDiagnostic diagnostic_new(int line, int col, string msg) {
+    LspDiagnostic d;
+    d.range.start.line = line;
+    d.range.start.character = col;
+    d.range.end.line = line;
+    d.range.end.character = col + 1;
+    d.severity = 1;
+    d.message = msg;
+    return d;
+}
