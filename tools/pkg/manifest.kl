@@ -1,0 +1,15 @@
+struct PackageManifest {
+    string name;
+    string version;
+    string entry;
+    int dependency_count;
+}
+
+fn PackageManifest manifest_new(string name, string version, string entry) {
+    PackageManifest m;
+    m.name = name;
+    m.version = version;
+    m.entry = entry;
+    m.dependency_count = 0;
+    return m;
+}

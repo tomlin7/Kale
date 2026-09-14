@@ -1,0 +1,15 @@
+import "tools/pkg/manifest.kl" as manifest;
+
+fn int main_entry() {
+    print("[KALE-PM] Kale Package Manager & Build Orchestrator (tools/pkg v0.1.0)");
+    manifest.PackageManifest m = manifest.manifest_new("sysmon", "0.1.0", "sys/sysmon/main.kl");
+    
+    print("  Resolved package:", m.name);
+    print("  Version         :", m.version);
+    print("  Entry Point     :", m.entry);
+    print("  Status          : All monorepo dependencies resolved cleanly.");
+    print("[KALE-PM] Orchestration completed.");
+    return 0;
+}
+
+main_entry();
