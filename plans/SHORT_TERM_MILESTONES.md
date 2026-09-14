@@ -15,11 +15,11 @@ This document provides actionable, discrete milestones designed to be dispatched
 | **M4** | `libs/stb` stb_truetype & stb_image FFI | Systems Engineer | M1 | 🟢 Complete |
 | **M5** | `libs/render` 2D Batched GPU Graphics & Font Engine | Graphics Engineer | M2, M3, M4 | 🟢 Complete |
 | **M6** | `libs/ui` GPU Immediate-Mode Widget Toolkit | UI Engineer | M5 | 🟢 Complete |
-| **M7** | `libs/framework` v2 GPU App Harness | Framework Engineer | M6 | 🟡 Next Up |
-| **M8** | `libs/net` Sockets & HTTP/1.1 Client/Server | Network Engineer | M1 | 🔴 Not Started |
+| **M7** | `libs/framework` v2 GPU App Harness | Framework Engineer | M6 | 🟢 Complete |
+| **M8** | `libs/net` Sockets & HTTP/1.1 Client/Server | Network Engineer | M1 | 🟡 Next Up |
 | **M9** | `libs/web` Routing, Middleware & Templates | Web Engineer | M8 | 🔴 Not Started |
 | **M10** | `libs/sql` SQLite3 Driver & Query Builder | Database Engineer | M1 | 🔴 Not Started |
-| **M11** | `editor` v2 Flagship GPU Code Editor | Editor Engineer | M6, M7 | 🔴 Not Started |
+| **M11** | `editor` v2 Flagship GPU Code Editor | Editor Engineer | M6, M7 | 🟢 Complete |
 | **M12** | `vcs` Distributed Version Control Core | Systems Engineer | M1, M8 | 🔴 Not Started |
 | **M13** | `apps/blog` Publishing Engine & CMS | Web Engineer | M9, M10 | 🔴 Not Started |
 | **M14** | Self-Hosting Kale Compiler Bootstrap | Lead Compiler Engineer | All | 🔵 Long-Term |
@@ -113,15 +113,15 @@ This document provides actionable, discrete milestones designed to be dispatched
 
 ---
 
-## 📍 Milestone 7: `libs/framework` v2 GPU App Harness
+## 📍 Milestone 7: `libs/framework` v2 GPU App Harness (Completed)
 **Role**: Framework Engineer  
 **Prerequisites**: Milestone 6  
 **Target Files**: `libs/framework/app.kl`, `libs/framework/PLAN.md`
 
 ### Deliverables:
-1. GLFW window bootstrap with automatic OpenGL 3.3 context configuration.
-2. Unified 60 FPS event dispatch loop with sub-millisecond delta time tracking.
-3. Seamless integration with `libs/ui` immediate-mode context.
+1. [x] GLFW window bootstrap with automatic OpenGL 3.3 context configuration.
+2. [x] Unified 60 FPS event dispatch loop with sub-millisecond delta time tracking.
+3. [x] Seamless integration with `libs/ui` immediate-mode context.
 
 ---
 
@@ -160,15 +160,15 @@ This document provides actionable, discrete milestones designed to be dispatched
 
 ---
 
-## 📍 Milestone 11: `editor` v2 Flagship GPU Code Editor
+## 📍 Milestone 11: `editor` v2 Flagship GPU Code Editor (Completed)
 **Role**: Editor Engineer  
 **Prerequisites**: Milestones 6, 7  
 **Target Files**: `editor/` (`main.kl`, `app_state.kl`, `text_viewport.kl`, `gutter.kl`, `status_bar.kl`)
 
 ### Deliverables:
-1. Ultra-responsive GPU text viewport rendering arbitrary sized documents via `PieceTable`.
-2. Syntax token coloring directly on vertex batches.
-3. Active line highlighting, smooth scrolling, cursor blinking, and interactive gutter.
+1. [x] Ultra-responsive GPU text viewport rendering arbitrary sized documents via `PieceTable`.
+2. [x] Syntax token coloring directly on vertex batches.
+3. [x] Active line highlighting, smooth scrolling, cursor blinking, and interactive gutter.
 
 ---
 
