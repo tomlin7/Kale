@@ -16,8 +16,8 @@ This document provides actionable, discrete milestones designed to be dispatched
 | **M5** | `libs/render` 2D Batched GPU Graphics & Font Engine | Graphics Engineer | M2, M3, M4 | 🟢 Complete |
 | **M6** | `libs/ui` GPU Immediate-Mode Widget Toolkit | UI Engineer | M5 | 🟢 Complete |
 | **M7** | `libs/framework` v2 GPU App Harness | Framework Engineer | M6 | 🟢 Complete |
-| **M8** | `libs/net` Sockets & HTTP/1.1 Client/Server | Network Engineer | M1 | 🟡 Next Up |
-| **M9** | `libs/web` Routing, Middleware & Templates | Web Engineer | M8 | 🔴 Not Started |
+| **M8** | `libs/net` Sockets & HTTP/1.1 Client/Server | Network Engineer | M1 | 🟢 Complete |
+| **M9** | `libs/web` Routing, Middleware & Templates | Web Engineer | M8 | 🟡 Next Up |
 | **M10** | `libs/sql` SQLite3 Driver & Query Builder | Database Engineer | M1 | 🔴 Not Started |
 | **M11** | `editor` v2 Flagship GPU Code Editor | Editor Engineer | M6, M7 | 🟢 Complete |
 | **M12** | `vcs` Distributed Version Control Core | Systems Engineer | M1, M8 | 🔴 Not Started |

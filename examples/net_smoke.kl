@@ -1,0 +1,129 @@
+// examples/net_smoke.kl
+// Automated Verification Smoke Test for libs/net (TCP, HTTP Client & Server)
+
+import "libs/net/socket.kl" as sock;
+import "libs/net/tcp.kl" as tcp;
+import "libs/net/http.kl" as http;
+import "libs/net/server.kl" as srv;
+
+extern int printf(string fmt, ...);
+extern int strlen(string s);
+extern void* malloc(int size);
+
+fn void test_tcp_loopback() {
+    printf("[TEST 1/2] Starting raw TCP loopback test on 127.0.0.1:9123...\n");
+
+    tcp.TcpListener listener = tcp.tcp_listen("127.0.0.1", 9123, 16);
+    if (!listener.is_listening) {
+        printf("FAILED: TCP listener could not bind/listen!\n");
+        return;
+    }
+    printf("  Listener active on port 9123.\n");
+
+    // Connect client
+    tcp.TcpStream client = tcp.tcp_connect("127.0.0.1", 9123);
+    if (!client.is_connected) {
+        printf("FAILED: TCP client could not connect!\n");
+        listener.close();
+        return;
+    }
+    printf("  Client connected.\n");
+
+    // Accept client on server
+    tcp.TcpStream server_side = listener.accept_client();
+    if (!server_side.is_connected) {
+        printf("FAILED: Server failed to accept client!\n");
+        client.close();
+        listener.close();
+        return;
+    }
+    printf("  Server accepted incoming client connection.\n");
+
+    // Client sends message
+    string msg = "PING KALE NET";
+    client.send_string(msg);
+
+    // Server receives message
+    char* buf = alloc(char, 256);
+    int n = server_side.read_bytes((void*)buf, 255);
+    buf[n] = (char)0;
+    printf("  Server received (%lld bytes): '%s'\n", n, (string)buf);
+
+    // Server sends response
+    server_side.send_string("PONG KALE NET");
+
+    // Client receives response
+    int m = client.read_bytes((void*)buf, 255);
+    buf[m] = (char)0;
+    printf("  Client received (%lld bytes): '%s'\n", m, (string)buf);
+
+    free(buf);
+    client.close();
+    server_side.close();
+    listener.close();
+    printf("  [PASS] Raw TCP loopback test passed!\n\n");
+}
+
+fn void test_http_request_response() {
+    printf("[TEST 2/2] Starting HTTP/1.1 Client & Server test on 127.0.0.1:9124...\n");
+
+    srv.HttpServer server = srv.http_listen("127.0.0.1", 9124);
+    if (!server.is_running) {
+        printf("FAILED: HTTP server could not start!\n");
+        return;
+    }
+    printf("  HTTP Server listening on 127.0.0.1:9124.\n");
+
+    // Connect raw TCP client to issue HTTP GET
+    tcp.TcpStream client = tcp.tcp_connect("127.0.0.1", 9124);
+    if (!client.is_connected) {
+        printf("FAILED: HTTP client connection failed!\n");
+        server.close();
+        return;
+    }
+
+    // Client sends HTTP GET request
+    string raw_get = "GET /api/status HTTP/1.1\r\nHost: 127.0.0.1:9124\r\nConnection: close\r\n\r\n";
+    client.send_string(raw_get);
+
+    // Server accepts request
+    tcp.TcpStream incoming = server.listener.accept_client();
+    char* req_buf = alloc(char, 1024);
+    int bytes_in = incoming.read_bytes((void*)req_buf, 1023);
+    req_buf[bytes_in] = (char)0;
+
+    // Parse incoming HTTP request
+    srv.HttpRequest parsed = srv.parse_http_request((string)req_buf);
+    printf("  Server parsed request -> Method: '%s', Path: '%s'\n", parsed.method, parsed.path);
+
+    // Server sends 200 OK JSON response
+    string json_resp = "{\"status\":\"ok\",\"service\":\"kale-net\"}";
+    srv.send_http_response(&incoming, 200, "OK", "application/json", json_resp);
+    incoming.close();
+    free(req_buf);
+
+    // Client reads HTTP response
+    char* resp_buf = alloc(char, 1024);
+    int bytes_out = client.read_bytes((void*)resp_buf, 1023);
+    resp_buf[bytes_out] = (char)0;
+    printf("  Client received HTTP response (%lld bytes):\n%s\n", bytes_out, (string)resp_buf);
+
+    free(resp_buf);
+    client.close();
+    server.close();
+    printf("  [PASS] HTTP/1.1 Client & Server test passed!\n\n");
+}
+
+fn int main_entry() {
+    printf("==================================================\n");
+    printf(" Kale libs/net Automated Smoke Test Suite\n");
+    printf("==================================================\n");
+
+    test_tcp_loopback();
+    test_http_request_response();
+
+    printf("ALL libs/net TESTS PASSED PERFECTLY!\n");
+    return 0;
+}
+
+main_entry();

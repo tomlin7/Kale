@@ -1,0 +1,151 @@
+// libs/net/tcp.kl
+// High-Level TCP Stream and Listener Abstractions for Kale
+
+import "libs/net/socket.kl" as sock;
+
+extern void* malloc(int size);
+extern int strlen(string s);
+
+struct TcpStream {
+    int handle;
+    bool is_connected;
+}
+
+fn void TcpStream.init() {
+    this->handle = -1;
+    this->is_connected = false;
+}
+
+fn TcpStream tcp_connect(string ip, int port) {
+    TcpStream stream;
+    stream.handle = -1;
+    stream.is_connected = false;
+
+    sock.init_winsock();
+
+    int s = sock.socket(sock.AF_INET(), sock.SOCK_STREAM(), sock.IPPROTO_TCP());
+    if (s == -1) {
+        return stream;
+    }
+
+    int ip_val = sock.inet_addr(ip);
+    sock.SockAddrIn sa = sock.make_sockaddr_in(ip_val, port);
+
+    int ret = sock.connect(s, (void*)&sa, 16);
+    if (ret != 0) {
+        sock.closesocket(s);
+        return stream;
+    }
+
+    stream.handle = s;
+    stream.is_connected = true;
+    return stream;
+}
+
+fn int TcpStream.send_bytes(void* buffer, int length) {
+    if (!this->is_connected || this->handle == -1) {
+        return -1;
+    }
+    return sock.send(this->handle, buffer, length, 0);
+}
+
+fn int TcpStream.send_string(string text) {
+    int len = strlen(text);
+    if (len == 0) {
+        return 0;
+    }
+    return this->send_bytes((void*)text, len);
+}
+
+fn int TcpStream.read_bytes(void* buffer, int max_len) {
+    if (!this->is_connected || this->handle == -1) {
+        return -1;
+    }
+    return sock.recv(this->handle, buffer, max_len, 0);
+}
+
+fn void TcpStream.close() {
+    if (this->handle != -1) {
+        sock.shutdown(this->handle, 2);
+        sock.closesocket(this->handle);
+        this->handle = -1;
+        this->is_connected = false;
+    }
+}
+
+struct TcpListener {
+    int handle;
+    int port;
+    bool is_listening;
+}
+
+fn void TcpListener.init() {
+    this->handle = -1;
+    this->port = 0;
+    this->is_listening = false;
+}
+
+fn TcpListener tcp_listen(string ip, int port, int backlog) {
+    TcpListener listener;
+    listener.handle = -1;
+    listener.port = port;
+    listener.is_listening = false;
+
+    sock.init_winsock();
+
+    int s = sock.socket(sock.AF_INET(), sock.SOCK_STREAM(), sock.IPPROTO_TCP());
+    if (s == -1) {
+        return listener;
+    }
+
+    int optval = 1;
+    sock.setsockopt(s, sock.SOL_SOCKET(), sock.SO_REUSEADDR(), (void*)&optval, 4);
+
+    int ip_val = sock.inet_addr(ip);
+    sock.SockAddrIn sa = sock.make_sockaddr_in(ip_val, port);
+
+    int bind_res = sock.bind(s, (void*)&sa, 16);
+    if (bind_res != 0) {
+        sock.closesocket(s);
+        return listener;
+    }
+
+    int listen_res = sock.listen(s, backlog);
+    if (listen_res != 0) {
+        sock.closesocket(s);
+        return listener;
+    }
+
+    listener.handle = s;
+    listener.is_listening = true;
+    return listener;
+}
+
+fn TcpStream TcpListener.accept_client() {
+    TcpStream client;
+    client.handle = -1;
+    client.is_connected = false;
+
+    if (!this->is_listening || this->handle == -1) {
+        return client;
+    }
+
+    sock.SockAddrIn client_sa;
+    int addr_len = 16;
+    int client_sock = sock.accept(this->handle, (void*)&client_sa, &addr_len);
+    if (client_sock == -1) {
+        return client;
+    }
+
+    client.handle = client_sock;
+    client.is_connected = true;
+    return client;
+}
+
+fn void TcpListener.close() {
+    if (this->handle != -1) {
+        sock.closesocket(this->handle);
+        this->handle = -1;
+        this->is_listening = false;
+    }
+}

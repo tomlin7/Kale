@@ -611,10 +611,11 @@ class LLVMEmitter:
             arg_values: list[ir.Value] = []
             for i, arg in enumerate(expr.arguments):
                 val = self._emit_expression(arg)
-                expected_type = expr.function.parameters[i].type
-                val = self._coerce_type(val, arg.type, expected_type)
-                if isinstance(expected_type, StructTypeSymbol) and isinstance(val.type, ir.PointerType):
-                    val = self._builder.load(val)
+                if i < len(expr.function.parameters):
+                    expected_type = expr.function.parameters[i].type
+                    val = self._coerce_type(val, arg.type, expected_type)
+                    if isinstance(expected_type, StructTypeSymbol) and isinstance(val.type, ir.PointerType):
+                        val = self._builder.load(val)
                 arg_values.append(val)
 
             call_name = f"call_{fn_name}" if llvm_func.function_type.return_type != ir.VoidType() else ""

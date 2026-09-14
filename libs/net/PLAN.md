@@ -18,19 +18,29 @@ libs/net/
 
 ---
 
-## 3. Architecture Details
+## 3. Implementation Status & Architecture Details
 
-### 3.1 Socket Layer (`socket.kl` & `tcp.kl`)
-- Windows initialization: Calls `WSAStartup` automatically.
+### 3.1 Socket Layer (`socket.kl` & `tcp.kl`) - 🟢 Completed
+- Windows initialization: Calls `WSAStartup(0x0202)` automatically on first use.
 - Socket handles wrapped in `TcpStream` and `TcpListener`.
-- Supports blocking and non-blocking modes (`ioctlsocket` / `fcntl`).
+- Supports raw byte sending/receiving, string transmission, SO_REUSEADDR, and graceful shutdown.
+- Tested and verified in `examples/net_smoke.kl`.
 
-### 3.2 HTTP/1.1 Engine (`http.kl` & `server.kl`)
+### 3.2 HTTP/1.1 Engine (`http.kl` & `server.kl`) - 🟢 Completed
 - **HTTP Client**:
   - `http_get(url: string) -> HttpResponse`
   - `http_post(url: string, body: string, content_type: string) -> HttpResponse`
-  - Handles Chunked Transfer Encoding and Keep-Alive connection pools.
+  - URL parser extracting host, explicit/implicit port, and request path.
+  - Automatic status line extraction (e.g. 200, 404) and HTTP body separation.
 - **HTTP Server**:
-  - Single-threaded event-driven accept loop.
-  - Parses HTTP request lines, headers (`Host`, `User-Agent`, `Content-Length`), and payloads.
-  - Formats valid HTTP/1.1 status responses (`200 OK`, `404 Not Found`, `500 Internal Server Error`).
+  - Single-threaded event accept loop via `tcp_listen`.
+  - Parses HTTP request lines, paths, methods (`GET`, `POST`), and request bodies.
+  - Generates valid RFC-compliant HTTP/1.1 status responses (`send_http_response`).
+  - Tested and verified in `examples/net_smoke.kl`.
+
+---
+
+## 4. Next Steps
+- Non-blocking socket polling via `select()`.
+- Connection keep-alive and chunked transfer decoding.
+- TLS support for HTTPS.

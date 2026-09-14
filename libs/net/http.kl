@@ -1,0 +1,222 @@
+// libs/net/http.kl
+// Lightweight HTTP/1.1 Client for Kale
+
+import "libs/net/tcp.kl" as tcp;
+import "packages/std/text/string_builder.kl" as sb;
+
+extern int strlen(string s);
+extern void* malloc(int size);
+
+struct HttpResponse {
+    int status_code;
+    string status_text;
+    string body;
+    int content_length;
+}
+
+fn void HttpResponse.init() {
+    this->status_code = 0;
+    this->status_text = "";
+    this->body = "";
+    this->content_length = 0;
+}
+
+// Minimal URL parser for format "http://host:port/path" or "host:port/path" or "host/path"
+struct ParsedUrl {
+    string host;
+    int port;
+    string path;
+}
+
+fn ParsedUrl parse_url(string url) {
+    ParsedUrl res;
+    res.host = "127.0.0.1";
+    res.port = 80;
+    res.path = "/";
+
+    int len = strlen(url);
+    if (len == 0) {
+        return res;
+    }
+
+    int idx = 0;
+    // Strip "http://" if present
+    if (len >= 7) {
+        if (url[0] == 'h' && url[1] == 't' && url[2] == 't' && url[3] == 'p' && url[4] == ':' && url[5] == '/' && url[6] == '/') {
+            idx = 7;
+        }
+    }
+
+    // Extract host
+    sb.StringBuilder host_sb;
+    host_sb.init(32);
+
+    while (idx < len && url[idx] != ':' && url[idx] != '/') {
+        host_sb.append_char(url[idx]);
+        idx = idx + 1;
+    }
+    if (host_sb.len() > 0) {
+        res.host = host_sb.to_string();
+    }
+    host_sb.destroy();
+
+    // Check for explicit port :PORT
+    if (idx < len && url[idx] == ':') {
+        idx = idx + 1;
+        int p = 0;
+        while (idx < len && url[idx] >= '0' && url[idx] <= '9') {
+            int d = (int)url[idx] - 48;
+            p = (p * 10) + d;
+            idx = idx + 1;
+        }
+        if (p > 0) {
+            res.port = p;
+        }
+    }
+
+    // Extract path
+    if (idx < len && url[idx] == '/') {
+        sb.StringBuilder path_sb;
+        path_sb.init(64);
+        while (idx < len) {
+            path_sb.append_char(url[idx]);
+            idx = idx + 1;
+        }
+        res.path = path_sb.to_string();
+        path_sb.destroy();
+    } else {
+        res.path = "/";
+    }
+
+    return res;
+}
+
+fn HttpResponse http_request(string method, string url, string body, string content_type) {
+    HttpResponse resp;
+    resp.init();
+
+    ParsedUrl parsed = parse_url(url);
+    tcp.TcpStream stream = tcp.tcp_connect(parsed.host, parsed.port);
+    if (!stream.is_connected) {
+        return resp;
+    }
+
+    // Build HTTP/1.1 request wire payload using CRLF (char 13 and char 10)
+    sb.StringBuilder req;
+    req.init(512);
+
+    req.append(method);
+    req.append(" ");
+    req.append(parsed.path);
+    req.append(" HTTP/1.1\r\n");
+
+    req.append("Host: ");
+    req.append(parsed.host);
+    req.append("\r\n");
+
+    req.append("User-Agent: Kale-HttpClient/0.1\r\n");
+    req.append("Connection: close\r\n");
+
+    int body_len = strlen(body);
+    if (body_len > 0) {
+        if (strlen(content_type) > 0) {
+            req.append("Content-Type: ");
+            req.append(content_type);
+            req.append("\r\n");
+        }
+        req.append("Content-Length: ");
+        req.append_int(body_len);
+        req.append("\r\n\r\n");
+        req.append(body);
+    } else {
+        req.append("\r\n");
+    }
+
+    string req_str = req.to_string();
+    req.destroy();
+
+    stream.send_string(req_str);
+    free((void*)req_str);
+
+    // Read full HTTP response until connection close
+    sb.StringBuilder resp_sb;
+    resp_sb.init(1024);
+
+    char* read_buf = alloc(char, 2048);
+    bool reading = true;
+
+    while (reading) {
+        int n = stream.read_bytes((void*)read_buf, 2047);
+        if (n <= 0) {
+            reading = false;
+        } else {
+            read_buf[n] = (char)0;
+            resp_sb.append((string)read_buf);
+        }
+    }
+    free(read_buf);
+    stream.close();
+
+    string raw_resp = resp_sb.to_string();
+    resp_sb.destroy();
+
+    int resp_len = strlen(raw_resp);
+    if (resp_len < 12) {
+        return resp;
+    }
+
+    // Parse status line: HTTP/1.1 200 OK
+    int space_idx = -1;
+    int i = 0;
+    while (i < resp_len && i < 20) {
+        if (raw_resp[i] == ' ') {
+            space_idx = i;
+            i = 20; // break
+        }
+        i = i + 1;
+    }
+
+    if (space_idx > 0 && space_idx + 4 <= resp_len) {
+        int c1 = ((int)raw_resp[space_idx + 1] - 48) * 100;
+        int c2 = ((int)raw_resp[space_idx + 2] - 48) * 10;
+        int c3 = (int)raw_resp[space_idx + 3] - 48;
+        resp.status_code = c1 + c2 + c3;
+    }
+
+    // Find end of headers (\r\n\r\n -> chars 13, 10, 13, 10)
+    int body_start = -1;
+    int j = 0;
+    while (j < resp_len - 3) {
+        if ((int)raw_resp[j] == 13 && (int)raw_resp[j + 1] == 10 && (int)raw_resp[j + 2] == 13 && (int)raw_resp[j + 3] == 10) {
+            body_start = j + 4;
+            j = resp_len; // break
+        }
+        j = j + 1;
+    }
+
+    if (body_start != -1 && body_start < resp_len) {
+        sb.StringBuilder body_sb;
+        body_sb.init(resp_len - body_start + 1);
+        int b_i = body_start;
+        while (b_i < resp_len) {
+            body_sb.append_char(raw_resp[b_i]);
+            b_i = b_i + 1;
+        }
+        resp.body = body_sb.to_string();
+        resp.content_length = body_sb.len();
+        body_sb.destroy();
+    } else {
+        resp.body = "";
+        resp.content_length = 0;
+    }
+
+    return resp;
+}
+
+fn HttpResponse http_get(string url) {
+    return http_request("GET", url, "", "");
+}
+
+fn HttpResponse http_post(string url, string body, string content_type) {
+    return http_request("POST", url, body, content_type);
+}

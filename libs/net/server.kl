@@ -1,0 +1,154 @@
+// libs/net/server.kl
+// Lightweight Single-Threaded HTTP/1.1 Server for Kale
+
+import "libs/net/tcp.kl" as tcp;
+import "packages/std/text/string_builder.kl" as sb;
+
+extern int strlen(string s);
+extern void* malloc(int size);
+
+struct HttpRequest {
+    string method;
+    string path;
+    string body;
+    int content_length;
+}
+
+fn void HttpRequest.init() {
+    this->method = "GET";
+    this->path = "/";
+    this->body = "";
+    this->content_length = 0;
+}
+
+struct HttpServer {
+    tcp.TcpListener listener;
+    string host;
+    int port;
+    bool is_running;
+}
+
+fn void HttpServer.init() {
+    this->listener.init();
+    this->host = "127.0.0.1";
+    this->port = 8080;
+    this->is_running = false;
+}
+
+fn HttpServer http_listen(string host, int port) {
+    HttpServer server;
+    server.host = host;
+    server.port = port;
+    server.listener = tcp.tcp_listen(host, port, 128);
+    server.is_running = server.listener.is_listening;
+    return server;
+}
+
+// Parses raw incoming HTTP wire text into HttpRequest
+fn HttpRequest parse_http_request(string raw_req) {
+    HttpRequest req;
+    req.init();
+
+    int len = strlen(raw_req);
+    if (len < 5) {
+        return req;
+    }
+
+    // Parse Method (e.g. GET, POST)
+    sb.StringBuilder method_sb;
+    method_sb.init(8);
+    int idx = 0;
+    while (idx < len && raw_req[idx] != ' ') {
+        method_sb.append_char(raw_req[idx]);
+        idx = idx + 1;
+    }
+    if (method_sb.len() > 0) {
+        req.method = method_sb.to_string();
+    }
+    method_sb.destroy();
+
+    // Skip spaces
+    while (idx < len && raw_req[idx] == ' ') {
+        idx = idx + 1;
+    }
+
+    // Parse Path (e.g. /index.html or /api/hello)
+    sb.StringBuilder path_sb;
+    path_sb.init(64);
+    while (idx < len && raw_req[idx] != ' ') {
+        path_sb.append_char(raw_req[idx]);
+        idx = idx + 1;
+    }
+    if (path_sb.len() > 0) {
+        req.path = path_sb.to_string();
+    }
+    path_sb.destroy();
+
+    // Find end of headers (\r\n\r\n -> chars 13, 10, 13, 10)
+    int body_start = -1;
+    int j = 0;
+    while (j < len - 3) {
+        if ((int)raw_req[j] == 13 && (int)raw_req[j + 1] == 10 && (int)raw_req[j + 2] == 13 && (int)raw_req[j + 3] == 10) {
+            body_start = j + 4;
+            j = len; // break
+        }
+        j = j + 1;
+    }
+
+    if (body_start != -1 && body_start < len) {
+        sb.StringBuilder body_sb;
+        body_sb.init(len - body_start + 1);
+        int b_i = body_start;
+        while (b_i < len) {
+            body_sb.append_char(raw_req[b_i]);
+            b_i = b_i + 1;
+        }
+        req.body = body_sb.to_string();
+        req.content_length = body_sb.len();
+        body_sb.destroy();
+    } else {
+        req.body = "";
+        req.content_length = 0;
+    }
+
+    return req;
+}
+
+// Sends an HTTP response with status code, headers, and body
+fn void send_http_response(tcp.TcpStream* client, int status_code, string status_text, string content_type, string body) {
+    sb.StringBuilder res;
+    res.init(512);
+
+    res.append("HTTP/1.1 ");
+    res.append_int(status_code);
+    res.append(" ");
+    res.append(status_text);
+    res.append("\r\n");
+
+    res.append("Server: Kale-HttpServer/0.1\r\n");
+    res.append("Content-Type: ");
+    res.append(content_type);
+    res.append("\r\n");
+
+    res.append("Connection: close\r\n");
+
+    int body_len = strlen(body);
+    res.append("Content-Length: ");
+    res.append_int(body_len);
+    res.append("\r\n\r\n");
+
+    if (body_len > 0) {
+        res.append(body);
+    }
+
+    string res_str = res.to_string();
+    res.destroy();
+
+    client->send_string(res_str);
+    free((void*)res_str);
+}
+
+fn void HttpServer.close() {
+    this->listener.close();
+    this->is_running = false;
+}

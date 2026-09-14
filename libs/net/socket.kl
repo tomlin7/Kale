@@ -1,0 +1,94 @@
+// libs/net/socket.kl
+// Winsock2 (ws2_32.dll) FFI Declarations and Socket Constants for Kale
+
+// Standard Address Families
+int AF_UNSPEC() { return 0; }
+int AF_INET()   { return 2; }
+int AF_INET6()  { return 23; }
+
+// Socket Types
+int SOCK_STREAM()    { return 1; }
+int SOCK_DGRAM()     { return 2; }
+int SOCK_RAW()       { return 3; }
+
+// Protocols
+int IPPROTO_IP()   { return 0; }
+int IPPROTO_TCP()  { return 6; }
+int IPPROTO_UDP()  { return 17; }
+
+// Socket Options & Levels
+int SOL_SOCKET()    { return 65535; } // 0xFFFF
+int SO_REUSEADDR()  { return 4; }
+int SO_KEEPALIVE()  { return 8; }
+int SO_BROADCAST()  { return 32; }
+int SO_RCVTIMEO()   { return 4102; }
+int SO_SNDTIMEO()   { return 4101; }
+
+// Error Constants
+int SOCKET_ERROR()          { return -1; }
+int INVALID_SOCKET_HANDLE() { return -1; }
+
+// Raw representation of sockaddr_in (16 bytes total)
+// Matches Windows struct sockaddr_in { short sin_family; u_short sin_port; struct in_addr sin_addr; char sin_zero[8]; }
+struct SockAddrIn {
+    int p0; // 8 bytes: sin_family (2) | sin_port (2) | sin_addr (4)
+    int p1; // 8 bytes: sin_zero[8]
+}
+
+fn SockAddrIn make_sockaddr_in(int ip_bytes, int port_host_order) {
+    SockAddrIn sa;
+    sa.p0 = 0;
+    sa.p1 = 0;
+
+    // sin_family = AF_INET (2)
+    int family = 2;
+
+    // htons(port_host_order)
+    int p_hi = (port_host_order & 255) << 8;
+    int p_lo = (port_host_order >> 8) & 255;
+    int port_net = p_hi | p_lo;
+
+    // pack family (bits 0..15), port (bits 16..31), ip (bits 32..63)
+    int part_family = family & 65535;
+    int part_port = (port_net & 65535) << 16;
+    int part_ip = (ip_bytes & 4294967295) << 32;
+
+    sa.p0 = part_family | part_port | part_ip;
+    sa.p1 = 0;
+    return sa;
+}
+
+// ============================================================================
+// Winsock2 API Function Declarations (ws2_32.dll)
+// ============================================================================
+extern int WSAStartup(int wVersionRequested, void* lpWSAData);
+extern int WSACleanup();
+extern int WSAGetLastError();
+
+extern int socket(int af, int type_val, int protocol);
+extern int closesocket(int s);
+extern int bind(int s, void* name, int namelen);
+extern int listen(int s, int backlog);
+extern int accept(int s, void* addr, int* addrlen);
+extern int connect(int s, void* name, int namelen);
+extern int send(int s, void* buf, int len, int flags);
+extern int recv(int s, void* buf, int len, int flags);
+extern int shutdown(int s, int how);
+extern int setsockopt(int s, int level, int optname, void* optval, int optlen);
+extern int getsockopt(int s, int level, int optname, void* optval, int* optlen);
+extern int ioctlsocket(int s, int cmd, int* argp);
+
+extern int inet_addr(string cp);
+extern int htons(int hostshort);
+extern int ntohs(int netshort);
+extern int htonl(int hostlong);
+extern int ntohl(int netlong);
+
+extern void* malloc(int size);
+
+fn int init_winsock() {
+    void* wsa_data = malloc(512);
+    int res = WSAStartup(0x0202, wsa_data);
+    free(wsa_data);
+    return res;
+}
