@@ -28,11 +28,28 @@ kale/
 │   ├── web/                      # Server Router & Template Engine (v0.0.1)
 │   └── sql/                      # SQLite3 Database Driver & Query Builder (v0.0.1)
 ├── editor/                       # Tier 3: Kale Flagship Code Editor / IDE (v0.1.0 -> v0.2.0)
+│   └── supercharges/             # Split panes, LSP client, fuzzy file finder
 ├── vcs/                          # Tier 3: Distributed Version Control System (v0.0.1)
-├── sys/                          # Tier 4: Low-Level OS & Kernel (Future)
+├── apps/
+│   ├── blog/                     # ⏸️ POSTPONED (Awaiting explicit user trigger)
+│   ├── kv/                       # In-memory Redis-compatible key-value store (kaledis)
+│   └── lsp/                      # Language Server Protocol (LSP) Server
+├── tools/
+│   └── pkg/                      # Package manager & build tool (kale-pm)
+├── sys/                          # Tier 4: Low-Level OS & Bare-Metal Kernel
 │   ├── boot/                     # Multiboot / UEFI Bootloader
 │   ├── kernel/                   # Microkernel in Kale + ASM
-│   └── drivers/                  # Hardware Abstraction Drivers
+│   ├── drivers/                  # Hardware Abstraction Drivers
+│   ├── sysmon/                   # Terminal & Process Monitor
+│   └── dig/                      # DNS packet resolver & CLI
+├── libs/                         # Foundation Libraries (Expanded)
+│   ├── term/                     # Virtual terminal emulator & VT100 parser
+│   ├── fs_watch/                 # Cross-platform filesystem watcher
+│   ├── audio/                    # Low-latency PCM sound & audio mixing engine
+│   ├── vg/                       # Vector graphics & 2D canvas API
+│   ├── physics/                  # 2D rigid body physics engine
+│   └── tls/                      # Cryptography suite & TLS 1.3
+├── website/                      # Renaissance-themed Next.js Monorepo Portal
 ├── plans/                        # Master Planning & Milestone Directives
 └── tests/                        # Comprehensive E2E & Unit Test Suites
 ```

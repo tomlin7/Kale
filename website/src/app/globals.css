@@ -1,0 +1,39 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --bg-deep: #050814;
+    --bg-card: #0c1328;
+    --bg-card-hover: #121c3b;
+    --border-subtle: #1c274c;
+    --border-highlight: #b91c1c;
+    --text-primary: #f8fafc;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+    --crimson: #b91c1c;
+    --crimson-glow: rgba(185, 28, 28, 0.4);
+    --gold: #d97706;
+    --gold-glow: rgba(217, 119, 6, 0.25);
+  }
+
+  body {
+    background-color: var(--bg-deep);
+    color: var(--text-primary);
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    overflow-x: hidden;
+  }
+
+  /* Classical Renaissance Serif Styling */
+  .font-renaissance {
+    font-family: "Cinzel", "Playfair Display", "Georgia", serif;
+  }
+}
+
+/* Custom Scrollbar for horizontal ribbon */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

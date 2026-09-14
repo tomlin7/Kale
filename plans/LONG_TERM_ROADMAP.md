@@ -78,3 +78,27 @@ Taking Kale directly to bare-metal x86_64 hardware:
    - Interrupt handling: IDT, PIC/APIC controllers, timer interrupts.
    - Process scheduler: Preemptive multitasking, context switching in ASM.
 3. **Framebuffer Display (`sys/drivers`)**: Linear framebuffer driver rendering Kale UI directly onto bare hardware without an underlying OS.
+4. **Terminal & Process Monitor (`sys/sysmon`)**: Bare-metal & native real-time CPU, memory, thread, and process inspection TUI tool.
+5. **DNS Resolver & Diagnostic CLI (`sys/dig`)**: Low-level packet-crafted DNS query tool and resolver for systems networking.
+
+---
+
+## ⚡ Pillar 5: Low-Level Foundation & Terminal Emulation
+1. **Terminal Core (`libs/term`)**: Virtual terminal emulator, ANSI/VT100 escape sequence parser, and pty abstraction for terminal-based apps.
+2. **Filesystem Watcher (`libs/fs_watch`)**: Real-time cross-platform filesystem event notification engine (`ReadDirectoryChangesW`, `inotify`, `kqueue`).
+3. **Low-Latency Audio Engine (`libs/audio`)**: Native audio mixing, PCM stream processing, and multi-channel sound synthesis via WASAPI/CoreAudio/ALSA.
+4. **Vector Graphics & Canvas 2D (`libs/vg`)**: Anti-aliased cubic Bézier curves, path rasterization, stroke caps, and vector rendering.
+5. **2D Physics Engine (`libs/physics` / `games/arcade`)**: Rigid-body collision detection, spatial hashing, GJK/EPA, impulse resolution, and interactive game physics.
+6. **TLS & Cryptography Suite (`libs/tls`)**: Native implementation of ChaCha20-Poly1305, AES-GCM, SHA-256/512, and TLS 1.3 handshake state machine.
+7. **High-Performance In-Memory Key-Value Store (`apps/kv` / `kaledis`)**: RESP-compatible in-memory database with append-only persistence and concurrent lock-free skip lists.
+
+---
+
+## 🛠️ Pillar 6: Developer Tooling & Ecosystem Infrastructure
+1. **Language Server Protocol Server (`apps/lsp` / `tools/lsp`)**: High-performance LSP server delivering jump-to-definition, hover docs, completions, and real-time semantic diagnostics.
+2. **Editor Supercharges (`editor/`)**: Deep LSP client integration, fuzzy project finder, tree-sitter or native Kale AST folding, Git gutter indicators, and split panes.
+3. **Package Manager & Build Automation (`kale-pm` / `tools/pkg`)**: Monorepo dependency resolution, package registry client, lockfiles, and hermetic reproducible build pipeline.
+4. **Web & Community**:
+   - High-throughput CMS & web publishing platform (`apps/blog` - *⏸️ Postponed until explicit command*).
+   - Kale Official Showcase Website (`website/`): Next.js Renaissance-themed portal highlighting all monorepo projects, architecture blueprints, interactive API specs, and benchmarks.
+
