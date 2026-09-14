@@ -1,0 +1,60 @@
+// Physical Memory Manager (Bitmap Page Allocator)
+// Page size: 4096 bytes (4KB)
+struct PMM {
+    bitmap: *uint64,
+    total_frames: uint64,
+    used_frames: uint64,
+    bitmap_size_words: uint64,
+}
+
+fn pmm_init(bitmap_buffer: *uint64, total_memory_bytes: uint64) -> PMM {
+    let frames: uint64 = total_memory_bytes / 4096;
+    let words: uint64 = frames / 64;
+    
+    // Clear bitmap (all free)
+    let i: uint64 = 0;
+    while i < words {
+        bitmap_buffer[i] = 0 as uint64;
+        i = i + 1;
+    }
+    
+    let pmm: PMM = PMM {
+        bitmap: bitmap_buffer,
+        total_frames: frames,
+        used_frames: 0,
+        bitmap_size_words: words,
+    };
+    return pmm;
+}
+
+fn pmm_alloc_frame(pmm: *PMM) -> uint64 {
+    let word_idx: uint64 = 0;
+    while word_idx < pmm.bitmap_size_words {
+        if pmm.bitmap[word_idx] != 0xFFFFFFFFFFFFFFFF as uint64 {
+            // Found word with free bit
+            let bit_idx: uint64 = 0;
+            while bit_idx < 64 {
+                let mask: uint64 = (1 as uint64) << bit_idx;
+                if (pmm.bitmap[word_idx] & mask) == (0 as uint64) {
+                    pmm.bitmap[word_idx] = pmm.bitmap[word_idx] | mask;
+                    pmm.used_frames = pmm.used_frames + 1;
+                    let frame_number: uint64 = (word_idx * 64) + bit_idx;
+                    return frame_number * 4096;
+                }
+                bit_idx = bit_idx + 1;
+            }
+        }
+        word_idx = word_idx + 1;
+    }
+    return 0; // Out of memory
+}
+
+fn pmm_free_frame(pmm: *PMM, frame_addr: uint64) -> void {
+    let frame_number: uint64 = frame_addr / 4096;
+    let word_idx: uint64 = frame_number / 64;
+    let bit_idx: uint64 = frame_number % 64;
+    let mask: uint64 = (1 as uint64) << bit_idx;
+    
+    pmm.bitmap[word_idx] = pmm.bitmap[word_idx] & (~mask);
+    pmm.used_frames = pmm.used_frames - 1;
+}

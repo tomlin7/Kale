@@ -1,0 +1,44 @@
+// 16550 UART Serial Driver for Kernel Debugging (COM1: 0x3F8)
+struct SerialPort {
+    port: uint16,
+}
+
+fn serial_init(port: uint16) -> SerialPort {
+    // Disable interrupts
+    outb(port + 1 as uint16, 0x00 as uint8);
+    // Enable DLAB (set baud rate divisor)
+    outb(port + 3 as uint16, 0x80 as uint8);
+    // Set divisor to 3 (38400 baud): low byte 3, high byte 0
+    outb(port + 0 as uint16, 0x03 as uint8);
+    outb(port + 1 as uint16, 0x00 as uint8);
+    // 8 bits, no parity, one stop bit
+    outb(port + 3 as uint16, 0x03 as uint8);
+    // Enable FIFO, clear with 14-byte threshold
+    outb(port + 2 as uint16, 0xC7 as uint8);
+    // IRQs enabled, RTS/DSR set
+    outb(port + 4 as uint16, 0x0B as uint8);
+    
+    let sp: SerialPort = SerialPort { port: port };
+    return sp;
+}
+
+fn is_transmit_empty(sp: *SerialPort) -> bool {
+    let status: uint8 = inb(sp.port + 5 as uint16);
+    return (status & 0x20 as uint8) != (0 as uint8);
+}
+
+fn serial_write_byte(sp: *SerialPort, b: uint8) -> void {
+    while !is_transmit_empty(sp) {
+        // Wait for transmit FIFO empty
+    }
+    outb(sp.port, b);
+}
+
+fn serial_write_string(sp: *SerialPort, s: string) -> void {
+    let ptr: *uint8 = s as *uint8;
+    let i: int32 = 0;
+    while ptr[i] != (0 as uint8) {
+        serial_write_byte(sp, ptr[i]);
+        i = i + 1;
+    }
+}
