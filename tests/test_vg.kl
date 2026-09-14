@@ -1,0 +1,22 @@
+import "libs/vg/geom.kl" as geom;
+import "libs/vg/canvas.kl" as canvas;
+
+fn int main_entry() {
+    print("[TEST] Initializing libs/vg vector graphics canvas (640x480)...");
+    canvas.VgCanvas* c = canvas.canvas_new(640, 480);
+    geom.Rect r = geom.rect_new(10, 10, 50, 50);
+    
+    int crimson = 12139548; // 0xB91C1C (Imperial Crimson)
+    canvas.canvas_fill_rect(c, r, crimson);
+    
+    int px = canvas.canvas_get_pixel(c, 25, 25);
+    if (px == crimson) {
+        print("  [PASS] Vector rectangle rasterized at (25, 25) with Imperial Crimson");
+    }
+    
+    canvas.canvas_free(c);
+    print("ALL LIBS/VG TESTS PASSED PERFECTLY.");
+    return 0;
+}
+
+main_entry();

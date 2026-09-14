@@ -1,0 +1,53 @@
+import "libs/vg/geom.kl" as geom;
+
+struct VgCanvas {
+    int width;
+    int height;
+    int* pixels;
+}
+
+fn VgCanvas* canvas_new(int width, int height) {
+    VgCanvas* c = alloc(VgCanvas);
+    c->width = width;
+    c->height = height;
+    int total = width * height;
+    c->pixels = alloc(int, total);
+    
+    int i = 0;
+    while (i < total) {
+        c->pixels[i] = 0; // Transparent / Black
+        i = i + 1;
+    }
+    return c;
+}
+
+fn void canvas_free(VgCanvas* c) {
+    if (c != (VgCanvas*)0) {
+        if (c->pixels != (int*)0) {
+            free(c->pixels);
+        }
+        free(c);
+    }
+}
+
+fn void canvas_fill_rect(VgCanvas* c, geom.Rect r, int color) {
+    int y = r.y;
+    while (y < r.y + r.h && y < c->height) {
+        int x = r.x;
+        while (x < r.x + r.w && x < c->width) {
+            if (x >= 0 && y >= 0) {
+                int idx = (y * c->width) + x;
+                c->pixels[idx] = color;
+            }
+            x = x + 1;
+        }
+        y = y + 1;
+    }
+}
+
+fn int canvas_get_pixel(VgCanvas* c, int x, int y) {
+    if (x >= 0 && x < c->width && y >= 0 && y < c->height) {
+        return c->pixels[(y * c->width) + x];
+    }
+    return 0;
+}

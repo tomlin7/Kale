@@ -1,0 +1,27 @@
+struct Point {
+    int x;
+    int y;
+}
+
+struct Rect {
+    int x;
+    int y;
+    int w;
+    int h;
+}
+
+fn Point point_new(int x, int y) {
+    Point p;
+    p.x = x;
+    p.y = y;
+    return p;
+}
+
+fn Rect rect_new(int x, int y, int w, int h) {
+    Rect r;
+    r.x = x;
+    r.y = y;
+    r.w = w;
+    r.h = h;
+    return r;
+}
