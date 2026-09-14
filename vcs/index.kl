@@ -1,0 +1,184 @@
+// vcs/index.kl
+// Staging Area Index (.kale/index) for Kale VCS
+
+import "packages/std/text/string_builder.kl" as sb;
+import "packages/std/fs/file_util.kl" as fu;
+import "packages/std/fs/path.kl" as path;
+
+extern void* malloc(int size);
+extern int strlen(string s);
+extern int strcmp(string s1, string s2);
+
+struct IndexEntry {
+    string mode;
+    string id;
+    int file_size;
+    string file_path;
+}
+
+struct Index {
+    IndexEntry* entries;
+    int count;
+    int capacity;
+}
+
+fn void Index.init() {
+    this->capacity = 16;
+    this->count = 0;
+    this->entries = alloc(IndexEntry, 16);
+}
+
+fn int Index.find_entry(string file_path) {
+    for (int i = 0; i < this->count; i++) {
+        if (strcmp(this->entries[i].file_path, file_path) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+fn void Index.add_entry(string mode, string id, int file_size, string file_path) {
+    int existing = this->find_entry(file_path);
+    if (existing >= 0) {
+        this->entries[existing].mode = mode;
+        this->entries[existing].id = id;
+        this->entries[existing].file_size = file_size;
+        return;
+    }
+
+    if (this->count >= this->capacity) {
+        int new_cap = this->capacity * 2;
+        IndexEntry* new_entries = alloc(IndexEntry, new_cap);
+        for (int i = 0; i < this->count; i++) {
+            new_entries[i] = this->entries[i];
+        }
+        free(this->entries);
+        this->entries = new_entries;
+        this->capacity = new_cap;
+    }
+
+    this->entries[this->count].mode = mode;
+    this->entries[this->count].id = id;
+    this->entries[this->count].file_size = file_size;
+    this->entries[this->count].file_path = file_path;
+    this->count++;
+}
+
+fn string Index.serialize() {
+    sb.StringBuilder b;
+    b.init(this->count * 96 + 32);
+    // Header: KALE_INDEX_V1
+    b.append_line("KALE_INDEX_V1");
+    b.append_int(this->count);
+    b.append_char((char)10);
+
+    for (int i = 0; i < this->count; i++) {
+        b.append(this->entries[i].mode);
+        b.append(" ");
+        b.append(this->entries[i].id);
+        b.append(" ");
+        b.append_int(this->entries[i].file_size);
+        b.append(" ");
+        b.append(this->entries[i].file_path);
+        b.append_char((char)10);
+    }
+
+    string res = b.to_string();
+    b.destroy();
+    return res;
+}
+
+fn bool Index.save(string repo_root) {
+    string index_path = path.join(repo_root, ".kale/index");
+    string data = this->serialize();
+    return fu.write_string(index_path, data);
+}
+
+fn void Index.load(string repo_root) {
+    this->count = 0;
+    string index_path = path.join(repo_root, ".kale/index");
+    if (!fu.exists(index_path)) {
+        return;
+    }
+
+    string content = fu.read_to_string(index_path);
+    int len = strlen(content);
+    if (len == 0) {
+        return;
+    }
+
+    char* b = (char*)content;
+    int idx = 0;
+
+    // Read header line
+    while (idx < len && b[idx] != (char)10) {
+        idx++;
+    }
+    if (idx < len && b[idx] == (char)10) {
+        idx++;
+    }
+
+    // Read count line
+    while (idx < len && b[idx] != (char)10) {
+        idx++;
+    }
+    if (idx < len && b[idx] == (char)10) {
+        idx++;
+    }
+
+    // Read each entry line: mode id size path
+    while (idx < len) {
+        if (b[idx] == (char)10 || b[idx] == (char)13) {
+            idx++;
+            continue;
+        }
+
+        // 1. Mode
+        int m_start = idx;
+        while (idx < len && b[idx] != (char)32 && b[idx] != (char)10) { idx++; }
+        int m_len = idx - m_start;
+        char* mode_buf = (char*)malloc(m_len + 1);
+        for (int i = 0; i < m_len; i++) { mode_buf[i] = b[m_start + i]; }
+        mode_buf[m_len] = (char)0;
+        if (idx < len && b[idx] == (char)32) { idx++; }
+
+        // 2. ID
+        int id_start = idx;
+        while (idx < len && b[idx] != (char)32 && b[idx] != (char)10) { idx++; }
+        int id_len = idx - id_start;
+        char* id_buf = (char*)malloc(id_len + 1);
+        for (int i = 0; i < id_len; i++) { id_buf[i] = b[id_start + i]; }
+        id_buf[id_len] = (char)0;
+        if (idx < len && b[idx] == (char)32) { idx++; }
+
+        // 3. Size
+        int sz_val = 0;
+        while (idx < len && b[idx] >= (char)48 && b[idx] <= (char)57) {
+            sz_val = (sz_val * 10) + (((int)b[idx]) - 48);
+            idx++;
+        }
+        if (idx < len && b[idx] == (char)32) { idx++; }
+
+        // 4. Path
+        int p_start = idx;
+        while (idx < len && b[idx] != (char)10 && b[idx] != (char)13) { idx++; }
+        int p_len = idx - p_start;
+        char* p_buf = (char*)malloc(p_len + 1);
+        for (int i = 0; i < p_len; i++) { p_buf[i] = b[p_start + i]; }
+        p_buf[p_len] = (char)0;
+
+        this->add_entry((string)mode_buf, (string)id_buf, sz_val, (string)p_buf);
+
+        while (idx < len && (b[idx] == (char)10 || b[idx] == (char)13)) {
+            idx++;
+        }
+    }
+}
+
+fn void Index.destroy() {
+    if (this->capacity > 0) {
+        free(this->entries);
+        this->capacity = 0;
+        this->count = 0;
+    }
+}

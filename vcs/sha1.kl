@@ -1,0 +1,131 @@
+// vcs/sha1.kl
+// Pure Kale SHA-1 Implementation for Content-Addressable Object IDs
+
+extern void* malloc(int size);
+extern int strlen(string s);
+
+fn void u32_to_hex8(int val, char* out_buf, int offset) {
+    char* hex_digits = (char*)"0123456789abcdef";
+    for (int i = 7; i >= 0; i--) {
+        int nibble = (val >> (i * 4)) & 15;
+        out_buf[offset + (7 - i)] = hex_digits[nibble];
+    }
+}
+
+struct Sha1Context {
+    int h0;
+    int h1;
+    int h2;
+    int h3;
+    int h4;
+}
+
+fn int sha1_rol(int val, int bits) {
+    int v = val & 4294967295;
+    int left = (v << bits) & 4294967295;
+    int right = (v >> (32 - bits)) & 4294967295;
+    return left | right;
+}
+
+fn string sha1_hex(string data, int data_len) {
+    // Standard SHA-1 initial state constants
+    int h0 = 1732584193; // 0x67452301
+    int h1 = 4023233417; // 0xEFCDAB89
+    int h2 = 2562383102; // 0x98BADCFE
+    int h3 = 271733878;  // 0x10325476
+    int h4 = 3285377520; // 0xC3D2E1F0
+
+    // Compute padded length: data_len + 1 byte (0x80) + padding zeros + 8 bytes bit length
+    int bit_len = data_len * 8;
+    int pad_len = data_len + 1;
+    while ((pad_len % 64) != 56) {
+        pad_len++;
+    }
+    int total_len = pad_len + 8;
+
+    char* buf = (char*)malloc(total_len);
+    char* src = (char*)data;
+    for (int i = 0; i < data_len; i++) {
+        buf[i] = src[i];
+    }
+    buf[data_len] = (char)128; // 0x80
+
+    for (int i = data_len + 1; i < total_len; i++) {
+        buf[i] = (char)0;
+    }
+
+    // Append 64-bit big-endian length
+    buf[total_len - 4] = (char)((bit_len >> 24) & 255);
+    buf[total_len - 3] = (char)((bit_len >> 16) & 255);
+    buf[total_len - 2] = (char)((bit_len >> 8) & 255);
+    buf[total_len - 1] = (char)(bit_len & 255);
+
+    // Process 64-byte chunks
+    int* w = alloc(int, 80);
+
+    for (int chunk = 0; chunk < total_len; chunk = chunk + 64) {
+        for (int i = 0; i < 16; i++) {
+            int off = chunk + (i * 4);
+            int b0 = ((int)buf[off]) & 255;
+            int b1 = ((int)buf[off + 1]) & 255;
+            int b2 = ((int)buf[off + 2]) & 255;
+            int b3 = ((int)buf[off + 3]) & 255;
+            w[i] = ((b0 << 24) | (b1 << 16) | (b2 << 8) | b3) & 4294967295;
+        }
+
+        for (int i = 16; i < 80; i++) {
+            int x = w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16];
+            w[i] = sha1_rol(x, 1);
+        }
+
+        int a = h0;
+        int b = h1;
+        int c = h2;
+        int d = h3;
+        int e = h4;
+
+        for (int i = 0; i < 80; i++) {
+            int f = 0;
+            int k = 0;
+            if (i < 20) {
+                f = (b & c) | ((~b) & d);
+                k = 1518500249; // 0x5A827999
+            } else if (i < 40) {
+                f = b ^ c ^ d;
+                k = 1859775393; // 0x6ED9EBA1
+            } else if (i < 60) {
+                f = (b & c) | (b & d) | (c & d);
+                k = 2400959708; // 0x8F1BBCDC
+            } else {
+                f = b ^ c ^ d;
+                k = 3395469782; // 0xCA62C1D6
+            }
+
+            int temp = (sha1_rol(a, 5) + f + e + k + w[i]) & 4294967295;
+            e = d;
+            d = c;
+            c = sha1_rol(b, 30);
+            b = a;
+            a = temp;
+        }
+
+        h0 = (h0 + a) & 4294967295;
+        h1 = (h1 + b) & 4294967295;
+        h2 = (h2 + c) & 4294967295;
+        h3 = (h3 + d) & 4294967295;
+        h4 = (h4 + e) & 4294967295;
+    }
+
+    free(w);
+    free(buf);
+
+    string hex_out = (string)malloc(41);
+    char* hex_buf = (char*)hex_out;
+    u32_to_hex8(h0, hex_buf, 0);
+    u32_to_hex8(h1, hex_buf, 8);
+    u32_to_hex8(h2, hex_buf, 16);
+    u32_to_hex8(h3, hex_buf, 24);
+    u32_to_hex8(h4, hex_buf, 32);
+    hex_buf[40] = (char)0;
+    return hex_out;
+}

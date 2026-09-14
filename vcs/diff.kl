@@ -1,0 +1,142 @@
+// vcs/diff.kl
+// Direct Unified Diff Generator for Kale VCS
+
+import "packages/std/text/string_builder.kl" as sb;
+
+extern void* malloc(int size);
+extern int strlen(string s);
+extern int strcmp(string s1, string s2);
+
+struct DiffLineList {
+    string* lines;
+    int count;
+    int capacity;
+}
+
+fn void DiffLineList.init(int initial_cap) {
+    int cap = 16;
+    if (initial_cap > 16) { cap = initial_cap; }
+    this->capacity = cap;
+    this->count = 0;
+    this->lines = alloc(string, cap);
+}
+
+fn void DiffLineList.push(string line) {
+    if (this->count >= this->capacity) {
+        int new_cap = this->capacity * 2;
+        string* new_lines = alloc(string, new_cap);
+        for (int i = 0; i < this->count; i++) {
+            new_lines[i] = this->lines[i];
+        }
+        free(this->lines);
+        this->lines = new_lines;
+        this->capacity = new_cap;
+    }
+    this->lines[this->count] = line;
+    this->count++;
+}
+
+fn void DiffLineList.destroy() {
+    if (this->capacity > 0) {
+        free(this->lines);
+        this->capacity = 0;
+        this->count = 0;
+    }
+}
+
+fn DiffLineList split_lines(string text) {
+    DiffLineList list;
+    list.init(16);
+    int len = strlen(text);
+    if (len == 0) {
+        return list;
+    }
+
+    char* b = (char*)text;
+    int start = 0;
+    for (int i = 0; i < len; i++) {
+        if (b[i] == (char)10) {
+            int line_len = i - start;
+            if (line_len > 0 && b[start + line_len - 1] == (char)13) {
+                line_len--;
+            }
+            char* line_buf = (char*)malloc(line_len + 1);
+            for (int j = 0; j < line_len; j++) {
+                line_buf[j] = b[start + j];
+            }
+            line_buf[line_len] = (char)0;
+            list.push((string)line_buf);
+            start = i + 1;
+        }
+    }
+
+    if (start < len) {
+        int line_len = len - start;
+        if (line_len > 0 && b[start + line_len - 1] == (char)13) {
+            line_len--;
+        }
+        char* line_buf = (char*)malloc(line_len + 1);
+        for (int j = 0; j < line_len; j++) {
+            line_buf[j] = b[start + j];
+        }
+        line_buf[line_len] = (char)0;
+        list.push((string)line_buf);
+    }
+
+    return list;
+}
+
+fn string unified_diff(string file_path, string old_text, string new_text) {
+    DiffLineList a = split_lines(old_text);
+    DiffLineList b = split_lines(new_text);
+
+    int n = a.count;
+    int m = b.count;
+
+    sb.StringBuilder out;
+    out.init(1024);
+
+    out.append("--- a/");
+    out.append_line(file_path);
+    out.append("+++ b/");
+    out.append_line(file_path);
+    out.append_line("@@ -1 +1 @@");
+
+    int ai = 0;
+    int bi = 0;
+
+    while (ai < n && bi < m) {
+        if (strcmp(a.lines[ai], b.lines[bi]) == 0) {
+            out.append(" ");
+            out.append_line(a.lines[ai]);
+            ai++;
+            bi++;
+        } else {
+            out.append("-");
+            out.append_line(a.lines[ai]);
+            ai++;
+            out.append("+");
+            out.append_line(b.lines[bi]);
+            bi++;
+        }
+    }
+
+    while (ai < n) {
+        out.append("-");
+        out.append_line(a.lines[ai]);
+        ai++;
+    }
+
+    while (bi < m) {
+        out.append("+");
+        out.append_line(b.lines[bi]);
+        bi++;
+    }
+
+    a.destroy();
+    b.destroy();
+
+    string res = out.to_string();
+    out.destroy();
+    return res;
+}

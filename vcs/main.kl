@@ -1,0 +1,84 @@
+// vcs/main.kl
+// Command-line entry point for Kale VCS (kale-vcs)
+
+import "vcs/porcelain.kl" as vcs;
+
+extern int printf(string fmt, ...);
+extern int strcmp(string s1, string s2);
+
+fn void print_usage() {
+    printf("kale-vcs - Distributed Version Control System written in Kale\n\n");
+    printf("Usage: kale_vcs <command> [<args>]\n\n");
+    printf("Available Commands:\n");
+    printf("   init    Create an empty Kale repository\n");
+    printf("   add     Add file contents to the staging index\n");
+    printf("   commit  Record changes to the repository\n");
+    printf("   status  Show the working tree and index status\n");
+    printf("   diff    Show changes between commits, commit and working tree\n");
+    printf("   log     Show commit logs\n");
+}
+
+fn int main_entry(int argc, string* argv) {
+    if (argc < 2) {
+        print_usage();
+        return 1;
+    }
+
+    string cmd = argv[1];
+
+    if (strcmp(cmd, "init") == 0) {
+        string target_dir = ".";
+        if (argc >= 3) {
+            target_dir = argv[2];
+        }
+        bool ok = vcs.cmd_init(target_dir);
+        if (ok) { return 0; } else { return 1; }
+    }
+
+    if (strcmp(cmd, "add") == 0) {
+        if (argc < 3) {
+            printf("Usage: kale_vcs add <file>\n");
+            return 1;
+        }
+        string file_path = argv[2];
+        bool ok = vcs.cmd_add(".", file_path);
+        if (ok) { return 0; } else { return 1; }
+    }
+
+    if (strcmp(cmd, "commit") == 0) {
+        string msg = "Commit from Kale VCS";
+        if (argc >= 4 && strcmp(argv[2], "-m") == 0) {
+            msg = argv[3];
+        } else if (argc >= 3) {
+            msg = argv[2];
+        }
+        bool ok = vcs.cmd_commit(".", msg, "Kale User", "user@kale-lang.org");
+        if (ok) { return 0; } else { return 1; }
+    }
+
+    if (strcmp(cmd, "status") == 0) {
+        bool ok = vcs.cmd_status(".");
+        if (ok) { return 0; } else { return 1; }
+    }
+
+    if (strcmp(cmd, "log") == 0) {
+        bool ok = vcs.cmd_log(".");
+        if (ok) { return 0; } else { return 1; }
+    }
+
+    if (strcmp(cmd, "diff") == 0) {
+        if (argc < 3) {
+            printf("Usage: kale_vcs diff <file>\n");
+            return 1;
+        }
+        string file_path = argv[2];
+        bool ok = vcs.cmd_diff(".", file_path);
+        if (ok) { return 0; } else { return 1; }
+    }
+
+    printf("kale-vcs: '%s' is not a kale-vcs command. See 'kale_vcs --help'.\n", cmd);
+    return 1;
+}
+
+// Global script invocation default
+main_entry(2, ["kale_vcs", "status"]);

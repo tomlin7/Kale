@@ -1,0 +1,128 @@
+// vcs/repo.kl
+// Repository initialization, config, and HEAD reference tracking for Kale VCS
+
+import "packages/std/fs/dir.kl" as dir;
+import "packages/std/fs/path.kl" as path;
+import "packages/std/fs/file_util.kl" as fu;
+import "packages/std/text/string_builder.kl" as sb;
+
+extern int strlen(string s);
+
+struct Repository {
+    string root_path;
+    string git_dir;
+    bool is_valid;
+}
+
+fn void Repository.init(string root) {
+    this->root_path = root;
+    this->git_dir = path.join(root, ".kale");
+    this->is_valid = fu.exists(this->git_dir);
+}
+
+fn bool init_repository(string root) {
+    string kale_dir = path.join(root, ".kale");
+    if (!dir.create_dir(kale_dir)) {
+        // Might already exist
+    }
+
+    string objects_dir = path.join(kale_dir, "objects");
+    dir.create_dir(objects_dir);
+
+    string refs_dir = path.join(kale_dir, "refs");
+    dir.create_dir(refs_dir);
+
+    string heads_dir = path.join(refs_dir, "heads");
+    dir.create_dir(heads_dir);
+
+    // Write HEAD -> ref: refs/heads/master
+    string head_path = path.join(kale_dir, "HEAD");
+    fu.write_string(head_path, "ref: refs/heads/master\n");
+
+    // Write default config
+    string config_path = path.join(kale_dir, "config");
+    sb.StringBuilder cfg;
+    cfg.init(128);
+    cfg.append_line("[core]");
+    cfg.append_line("    repositoryformatversion = 0");
+    cfg.append_line("    filemode = false");
+    cfg.append_line("    bare = false");
+    fu.write_string(config_path, cfg.to_string());
+    cfg.destroy();
+
+    return true;
+}
+
+fn string get_head_ref(string repo_root) {
+    string head_path = path.join(repo_root, ".kale/HEAD");
+    if (!fu.exists(head_path)) {
+        return "";
+    }
+    string content = fu.read_to_string(head_path);
+    int len = strlen(content);
+    if (len == 0) {
+        return "";
+    }
+
+    // Trim trailing newline or whitespace
+    char* b = (char*)content;
+    while (len > 0 && (b[len - 1] == (char)10 || b[len - 1] == (char)13 || b[len - 1] == (char)32)) {
+        len--;
+    }
+    b[len] = (char)0;
+
+    // Check if starts with "ref: " (5 chars)
+    if (len > 5 && b[0] == (char)114 && b[1] == (char)101 && b[2] == (char)102 && b[3] == (char)58 && b[4] == (char)32) {
+        char* ref_target = b + 5;
+        string ref_path = path.join(path.join(repo_root, ".kale"), (string)ref_target);
+        if (fu.exists(ref_path)) {
+            string hash = fu.read_to_string(ref_path);
+            int h_len = strlen(hash);
+            char* hb = (char*)hash;
+            while (h_len > 0 && (hb[h_len - 1] == (char)10 || hb[h_len - 1] == (char)13 || hb[h_len - 1] == (char)32)) {
+                h_len--;
+            }
+            hb[h_len] = (char)0;
+            return hash;
+        }
+        return "";
+    }
+
+    return content;
+}
+
+fn bool update_head_ref(string repo_root, string new_commit_id) {
+    string head_path = path.join(repo_root, ".kale/HEAD");
+    if (!fu.exists(head_path)) {
+        return false;
+    }
+    string content = fu.read_to_string(head_path);
+    int len = strlen(content);
+
+    char* b = (char*)content;
+    while (len > 0 && (b[len - 1] == (char)10 || b[len - 1] == (char)13 || b[len - 1] == (char)32)) {
+        len--;
+    }
+    b[len] = (char)0;
+
+    if (len > 5 && b[0] == (char)114 && b[1] == (char)101 && b[2] == (char)102 && b[3] == (char)58 && b[4] == (char)32) {
+        char* ref_target = b + 5;
+        string target_file = path.join(path.join(repo_root, ".kale"), (string)ref_target);
+        sb.StringBuilder sb_out;
+        sb_out.init(64);
+        sb_out.append(new_commit_id);
+        sb_out.append_char((char)10);
+        bool ok = fu.write_string(target_file, sb_out.to_string());
+        sb_out.destroy();
+        return ok;
+    }
+
+    // Direct HEAD SHA
+    sb.StringBuilder sb_out;
+    sb_out.init(64);
+    sb_out.append(new_commit_id);
+    sb_out.append_char((char)10);
+    bool ok = fu.write_string(head_path, sb_out.to_string());
+    sb_out.destroy();
+    return ok;
+}

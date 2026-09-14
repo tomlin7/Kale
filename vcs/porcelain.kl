@@ -1,0 +1,181 @@
+// vcs/porcelain.kl
+// High-level VCS operations: init, add, commit, status, log, diff
+
+import "vcs/sha1.kl" as sha1;
+import "vcs/object.kl" as obj;
+import "vcs/index.kl" as idx;
+import "vcs/repo.kl" as repo;
+import "vcs/diff.kl" as vdiff;
+import "packages/std/fs/file_util.kl" as fu;
+import "packages/std/fs/path.kl" as path;
+import "packages/std/fs/dir.kl" as dir;
+
+extern int printf(string fmt, ...);
+extern void* malloc(int size);
+extern int strlen(string s);
+extern int strcmp(string s1, string s2);
+
+fn bool cmd_init(string target_dir) {
+    bool ok = repo.init_repository(target_dir);
+    if (ok) {
+        printf("Initialized empty Kale repository in %s/.kale\n", target_dir);
+        return true;
+    }
+    printf("Fatal: could not initialize repository in %s\n", target_dir);
+    return false;
+}
+
+fn bool cmd_add(string repo_root, string file_path) {
+    string full_file = path.join(repo_root, file_path);
+    if (!fu.exists(full_file)) {
+        printf("Fatal: path '%s' does not exist\n", file_path);
+        return false;
+    }
+
+    string content = fu.read_to_string(full_file);
+    obj.GitObject blob = obj.create_blob(content);
+
+    // Save blob object into .kale/objects
+    obj.write_object(repo_root, blob.id, content);
+
+    // Load staging index, add or update entry, and save
+    idx.Index index;
+    index.init();
+    index.load(repo_root);
+    index.add_entry("100644", blob.id, blob.size, file_path);
+    index.save(repo_root);
+    index.destroy();
+
+    printf("Added '%s' to index (blob %s, size %lld bytes)\n", file_path, blob.id, blob.size);
+    return true;
+}
+
+fn bool cmd_commit(string repo_root, string message, string author, string email) {
+    idx.Index index;
+    index.init();
+    index.load(repo_root);
+    if (index.count == 0) {
+        printf("Nothing to commit (working directory clean or index empty)\n");
+        index.destroy();
+        return false;
+    }
+
+    // 1. Build tree object from index entries
+    obj.TreeObject tree;
+    tree.init();
+    for (int i = 0; i < index.count; i++) {
+        tree.add_entry(index.entries[i].mode, index.entries[i].file_path, index.entries[i].id);
+    }
+    string tree_id = tree.compute_hash();
+    obj.write_object(repo_root, tree_id, tree.serialize());
+    tree.destroy();
+    index.destroy();
+
+    // 2. Build commit object
+    string parent_id = repo.get_head_ref(repo_root);
+    int now_ts = 1726329600; // Epoch timestamp
+
+    obj.CommitObject c;
+    c.init(tree_id, parent_id, author, email, now_ts, message);
+    string commit_id = c.compute_hash();
+    obj.write_object(repo_root, commit_id, c.serialize());
+
+    // 3. Update HEAD ref
+    repo.update_head_ref(repo_root, commit_id);
+
+    printf("[%s] %s\n", commit_id, message);
+    printf(" 1 file changed, tree %s\n", tree_id);
+    return true;
+}
+
+fn bool cmd_status(string repo_root) {
+    idx.Index index;
+    index.init();
+    index.load(repo_root);
+
+    printf("On branch master\n");
+    if (index.count == 0) {
+        printf("No commits yet\n");
+        printf("nothing to commit (create/copy files and use 'kale-vcs add' to track)\n");
+        index.destroy();
+        return true;
+    }
+
+    printf("Changes to be committed:\n");
+    for (int i = 0; i < index.count; i++) {
+        printf("        new file:   %s\n", index.entries[i].file_path);
+    }
+
+    index.destroy();
+    return true;
+}
+
+fn bool cmd_log(string repo_root) {
+    string current_commit = repo.get_head_ref(repo_root);
+    if (strlen(current_commit) == 0) {
+        printf("Fatal: your current branch 'master' does not have any commits yet\n");
+        return false;
+    }
+
+    int count = 0;
+    while (strlen(current_commit) > 0 && count < 20) {
+        string commit_body = obj.read_object(repo_root, current_commit);
+        if (strlen(commit_body) == 0) {
+            break;
+        }
+
+        printf("commit %s\n", current_commit);
+
+        // Parse parent or stop
+        int len = strlen(commit_body);
+        char* b = (char*)commit_body;
+
+        string next_parent = "";
+        for (int i = 0; i < len - 7; i++) {
+            if (b[i] == (char)112 && b[i+1] == (char)97 && b[i+2] == (char)114 && b[i+3] == (char)101 && b[i+4] == (char)110 && b[i+5] == (char)116 && b[i+6] == (char)32) {
+                // "parent "
+                int p_start = i + 7;
+                int p_end = p_start;
+                while (p_end < len && b[p_end] != (char)10 && b[p_end] != (char)13 && b[p_end] != (char)32) {
+                    p_end++;
+                }
+                int p_len = p_end - p_start;
+                char* p_buf = (char*)malloc(p_len + 1);
+                for (int j = 0; j < p_len; j++) { p_buf[j] = b[p_start + j]; }
+                p_buf[p_len] = (char)0;
+                next_parent = (string)p_buf;
+                break;
+            }
+        }
+
+        printf("    %s\n\n", commit_body);
+        current_commit = next_parent;
+        count++;
+    }
+
+    return true;
+}
+
+fn bool cmd_diff(string repo_root, string file_path) {
+    string full_file = path.join(repo_root, file_path);
+    if (!fu.exists(full_file)) {
+        printf("Fatal: file '%s' not found\n", file_path);
+        return false;
+    }
+
+    idx.Index index;
+    index.init();
+    index.load(repo_root);
+    int entry_idx = index.find_entry(file_path);
+
+    string old_content = "";
+    if (entry_idx >= 0) {
+        old_content = obj.read_object(repo_root, index.entries[entry_idx].id);
+    }
+    index.destroy();
+
+    string new_content = fu.read_to_string(full_file);
+    string diff_text = vdiff.unified_diff(file_path, old_content, new_content);
+    printf("%s\n", diff_text);
+    return true;
+}

@@ -20,8 +20,8 @@ This document provides actionable, discrete milestones designed to be dispatched
 | **M9** | `libs/web` Routing, Middleware & Templates | Web Engineer | M8 | 🟢 Complete |
 | **M10** | `libs/sql` SQLite3 Driver & Query Builder | Database Engineer | M1 | 🟢 Complete |
 | **M11** | `editor` v2 Flagship GPU Code Editor | Editor Engineer | M6, M7 | 🟢 Complete |
-| **M12** | `vcs` Distributed Version Control Core | Systems Engineer | M1, M8 | 🟡 Next Up |
-| **M13** | `apps/blog` Publishing Engine & CMS | Web Engineer | M9, M10 | 🔴 Not Started |
+| **M12** | `vcs` Distributed Version Control Core | Systems Engineer | M1, M8 | 🟢 Complete |
+| **M13** | `apps/blog` Publishing Engine & CMS | Web Engineer | M9, M10 | 🟡 Next Up |
 | **M14** | Self-Hosting Kale Compiler Bootstrap | Lead Compiler Engineer | All | 🔵 Long-Term |
 
 ---
@@ -175,15 +175,17 @@ This document provides actionable, discrete milestones designed to be dispatched
 
 ---
 
-## 📍 Milestone 12: `vcs` Distributed Version Control System
+## 📍 Milestone 12: `vcs` Distributed Version Control System (Completed)
 **Role**: Systems Engineer  
 **Prerequisites**: Milestones 1, 8  
-**Target Files**: `vcs/` (`repo.kl`, `object.kl`, `index.kl`, `diff.kl`, `main.kl`)
+**Target Files**: `vcs/` (`sha1.kl`, `object.kl`, `index.kl`, `diff.kl`, `repo.kl`, `porcelain.kl`, `main.kl`)
 
 ### Deliverables:
-1. Content-addressable SHA-1 object storage for Blobs, Trees, and Commits.
-2. Working directory index tracker and Myers diff implementation.
-3. CLI commands: `init`, `add`, `commit`, `status`, `log`, `diff`.
+1. [x] Content-addressable pure Kale SHA-1 object storage for Blobs, Trees, and Commits (`vcs/sha1.kl`, `vcs/object.kl`).
+2. [x] Working directory staging area index tracker (`vcs/index.kl`) and difference engine (`vcs/diff.kl`).
+3. [x] Repository discovery and HEAD reference tracking (`vcs/repo.kl`).
+4. [x] CLI commands: `init`, `add`, `commit`, `status`, `log`, `diff` (`vcs/porcelain.kl`).
+5. [x] Executable `bin/kale_vcs.exe` and automated test suite (`examples/vcs_smoke.kl`).
 
 ---
 

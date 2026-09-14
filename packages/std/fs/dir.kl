@@ -19,6 +19,11 @@ extern int strlen(string s);
 extern void* _findfirst64i32(string pattern, void* data);
 extern int _findnext64i32(void* handle, void* data);
 extern int _findclose(void* handle);
+extern bool CreateDirectoryA(string path, void* security_attributes);
+
+bool create_dir(string path) {
+    return CreateDirectoryA(path, (void*)0);
+}
 
 List<string> list_dir(string pattern) {
     List<string> res;

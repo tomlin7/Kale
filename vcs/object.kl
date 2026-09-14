@@ -1,0 +1,250 @@
+// vcs/object.kl
+// Content-Addressable Git Object System: Blob, Tree, Commit
+
+import "vcs/sha1.kl" as sha1;
+import "packages/std/text/string_builder.kl" as sb;
+import "packages/std/fs/file_util.kl" as fu;
+import "packages/std/fs/path.kl" as path;
+import "packages/std/fs/dir.kl" as dir;
+
+extern void* malloc(int size);
+extern int strlen(string s);
+extern int sprintf(string buffer, string format, ...);
+
+// Object types
+int OBJ_BLOB()   { return 1; }
+int OBJ_TREE()   { return 2; }
+int OBJ_COMMIT() { return 3; }
+
+struct GitObject {
+    int obj_type;
+    string id;
+    string data;
+    int size;
+}
+
+fn GitObject create_blob(string content) {
+    GitObject obj;
+    obj.obj_type = OBJ_BLOB();
+    obj.data = content;
+    obj.size = strlen(content);
+
+    // Git header: "blob <size>\0<content>"
+    sb.StringBuilder b;
+    b.init(obj.size + 32);
+    b.append("blob ");
+    b.append_int(obj.size);
+    b.append_char((char)0);
+    b.append(content);
+
+    obj.id = sha1.sha1_hex(b.to_string(), b.len());
+    b.destroy();
+    return obj;
+}
+
+struct TreeEntry {
+    string mode;
+    string name;
+    string id;
+}
+
+struct TreeObject {
+    TreeEntry* entries;
+    int count;
+    int capacity;
+    string id;
+}
+
+fn void TreeObject.init() {
+    this->capacity = 16;
+    this->count = 0;
+    this->entries = alloc(TreeEntry, 16);
+    this->id = "";
+}
+
+fn void TreeObject.add_entry(string mode, string name, string id) {
+    if (this->count >= this->capacity) {
+        int new_cap = this->capacity * 2;
+        TreeEntry* new_entries = alloc(TreeEntry, new_cap);
+        for (int i = 0; i < this->count; i++) {
+            new_entries[i] = this->entries[i];
+        }
+        free(this->entries);
+        this->entries = new_entries;
+        this->capacity = new_cap;
+    }
+    this->entries[this->count].mode = mode;
+    this->entries[this->count].name = name;
+    this->entries[this->count].id = id;
+    this->count++;
+}
+
+fn string TreeObject.serialize() {
+    sb.StringBuilder b;
+    b.init(256);
+    for (int i = 0; i < this->count; i++) {
+        b.append(this->entries[i].mode);
+        b.append(" ");
+        b.append(this->entries[i].name);
+        b.append(" ");
+        b.append(this->entries[i].id);
+        b.append("\n");
+    }
+    string res = b.to_string();
+    b.destroy();
+    return res;
+}
+
+fn string TreeObject.compute_hash() {
+    string content = this->serialize();
+    int c_len = strlen(content);
+
+    sb.StringBuilder b;
+    b.init(c_len + 32);
+    b.append("tree ");
+    b.append_int(c_len);
+    b.append_char((char)0);
+    b.append(content);
+
+    this->id = sha1.sha1_hex(b.to_string(), b.len());
+    b.destroy();
+    return this->id;
+}
+
+fn void TreeObject.destroy() {
+    if (this->capacity > 0) {
+        free(this->entries);
+        this->capacity = 0;
+        this->count = 0;
+    }
+}
+
+struct CommitObject {
+    string tree_id;
+    string parent_id;
+    string author;
+    string email;
+    int timestamp;
+    string message;
+    string id;
+}
+
+fn void CommitObject.init(string tree_id, string parent_id, string author, string email, int timestamp, string message) {
+    this->tree_id = tree_id;
+    this->parent_id = parent_id;
+    this->author = author;
+    this->email = email;
+    this->timestamp = timestamp;
+    this->message = message;
+    this->id = "";
+}
+
+fn string CommitObject.serialize() {
+    sb.StringBuilder b;
+    b.init(512);
+    b.append("tree ");
+    b.append(this->tree_id);
+    b.append("\n");
+
+    if (strlen(this->parent_id) > 0) {
+        b.append("parent ");
+        b.append(this->parent_id);
+        b.append("\n");
+    }
+
+    b.append("author ");
+    b.append(this->author);
+    b.append(" <");
+    b.append(this->email);
+    b.append("> ");
+    b.append_int(this->timestamp);
+    b.append(" +0000\n");
+
+    b.append("committer ");
+    b.append(this->author);
+    b.append(" <");
+    b.append(this->email);
+    b.append("> ");
+    b.append_int(this->timestamp);
+    b.append(" +0000\n\n");
+
+    b.append(this->message);
+    b.append("\n");
+
+    string res = b.to_string();
+    b.destroy();
+    return res;
+}
+
+fn string CommitObject.compute_hash() {
+    string content = this->serialize();
+    int c_len = strlen(content);
+
+    sb.StringBuilder b;
+    b.init(c_len + 32);
+    b.append("commit ");
+    b.append_int(c_len);
+    b.append_char((char)0);
+    b.append(content);
+
+    this->id = sha1.sha1_hex(b.to_string(), b.len());
+    b.destroy();
+    return this->id;
+}
+
+// Storage helpers
+fn bool write_object(string repo_root, string obj_id, string payload) {
+    if (strlen(obj_id) < 4) { return false; }
+    char* id_b = (char*)obj_id;
+
+    // Subdir = .kale/objects/xx
+    char* dir_name = (char*)malloc(3);
+    dir_name[0] = id_b[0];
+    dir_name[1] = id_b[1];
+    dir_name[2] = (char)0;
+
+    // File = yyyy...
+    int rem_len = strlen(obj_id) - 2;
+    char* file_name = (char*)malloc(rem_len + 1);
+    for (int i = 0; i < rem_len; i++) {
+        file_name[i] = id_b[2 + i];
+    }
+    file_name[rem_len] = (char)0;
+
+    string obj_base = path.join(repo_root, ".kale/objects");
+    string full_dir = path.join(obj_base, (string)dir_name);
+    dir.create_dir(full_dir);
+
+    string full_path = path.join(full_dir, (string)file_name);
+    bool ok = fu.write_string(full_path, payload);
+
+    free(dir_name);
+    free(file_name);
+    return ok;
+}
+
+fn string read_object(string repo_root, string obj_id) {
+    if (strlen(obj_id) < 4) { return ""; }
+    char* id_b = (char*)obj_id;
+
+    char* dir_name = (char*)malloc(3);
+    dir_name[0] = id_b[0];
+    dir_name[1] = id_b[1];
+    dir_name[2] = (char)0;
+
+    int rem_len = strlen(obj_id) - 2;
+    char* file_name = (char*)malloc(rem_len + 1);
+    for (int i = 0; i < rem_len; i++) {
+        file_name[i] = id_b[2 + i];
+    }
+    file_name[rem_len] = (char)0;
+
+    string obj_base = path.join(repo_root, ".kale/objects");
+    string full_dir = path.join(obj_base, (string)dir_name);
+    string full_path = path.join(full_dir, (string)file_name);
+
+    string content = fu.read_to_string(full_path);
+    free(dir_name);
+    free(file_name);
+    return content;
+}
