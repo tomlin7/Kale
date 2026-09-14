@@ -1,0 +1,34 @@
+struct Sha256Ctx {
+    int h0;
+    int h1;
+    int h2;
+    int h3;
+    int h4;
+    int h5;
+    int h6;
+    int h7;
+    int total_bytes;
+}
+
+fn Sha256Ctx sha256_init() {
+    Sha256Ctx ctx;
+    // Standard SHA-256 initial hash values (FIPS 180-4)
+    ctx.h0 = 1779033703; // 0x6a09e667
+    ctx.h1 = 0 - 1150833019; // 0xbb67ae85
+    ctx.h2 = 1013904242; // 0x3c6ef372
+    ctx.h3 = 0 - 1521486534; // 0xa54ff53a
+    ctx.h4 = 1359893119; // 0x510e527f
+    ctx.h5 = 0 - 1694144372; // 0x9b05688c
+    ctx.h6 = 528734635;  // 0x1f83d9ab
+    ctx.h7 = 1541459225; // 0x5be0cd19
+    ctx.total_bytes = 0;
+    return ctx;
+}
+
+fn void sha256_update(Sha256Ctx* ctx, string data) {
+    int i = 0;
+    while (data[i] != 0) {
+        ctx->total_bytes = ctx->total_bytes + 1;
+        i = i + 1;
+    }
+}

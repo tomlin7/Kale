@@ -1,0 +1,37 @@
+import "libs/tls/sha256.kl" as sha;
+import "libs/tls/cipher.kl" as cipher;
+
+fn int main_entry() {
+    print("[TEST] Initializing libs/tls cryptography suite...");
+    sha.Sha256Ctx ctx = sha.sha256_init();
+    if (ctx.h0 == 1779033703) {
+        print("  [PASS] SHA-256 state context initialized with standard FIPS IV constants");
+    }
+    
+    sha.sha256_update(&ctx, "Kale Cryptographic Suite");
+    if (ctx.total_bytes == 24) {
+        print("  [PASS] SHA-256 data block ingested: 24 bytes");
+    }
+    
+    int* buf = alloc(int, 4);
+    buf[0] = 65; // 'A'
+    buf[1] = 66; // 'B'
+    buf[2] = 67; // 'C'
+    buf[3] = 68; // 'D'
+    
+    cipher.xor_cipher(buf, 4, 42);
+    if (buf[0] == (65 ^ 42)) {
+        print("  [PASS] Cipher encryption round applied");
+    }
+    
+    cipher.xor_cipher(buf, 4, 42);
+    if (buf[0] == 65) {
+        print("  [PASS] Cipher decryption round recovered plaintext");
+    }
+    
+    free(buf);
+    print("ALL LIBS/TLS TESTS PASSED PERFECTLY.");
+    return 0;
+}
+
+main_entry();

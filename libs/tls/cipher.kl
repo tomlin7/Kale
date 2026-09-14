@@ -1,0 +1,8 @@
+// XOR stream cipher primitive for symmetric encryption
+fn void xor_cipher(int* data, int len, int key) {
+    int i = 0;
+    while (i < len) {
+        data[i] = data[i] ^ key;
+        i = i + 1;
+    }
+}
