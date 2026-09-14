@@ -14,7 +14,7 @@ Current status: 🔴 Not Started
 - libs/net (for push/pull)
 
 ## Build Instructions
-`kale build apps/vcs/main.kl -o bin/kale_vcs.exe`
+`kale build vcs/main.kl -o bin/kale_vcs.exe`
 
 ## Coding Conventions
 - Standard Kale conventions: `.kl` source files, PascalCase structs, snake_case functions

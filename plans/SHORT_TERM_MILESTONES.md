@@ -19,8 +19,8 @@ This document provides actionable, discrete milestones designed to be dispatched
 | **M8** | `libs/net` Sockets & HTTP/1.1 Client/Server | Network Engineer | M1 | 🔴 Not Started |
 | **M9** | `libs/web` Routing, Middleware & Templates | Web Engineer | M8 | 🔴 Not Started |
 | **M10** | `libs/sql` SQLite3 Driver & Query Builder | Database Engineer | M1 | 🔴 Not Started |
-| **M11** | `apps/editor` v2 Flagship GPU Code Editor | Editor Engineer | M6, M7 | 🔴 Not Started |
-| **M12** | `apps/vcs` Distributed Version Control Core | Systems Engineer | M1, M8 | 🔴 Not Started |
+| **M11** | `editor` v2 Flagship GPU Code Editor | Editor Engineer | M6, M7 | 🔴 Not Started |
+| **M12** | `vcs` Distributed Version Control Core | Systems Engineer | M1, M8 | 🔴 Not Started |
 | **M13** | `apps/blog` Publishing Engine & CMS | Web Engineer | M9, M10 | 🔴 Not Started |
 | **M14** | Self-Hosting Kale Compiler Bootstrap | Lead Compiler Engineer | All | 🔵 Long-Term |
 
@@ -160,10 +160,10 @@ This document provides actionable, discrete milestones designed to be dispatched
 
 ---
 
-## 📍 Milestone 11: `apps/editor` v2 Flagship GPU Code Editor
+## 📍 Milestone 11: `editor` v2 Flagship GPU Code Editor
 **Role**: Editor Engineer  
 **Prerequisites**: Milestones 6, 7  
-**Target Files**: `apps/editor/` (`main.kl`, `app_state.kl`, `text_viewport.kl`, `gutter.kl`, `status_bar.kl`)
+**Target Files**: `editor/` (`main.kl`, `app_state.kl`, `text_viewport.kl`, `gutter.kl`, `status_bar.kl`)
 
 ### Deliverables:
 1. Ultra-responsive GPU text viewport rendering arbitrary sized documents via `PieceTable`.
@@ -172,10 +172,10 @@ This document provides actionable, discrete milestones designed to be dispatched
 
 ---
 
-## 📍 Milestone 12: `apps/vcs` Distributed Version Control System
+## 📍 Milestone 12: `vcs` Distributed Version Control System
 **Role**: Systems Engineer  
 **Prerequisites**: Milestones 1, 8  
-**Target Files**: `apps/vcs/` (`repo.kl`, `object.kl`, `index.kl`, `diff.kl`, `main.kl`)
+**Target Files**: `vcs/` (`repo.kl`, `object.kl`, `index.kl`, `diff.kl`, `main.kl`)
 
 ### Deliverables:
 1. Content-addressable SHA-1 object storage for Blobs, Trees, and Commits.

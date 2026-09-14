@@ -4,10 +4,10 @@
 import "libs/framework/app.kl" as fw;
 import "libs/ui_native/geom.kl" as geom;
 import "libs/ui_native/event.kl" as ev;
-import "apps/editor/app_state.kl" as st;
-import "apps/editor/gutter.kl" as gt;
-import "apps/editor/status_bar.kl" as sb;
-import "apps/editor/text_viewport.kl" as vp;
+import "editor/app_state.kl" as st;
+import "editor/gutter.kl" as gt;
+import "editor/status_bar.kl" as sb;
+import "editor/text_viewport.kl" as vp;
 import "packages/std/text/string_builder.kl" as strb;
 
 extern int strlen(string s);

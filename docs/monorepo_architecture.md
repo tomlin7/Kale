@@ -30,11 +30,8 @@ kale/
 │   ├── web/                       # Web framework (routing, templates)
 │   └── sql/                       # SQLite3 database driver & query builder
 │
-├── apps/                          # Flagship End-User Applications
-│   ├── editor/                    # Native Kale code editor / IDE
-│   ├── vcs/                       # Distributed version control system
-│   ├── blog/                      # Web publishing platform & CMS
-│   └── android-bootstrapper/      # Android cross-compilation toolchain
+├── editor/                        # Native Kale code editor / IDE
+├── vcs/                           # Distributed version control system
 │
 ├── sys/                           # Bare-Metal Operating System (Future)
 │   ├── boot/                      # x86_64 bootloader
@@ -53,13 +50,13 @@ kale/
 ## 2. Monorepo Standards & Hygiene Rules
 
 1. **Per-Project Documentation & Versioning**:
-   - Every subfolder in `packages/`, `libs/`, and `apps/` MUST maintain:
+   - Every project directory in `packages/`, `libs/`, and root apps (`editor/`, `vcs/`, `sys/`) MUST maintain:
      - `agents.md`: AI agent operational guide, SemVer tracking, build instructions, and local milestones.
      - `PLAN.md`: Deep technical design spec, data structures, module breakdown, and verification steps.
 2. **Dependency Inversion & Boundary Rules**:
-   - `apps/*` may depend on `libs/*`, `packages/std`, and `packages/bindings/*`.
+   - Root applications (`editor/`, `vcs/`) may depend on `libs/*`, `packages/std`, and `packages/bindings/*`.
    - `libs/*` may depend on other `libs/*` only according to the acyclic dependency graph defined in `plans/MASTER_ECOSYSTEM_PLAN.md`.
-   - `packages/std` MUST NOT depend on any `libs/*` or `apps/*`. It interacts solely with the C runtime or core syscalls.
+   - `packages/std` MUST NOT depend on any `libs/*` or applications. It interacts solely with the C runtime or core syscalls.
    - Circular imports between packages or libraries are strictly forbidden.
 3. **Import Syntax**:
    - Internal imports within the same library: `import "libs/render/math.kl" as math;`

@@ -16,7 +16,7 @@ Current status: 🟡 In Progress
 - packages/editor
 
 ## Build Instructions
-`kale build apps/editor/main.kl -o bin/kale_edit.exe`
+`kale build editor/main.kl -o bin/kale_edit.exe`
 
 ## Coding Conventions
 - PascalCase for editor state and UI component structs, snake_case for action functions

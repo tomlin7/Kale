@@ -1,14 +1,14 @@
-# Flagship Code Editor (`apps/editor`) Plan
+# Flagship Code Editor (`editor`) Plan
 
 ## 1. Overview
-`apps/editor` is the flagship IDE demonstration for the Kale programming language. Written natively in Kale, it leverages `packages/std/text/piece_table.kl`, `libs/render` (GPU batching), and `libs/ui` to achieve sub-millisecond keystroke-to-render latency.
+`editor` is the flagship IDE demonstration for the Kale programming language. Written natively in Kale, it leverages `packages/std/text/piece_table.kl`, `libs/render` (GPU batching), and `libs/ui` to achieve sub-millisecond keystroke-to-render latency.
 
 ---
 
 ## 2. Directory Layout & Subsystems
 
 ```
-apps/editor/
+editor/
 ├── main.kl          # Application entry point, event loop, layout split
 ├── app_state.kl     # EditorState: piece table, cursors, dirty flag, file paths
 ├── text_viewport.kl # Text rendering canvas, viewport culling, caret animation

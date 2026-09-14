@@ -27,11 +27,8 @@ kale/
 │   ├── net/                      # Sockets & HTTP/1.1 Networking (v0.0.1)
 │   ├── web/                      # Server Router & Template Engine (v0.0.1)
 │   └── sql/                      # SQLite3 Database Driver & Query Builder (v0.0.1)
-├── apps/                         # Tier 3: Standalone Flagship Applications
-│   ├── editor/                   # Kale Flagship Code Editor / IDE (v0.1.0 -> v0.2.0)
-│   ├── vcs/                      # Distributed Version Control System (v0.0.1)
-│   ├── blog/                     # Self-Hosted Web Publishing Platform (v0.0.1)
-│   └── android-bootstrapper/     # Cross-Compilation Scaffolding (v0.0.1)
+├── editor/                       # Tier 3: Kale Flagship Code Editor / IDE (v0.1.0 -> v0.2.0)
+├── vcs/                          # Tier 3: Distributed Version Control System (v0.0.1)
 ├── sys/                          # Tier 4: Low-Level OS & Kernel (Future)
 │   ├── boot/                     # Multiboot / UEFI Bootloader
 │   ├── kernel/                   # Microkernel in Kale + ASM
@@ -67,10 +64,9 @@ kale/
 - `libs/web` provides trie/regex based routing, request/response models, middleware pipeline, and mustache-style template rendering.
 - `libs/sql` wraps SQLite3 C ABI (`sqlite3_prepare_v2`, `sqlite3_step`) for embedded SQL storage.
 
-### 2.4 Flagship Applications
-- **Editor (`apps/editor`)**: High-performance text editor powered by `packages/std/text/piece_table.kl`, GPU text viewport, syntax tokenizer, gutter with line numbers, and status bar.
-- **VCS (`apps/vcs`)**: Git-compatible object store (content-addressable SHA-1 blobs, trees, commits, index, packfiles).
-- **Blog (`apps/blog`)**: High-performance publishing platform built on `libs/web` + `libs/sql`.
+### 2.4 Standalone Applications
+- **Editor (`editor/`)**: High-performance text editor powered by `packages/std/text/piece_table.kl`, GPU text viewport, syntax tokenizer, gutter with line numbers, and status bar.
+- **VCS (`vcs/`)**: Git-compatible object store (content-addressable SHA-1 blobs, trees, commits, index, packfiles).
 
 ---
 
@@ -88,25 +84,25 @@ kale/
         │     [libs/ui_native]         │
         │            │                 │
         │            ▼                 │
-        │     [apps/editor v1]         │
+        │       [editor v1]            │
         │                              │
         ├──► [libs/glfw]               ├──► [libs/net]
         │         │                    │         │
         ├──► [libs/gl]                 │         ▼
-        │         │                    │    [libs/web] ◄───┐
-        ├──► [libs/stb]                │         │         │
-        │         │                    │         ▼         │
-        │         ▼                    │    [apps/blog] ───┤
-        └──► [libs/render]             │                   │
-                  │                    └──► [libs/sql] ────┘
+        │         │                    │    [libs/web]
+        ├──► [libs/stb]                │
+        │         │                    │
+        │         ▼                    │
+        └──► [libs/render]             │
+                  │                    └──► [libs/sql]
                   ▼                              │
              [libs/ui]                           ▼
-                  │                         [apps/vcs]
+                  │                            [vcs]
                   ▼
           [libs/framework v2]
                   │
                   ▼
-           [apps/editor v2]
+             [editor v2]
 ```
 
 ---

@@ -1,14 +1,14 @@
-# Distributed Version Control System (`apps/vcs`) Plan
+# Distributed Version Control System (`vcs`) Plan
 
 ## 1. Overview
-`apps/vcs` is a Git-compatible distributed version control system written entirely in Kale. It implements content-addressable storage, tree traversal, commit history graphs, working tree diffing, and command-line porcelain.
+`vcs` is a Git-compatible distributed version control system written entirely in Kale. It implements content-addressable storage, tree traversal, commit history graphs, working tree diffing, and command-line porcelain.
 
 ---
 
 ## 2. Directory Layout & Subsystems
 
 ```
-apps/vcs/
+vcs/
 ├── object.kl        # Content-addressable storage: Blob, Tree, Commit, Tag (SHA-1 hashing)
 ├── index.kl         # Staging area reader/writer (.kale/index or .git/index binary format)
 ├── repo.kl          # Repository discovery, config parsing, and HEAD reference tracking
