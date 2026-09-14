@@ -1,4 +1,4 @@
-// libs/ui/geom.kl
+// libs/ui_native/geom.kl
 // 2D Geometry, Dimensions, Colors, and Layout Primitives for Kale UI
 
 struct Point {

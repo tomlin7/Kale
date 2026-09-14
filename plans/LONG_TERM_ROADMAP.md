@@ -1,96 +1,80 @@
 # Kale Long-Term Strategic Roadmap
 
 This document outlines the overarching architectural direction and long-term milestones for the **Kale Programming Language**.
-The goal is to evolve Kale from a low-level systems compiler into a self-hosting language capable of powering:
-1. **A High-Performance Code Editor / IDE Engine** (comparable to Zed, Sublime Text, or Lite-XL).
-2. **A Native Cross-Platform UI Framework** (GPU-accelerated, immediate & retained mode).
-3. **Robust Systems Tooling & Standard Runtime** (package manager, language server protocol, build orchestrator).
+The mission is to establish Kale as a premier, high-performance systems language with a self-sufficient ecosystem spanning native GUI applications, web engines, low-level OS components, and self-hosted compilers.
 
 ---
 
 ## 🏛️ Strategic Pillars
 
 ```
-+-----------------------------------------------------------------------+
-|                       Kale Ecosystem Vision                           |
-+-----------------------------------------------------------------------+
-|  Tier 3: Flagship Applications                                        |
-|  - Kale Editor (Sub-millisecond latency, Tree-Sitter / LSP, Text UI)  |
-|  - Native Cross-Platform GUI Toolkit & Design System                  |
-+-----------------------------------------------------------------------+
-|  Tier 2: Core Infrastructure Libraries                                |
-|  - std/text: Rope data structure, Piece Table, UTF-8 streaming        |
-|  - std/fs: High-performance filesystem & async I/O traversal          |
-|  - std/sync: Threading, atomics, work-stealing thread pools           |
-|  - bindings/gpu & bindings/windowing (SDL2 / GLFW / WebGPU / Vulkan)  |
-+-----------------------------------------------------------------------+
-|  Tier 1: Compiler & Runtime Foundation (Current Base)                 |
-|  - LLVM JIT & Native Object Compiler, C Emission Backend              |
-|  - Generics & Monomorphization (List<T>, Option<T>, Result<T, E>)     |
-|  - C FFI, Pointers, Structs, Heap/Arena Allocators                    |
-+-----------------------------------------------------------------------+
++-------------------------------------------------------------------------------+
+|                           Kale Ecosystem Vision                               |
++-------------------------------------------------------------------------------+
+|  Tier 3: Flagship Applications                                                |
+|  - apps/editor: GPU-accelerated, sub-millisecond latency code editor / IDE     |
+|  - apps/vcs: Distributed version control system (Git alternative)             |
+|  - apps/blog: High-throughput CMS & web publishing platform                   |
+|  - apps/android-bootstrapper: Native Android APK compiler & scaffolding       |
++-------------------------------------------------------------------------------+
+|  Tier 2: Foundation & Framework Libraries                                     |
+|  - libs/ui: Immediate-mode GPU widget toolkit (custom rendering)              |
+|  - libs/render: 2D batched graphics, texture atlasing, font SDF               |
+|  - libs/gl & libs/glfw & libs/stb: Core graphics, windowing, and media FFI    |
+|  - libs/framework: Cross-platform application bootstrap harness               |
+|  - libs/web & libs/net & libs/sql: High-performance backend & database stack  |
++-------------------------------------------------------------------------------+
+|  Tier 1: Core Toolchain & Runtime Base                                        |
+|  - packages/std: Comprehensive standard library (core, collections, fs, text) |
+|  - packages/compiler: Self-hosted Kale compiler (Kale written in Kale)        |
+|  - LLVM IR generation, native AOT compilation, and JIT execution              |
++-------------------------------------------------------------------------------+
+|  Tier 0: Operating System & Hardware Abstraction (sys/*)                     |
+|  - sys/boot: Multiboot / UEFI x86_64 bootloader                               |
+|  - sys/kernel: Microkernel in Kale + ASM                                      |
+|  - sys/drivers: Device drivers (VGA, Framebuffer, VirtIO, Serial)             |
++-------------------------------------------------------------------------------+
 ```
 
 ---
 
-## 🎯 Pillar 1: High-Performance Code Editor / IDE Engine
-
-To prove Kale as a serious systems language, the primary flagship showcase application is a native, ultra-responsive code editor.
-
-### Key Milestones:
-- **Milestone 1.1: Text Buffers (`std/text`)**
-  - High-performance Rope or Piece Table data structure supporting $O(\log N)$ inserts, deletes, line lookups, and piece caching.
-  - UTF-8 byte offset <-> character/grapheme cluster indexing.
-- **Milestone 1.2: Syntax Engine & Tokenization (`packages/syntax`)**
-  - Streaming lexical tokenizer and Tree-Sitter C FFI integration for syntax highlighting and AST queries.
-- **Milestone 1.3: Buffer View & Projection**
-  - Line folding, word wrapping, multi-cursor selections, and virtual coordinate mappings.
-- **Milestone 1.4: Language Server Protocol Client (`packages/lsp`)**
-  - JSON-RPC over stdio, diagnostics rendering, completion popups, and symbol lookup.
+## 🎯 Pillar 1: High-Performance GPU GUI & Flagship IDE
+To prove Kale's power in interactive systems programming:
+1. **Custom GPU Rendering**: Complete elimination of slow GDI/Win32 drawing routines in favor of high-throughput OpenGL 3.3 / Vulkan batched quads.
+2. **Flagship Editor (`apps/editor`)**:
+   - Sub-millisecond input-to-render loop.
+   - Arbitrary file handling using Piece Table buffer data structure.
+   - Real-time lexical and syntax token coloring.
+   - Multiple split panes, command palette, and extensible plugin architecture.
 
 ---
 
-## 🎨 Pillar 2: Native Cross-Platform UI Toolkit
-
-A GPU-accelerated UI framework written natively in Kale to power the editor and future desktop applications.
-
-### Key Milestones:
-- **Milestone 2.1: Low-Level Windowing & Event Handling**
-  - FFI integration with SDL2 / GLFW / Win32 API.
-  - Native window creation, hardware input dispatch (mouse, keyboard, scroll, window resizing).
-- **Milestone 2.2: 2D Canvas & Vector Graphics**
-  - Integration with NanoVG / Skia / Sokol / Raylib / Direct2D.
-  - Font rendering via FreeType / stb_truetype with glyph caching and subpixel positioning.
-- **Milestone 2.3: Layout & Component Engine**
-  - Flexbox-inspired or constraint-based layout engine (`packages/ui/layout`).
-  - Retained & immediate-mode UI abstractions with dirty-rect clipping and reactive state updates.
+## 🌐 Pillar 2: Systems Networking & Web Ecosystem
+A fully native backend stack for web servers and distributed systems:
+1. **Low-Overhead Networking (`libs/net`)**:
+   - Non-blocking socket I/O using epoll/IOCP/kqueue abstractions.
+   - HTTP/1.1 and HTTP/2 transport engines.
+2. **Modern Web Framework (`libs/web`)**:
+   - High-throughput trie-based router matching hundreds of thousands of requests per second.
+   - Server-side templating and JSON serialization.
+3. **Embedded Storage (`libs/sql`)**:
+   - Zero-dependency relational database interaction via SQLite3.
 
 ---
 
-## ⚙️ Pillar 3: Language Runtime, Standard Library & Concurrency
-
-Expanding the core language runtime to support scalable, multithreaded systems.
-
-### Key Milestones:
-- **Milestone 3.1: Threading & Concurrency (`std/sync`)**
-  - OS threads (`pthread` / Windows Threads), atomic primitives (`atomic_load`, `atomic_store`, `atomic_cas`).
-  - Mutexes, condition variables, channels, and work-stealing job queue.
-- **Milestone 3.2: Complete Systems I/O & Networking (`std/fs`, `std/net`)**
-  - Directory iteration, recursive path walks, file metadata, memory-mapped files (`mmap`).
-  - TCP / UDP sockets, non-blocking network streams.
-- **Milestone 3.3: Self-Hosting Kale Compiler**
-  - Re-writing the Python-based lexer, parser, binder, and LLVM emitter directly in Kale.
-  - Bootstrapping Kale with self-compiled binaries.
+## 📦 Pillar 3: Self-Hosting & Language Autonomy
+Transitioning from PythonKale to a fully self-hosting compiler:
+1. **Phase 1 (PythonKale Stabilization)**: Feature-complete type checker, generics, struct-by-value pass/return, floats, and robust diagnostics.
+2. **Phase 2 (Kale in Kale)**: Re-implementing the lexer, parser, type checker, and LLVM emitter in Kale itself.
+3. **Phase 3 (Triangular Bootstrap)**: PythonKale compiles Kale compiler source -> `kale1.exe`. `kale1.exe` compiles itself -> `kale2.exe`. Verifying `sha256(kale1.exe) == sha256(kale2.exe)`.
 
 ---
 
-## 📈 Long-Term Timeline Phases
-
-| Phase | Focus Area | Primary Deliverables | Target Outcome |
-|---|---|---|---|
-| **Phase A** | Advanced Standard Library | `std/fs` path/dir walk, `std/text` piece table / rope, hash maps | Rich foundational stdlib for text/file manipulation |
-| **Phase B** | Windowing & Graphics FFI | GLFW / SDL2 bindings, 2D renderer bindings | First native window opened & rendered via Kale |
-| **Phase C** | Font & Text Layout Engine | Glyph atlas cache, line layout, text rendering | Crisp, real-time sub-millisecond code rendering |
-| **Phase D** | Editor Core Architecture | Buffers, multi-cursor, undo/redo tree, command palette | Interactive, typing text editor prototype in Kale |
-| **Phase E** | Concurrency & LSP | OS threads, async background workers, LSP client | Responsive IDE with syntax highlights and completions |
-| **Phase F** | Self-Hosting Compiler | Kale compiler in Kale | True self-sufficiency and peak compile-time performance |
+## 💻 Pillar 4: Bare-Metal Systems & Kale OS (`sys/*`)
+Taking Kale directly to bare-metal x86_64 hardware:
+1. **Bootloader (`sys/boot`)**: Stage 1 MBR & Stage 2 protected mode loader transition to 64-bit long mode.
+2. **Kernel (`sys/kernel`)**:
+   - Memory management: Physical page frame allocator, virtual paging table setup.
+   - Interrupt handling: IDT, PIC/APIC controllers, timer interrupts.
+   - Process scheduler: Preemptive multitasking, context switching in ASM.
+3. **Framebuffer Display (`sys/drivers`)**: Linear framebuffer driver rendering Kale UI directly onto bare hardware without an underlying OS.

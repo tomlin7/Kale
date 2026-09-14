@@ -1,9 +1,9 @@
-// libs/ui/widgets/button.kl
+// libs/ui_native/widgets/button.kl
 // Standard Interactive UI Button Component for Kale UI
 
-import "libs/ui/geom.kl" as geom;
-import "libs/ui/event.kl" as ev;
-import "libs/ui/canvas.kl" as cv;
+import "libs/ui_native/geom.kl" as geom;
+import "libs/ui_native/event.kl" as ev;
+import "libs/ui_native/canvas.kl" as cv;
 
 struct Button {
     geom.Rect bounds;

@@ -4,9 +4,9 @@
 import "packages/bindings/win32/window.kl" as win;
 import "packages/bindings/win32/user32.kl" as u32;
 import "packages/bindings/win32/gdi32.kl" as gdi;
-import "libs/ui/geom.kl" as geom;
-import "libs/ui/event.kl" as ev;
-import "libs/ui/canvas.kl" as cv;
+import "libs/ui_native/geom.kl" as geom;
+import "libs/ui_native/event.kl" as ev;
+import "libs/ui_native/canvas.kl" as cv;
 
 extern int Sleep(int ms);
 

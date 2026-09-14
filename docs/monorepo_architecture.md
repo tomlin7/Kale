@@ -1,59 +1,66 @@
-# Kale Monorepo Architecture & Standards
+# Kale Monorepo Architecture & Engineering Guidelines
 
-This document establishes the repository structure, conventions, and guidelines for the Kale Monorepo. The monorepo is engineered to host the core compiler, standard library, developer tooling, ecosystem libraries, operating system kernel/userland, and flagship applications in a unified codebase.
+## 1. Overview & Directory Taxonomy
 
----
-
-## 1. Directory Taxonomy
+The Kale monorepo houses the compiler, standard library, platform bindings, foundation libraries, application frameworks, and flagship end-user applications.
 
 ```
 kale/
 ├── packages/                      # Core Compiler, Runtime & Toolchain
 │   ├── std/                       # Official Standard Library (.kl)
-│   │   ├── core/                  # Primitives, memory, math, basic pointers
-│   │   ├── io/                    # Console, file I/O, buffered streams
-│   │   ├── sys/                   # OS calls, environment, process management
-│   │   └── collections/           # Dynamic arrays, maps, strings, buffers
-│   └── compiler/                  # Reference compiler & intermediate representations
+│   │   ├── core/                  # Math, string, option, result
+│   │   ├── collections/           # Generic list, buffer, map
+│   │   ├── fs/                    # Path, dir, file_util
+│   │   ├── io/                    # File stream I/O
+│   │   ├── sys/                   # Process, system wrappers
+│   │   └── text/                  # Piece table, string builder
+│   ├── bindings/                  # Low-Level Foreign Function Interfaces
+│   │   └── win32/                 # Windows user32, gdi32, kernel32
+│   └── editor/                    # Legacy editor engine (deprecated)
 │
-├── libs/                          # Shared Ecosystem Libraries & Frameworks
-│   ├── ui/                        # Cross-platform GUI framework (widgets, render engine)
-│   ├── web/                       # High-performance web framework (routing, middleware)
-│   ├── sql/                       # Database driver & query builder
-│   └── net/                       # TCP/UDP networking, HTTP client/server, TLS
+├── libs/                          # Foundation & Framework Libraries
+│   ├── glfw/                      # GLFW3 windowing & input bindings
+│   ├── gl/                        # OpenGL 3.3 Core Profile bindings & loader
+│   ├── stb/                       # stb_truetype & stb_image FFI
+│   ├── render/                    # 2D batched GPU graphics & font engine
+│   ├── ui/                        # GPU-accelerated immediate-mode widget toolkit
+│   ├── ui_native/                 # Win32 GDI widget toolkit (legacy desktop)
+│   ├── framework/                 # Cross-platform application bootstrap harness
+│   ├── net/                       # Sockets & HTTP/1.1 networking
+│   ├── web/                       # Web framework (routing, templates)
+│   └── sql/                       # SQLite3 database driver & query builder
 │
-├── apps/                          # Flagship Applications
-│   ├── editor/                    # Native Kale code editor
-│   ├── vcs/                       # Distributed Version Control System & forge (Git alternative)
-│   ├── blog/                      # Kale-powered blogging & publishing platform
-│   └── android-bootstrapper/      # Android app scaffolding & build packager
+├── apps/                          # Flagship End-User Applications
+│   ├── editor/                    # Native Kale code editor / IDE
+│   ├── vcs/                       # Distributed version control system
+│   ├── blog/                      # Web publishing platform & CMS
+│   └── android-bootstrapper/      # Android cross-compilation toolchain
 │
-├── sys/                           # Bare-Metal & Operating System
-│   ├── boot/                      # Bootloader stages (x86_64 / ARM64)
-│   ├── kernel/                    # Microkernel/monolithic kernel written in Kale & assembly
-│   └── drivers/                   # Device drivers (storage, display, timers, UART)
+├── sys/                           # Bare-Metal Operating System (Future)
+│   ├── boot/                      # x86_64 bootloader
+│   ├── kernel/                    # Microkernel in Kale + ASM
+│   └── drivers/                   # Hardware drivers
 │
-├── tools/                         # Developer Tooling & Automation
-│   ├── scripts/                   # Monorepo build, test, and release runners
-│   └── vscode/                    # Syntax highlighting & Language Server Protocol (LSP)
-│
-├── docs/                          # Architecture Specifications & RFCs
-├── examples/                      # Language showcases and sample programs
-├── tests/                         # Unit, integration, and end-to-end compiler test suites
-└── src/                           # Compiler implementation (Python bootstrap / self-hosting)
+├── plans/                         # Master Roadmap & Short-Term Execution Plans
+├── docs/                          # Architecture specs & documentation
+├── examples/                      # Showcase programs & tutorials
+├── tests/                         # Unit & integration test suites
+└── src/kale/                      # Reference compiler implementation (Python bootstrap)
 ```
 
 ---
 
-## 2. Monorepo Package Standards
+## 2. Monorepo Standards & Hygiene Rules
 
-1. **Self-Contained Modules**: Every library under \libs/\ and app under \pps/\ must maintain its own documentation and design specs.
-2. **Import Conventions**:
-   - Relative imports (\./helper.kl\, \../common.kl\) are used within the same package.
-   - Standard library imports (\std/core/math.kl\, \std/io/print.kl\) are resolved via the compiler search paths.
-   - Shared library imports (\libs/ui/window.kl\, \libs/sql/db.kl\) are resolved via the monorepo root.
-3. **No Circular Dependencies Across Packages**:
-   - \pps/*\ may depend on \libs/*\ and \packages/std\.
-   - \libs/*\ may depend on \packages/std\.
-   - \packages/std\ has no external dependencies.
-   - \sys/*\ interacts with bare metal and hardware abstractions directly.
+1. **Per-Project Documentation & Versioning**:
+   - Every subfolder in `packages/`, `libs/`, and `apps/` MUST maintain:
+     - `agents.md`: AI agent operational guide, SemVer tracking, build instructions, and local milestones.
+     - `PLAN.md`: Deep technical design spec, data structures, module breakdown, and verification steps.
+2. **Dependency Inversion & Boundary Rules**:
+   - `apps/*` may depend on `libs/*`, `packages/std`, and `packages/bindings/*`.
+   - `libs/*` may depend on other `libs/*` only according to the acyclic dependency graph defined in `plans/MASTER_ECOSYSTEM_PLAN.md`.
+   - `packages/std` MUST NOT depend on any `libs/*` or `apps/*`. It interacts solely with the C runtime or core syscalls.
+   - Circular imports between packages or libraries are strictly forbidden.
+3. **Import Syntax**:
+   - Internal imports within the same library: `import "libs/render/math.kl" as math;`
+   - Standard library imports: `import "packages/std/collections/generic_list.kl" as gl;`

@@ -11,7 +11,7 @@ import os
 class TestUIGeom(unittest.TestCase):
     def test_rect_contains_and_inset(self):
         code = """
-        import "libs/ui/geom.kl" as geom;
+        import "libs/ui_native/geom.kl" as geom;
 
         geom.Rect r;
         r.init(10, 10, 100, 80);
@@ -49,7 +49,7 @@ class TestUIGeom(unittest.TestCase):
 
     def test_color_to_colorref(self):
         code = """
-        import "libs/ui/geom.kl" as geom;
+        import "libs/ui_native/geom.kl" as geom;
 
         geom.Color c;
         c.init(255, 128, 64, 255); // R=255, G=128, B=64

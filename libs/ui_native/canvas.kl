@@ -1,9 +1,9 @@
-// libs/ui/canvas.kl
+// libs/ui_native/canvas.kl
 // Double-Buffered Offscreen 2D Graphics Canvas for Kale UI
 
 import "packages/bindings/win32/gdi32.kl" as gdi;
 import "packages/bindings/win32/user32.kl" as u32;
-import "libs/ui/geom.kl" as geom;
+import "libs/ui_native/geom.kl" as geom;
 
 extern int strlen(string s);
 

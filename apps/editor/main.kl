@@ -2,8 +2,8 @@
 // Flagship Native Code Editor for Kale written with Kale Framework & Kale UI
 
 import "libs/framework/app.kl" as fw;
-import "libs/ui/geom.kl" as geom;
-import "libs/ui/event.kl" as ev;
+import "libs/ui_native/geom.kl" as geom;
+import "libs/ui_native/event.kl" as ev;
 import "apps/editor/app_state.kl" as st;
 import "apps/editor/gutter.kl" as gt;
 import "apps/editor/status_bar.kl" as sb;
@@ -23,7 +23,7 @@ fn void run_editor() {
     fw.App app;
     app.init(config);
 
-    string sample_code = "// ========================================================\n// Welcome to the Kale Native Code Editor (kale/edit)\n// Written in Kale, powered by kale/framework & kale/ui\n// ========================================================\n\nimport \"packages/std/text/piece_table.kl\" as pt;\nimport \"libs/ui/canvas.kl\" as cv;\n\nstruct Vector3 {\n    float x;\n    float y;\n    float z;\n}\n\nfn int fibonacci(int n) {\n    if (n <= 1) {\n        return n;\n    }\n    return fibonacci(n - 1) + fibonacci(n - 2);\n}\n\nfn void start_application() {\n    // Live native rendering with zero dependencies\n    int speed = 60; // 60 FPS\n    string status = \"Operational\";\n}\n";
+    string sample_code = "// ========================================================\n// Welcome to the Kale Native Code Editor (kale/edit)\n// Written in Kale, powered by kale/framework & kale/ui\n// ========================================================\n\nimport \"packages/std/text/piece_table.kl\" as pt;\nimport \"libs/ui_native/canvas.kl\" as cv;\n\nstruct Vector3 {\n    float x;\n    float y;\n    float z;\n}\n\nfn int fibonacci(int n) {\n    if (n <= 1) {\n        return n;\n    }\n    return fibonacci(n - 1) + fibonacci(n - 2);\n}\n\nfn void start_application() {\n    // Live native rendering with zero dependencies\n    int speed = 60; // 60 FPS\n    string status = \"Operational\";\n}\n";
 
     st.EditorState state;
     state.init(sample_code, "editor_main.kl");

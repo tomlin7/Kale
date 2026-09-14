@@ -1,4 +1,4 @@
-// libs/ui/event.kl
+// libs/ui_native/event.kl
 // Event Dispatching and Input Models for Kale UI
 
 struct Event {

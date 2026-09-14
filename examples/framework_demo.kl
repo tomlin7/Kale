@@ -1,9 +1,9 @@
 import "libs/framework/app.kl" as fw;
-import "libs/ui/geom.kl" as geom;
-import "libs/ui/event.kl" as ev;
-import "libs/ui/widgets/button.kl" as btn;
-import "libs/ui/widgets/label.kl" as lbl;
-import "libs/ui/widgets/container.kl" as cnt;
+import "libs/ui_native/geom.kl" as geom;
+import "libs/ui_native/event.kl" as ev;
+import "libs/ui_native/widgets/button.kl" as btn;
+import "libs/ui_native/widgets/label.kl" as lbl;
+import "libs/ui_native/widgets/container.kl" as cnt;
 
 extern int Sleep(int ms);
 

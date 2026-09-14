@@ -1,8 +1,8 @@
 // apps/editor/text_viewport.kl
 // Interactive Syntax-Highlighted Text Canvas Viewport for Kale Code Editor
 
-import "libs/ui/geom.kl" as geom;
-import "libs/ui/canvas.kl" as cv;
+import "libs/ui_native/geom.kl" as geom;
+import "libs/ui_native/canvas.kl" as cv;
 import "packages/std/text/piece_table.kl" as pt;
 import "packages/std/text/string_builder.kl" as sb;
 import "packages/editor/theme.kl" as th;
