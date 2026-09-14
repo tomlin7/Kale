@@ -69,290 +69,6 @@ function HatchingOverlay() {
   );
 }
 
-/**
- * Metaphysical Art (Giorgio de Chirico) & Moebius Comic Graphic Illustration
- * Procedural SVG composed with native SVG feTurbulence (Perlin noise) filters.
- * Features:
- * - Stark Roman / Metaphysical arcade colonnade with receding linear perspective
- * - Exaggerated dramatic cast shadows across an uncanny empty plaza
- * - High-contrast digital color blocking (stark white stone, vermilion red monolith, midnight blue shadows)
- * - Moebius-style stippling and ink contour lines
- * - Native fractal Perlin noise grain texture
- */
-function MetaphysicalPerlinGraphic() {
-  return (
-    <svg
-      viewBox="0 0 700 380"
-      className="w-full h-full object-cover select-none"
-      preserveAspectRatio="xMidYMid slice"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <defs>
-        {/* Procedural Perlin Noise Filter (Stipple / Grain Texture) */}
-        <filter id="perlin-grain" x="0%" y="0%" width="100%" height="100%">
-          <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" result="noise" />
-          <feColorMatrix
-            type="matrix"
-            values="0 0 0 0 1
-                    0 0 0 0 1
-                    0 0 0 0 1
-                    0 0 0 0.15 0"
-            result="coloredNoise"
-          />
-          <feComposite operator="in" in2="SourceGraphic" />
-        </filter>
-
-        {/* Dense Metaphysical Plinth Perlin Noise */}
-        <filter id="monolith-noise" x="0%" y="0%" width="100%" height="100%">
-          <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="4" result="turbulence" />
-          <feColorMatrix
-            type="matrix"
-            values="0 0 0 0 0.05
-                    0 0 0 0 0.09
-                    0 0 0 0 0.24
-                    0 0 0 0.35 0"
-          />
-        </filter>
-
-        {/* Moebius Stipple Pattern */}
-        <pattern id="stipple-dots" width="8" height="8" patternUnits="userSpaceOnUse">
-          <circle cx="2" cy="2" r="0.75" fill="#ffffff" fillOpacity="0.4" />
-          <circle cx="6" cy="6" r="0.6" fill="#ffffff" fillOpacity="0.3" />
-        </pattern>
-
-        {/* Linear Plaza Shadow Gradient */}
-        <linearGradient id="plaza-horizon" x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%" stopColor="#08102b" />
-          <stop offset="35%" stopColor="#0d173d" />
-          <stop offset="100%" stopColor="#162b6b" />
-        </linearGradient>
-
-        {/* Stark Shadow Gradient for Arches */}
-        <linearGradient id="arch-shadow" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#050a1d" />
-          <stop offset="100%" stopColor="#0d173d" />
-        </linearGradient>
-      </defs>
-
-      {/* Sky / Atmospheric Backplane */}
-      <rect x="0" y="0" width="700" height="220" fill="#08102b" />
-
-      {/* Surrealist Distant Low Horizon Glow */}
-      <rect x="0" y="160" width="700" height="60" fill="#111f4d" />
-      <line x1="0" y1="220" x2="700" y2="220" stroke="#ffffff" strokeWidth="1" strokeOpacity="0.3" />
-
-      {/* Metaphysical Plaza Floor with Perspective Grid Lines (Giorgio de Chirico Plaza) */}
-      <polygon points="0,220 700,220 700,380 0,380" fill="url(#plaza-horizon)" />
-      
-      {/* Receding Perspective Orthogonals to Vanishing Point (x=520, y=220) */}
-      <g stroke="#ffffff" strokeWidth="0.8" strokeOpacity="0.18">
-        <line x1="520" y1="220" x2="-80" y2="380" />
-        <line x1="520" y1="220" x2="80" y2="380" />
-        <line x1="520" y1="220" x2="240" y2="380" />
-        <line x1="520" y1="220" x2="400" y2="380" />
-        <line x1="520" y1="220" x2="560" y2="380" />
-        <line x1="520" y1="220" x2="720" y2="380" />
-        <line x1="520" y1="220" x2="880" y2="380" />
-      </g>
-
-      {/* Transverse Perspective Grid Lines */}
-      <line x1="0" y1="235" x2="700" y2="235" stroke="#ffffff" strokeWidth="0.6" strokeOpacity="0.12" />
-      <line x1="0" y1="260" x2="700" y2="260" stroke="#ffffff" strokeWidth="0.6" strokeOpacity="0.15" />
-      <line x1="0" y1="300" x2="700" y2="300" stroke="#ffffff" strokeWidth="0.8" strokeOpacity="0.18" />
-      <line x1="0" y1="350" x2="700" y2="350" stroke="#ffffff" strokeWidth="1" strokeOpacity="0.22" />
-
-      {/* --- EXAGGERATED METAPHYSICAL CAST SHADOWS (De Chirico 45-degree harsh shadows) --- */}
-      {/* Colonnade cast shadow across the plaza */}
-      <polygon
-        points="0,220 280,220 460,380 0,380"
-        fill="#040816"
-        fillOpacity="0.75"
-      />
-      {/* Monolith / Plinth cast shadow */}
-      <polygon
-        points="530,220 575,220 670,380 600,380"
-        fill="#040816"
-        fillOpacity="0.8"
-      />
-
-      {/* --- CLASSICAL METAPHYSICAL ARCADE (De Chirico Receding Colonnade) --- */}
-      {/* Arcade Wall Body */}
-      <polygon
-        points="20,40 280,120 280,270 20,330"
-        fill="#1e357d"
-        stroke="#ffffff"
-        strokeWidth="1.5"
-      />
-
-      {/* Arch 1 (Foreground, Tallest) */}
-      <g>
-        {/* Arch interior shadow */}
-        <path
-          d="M 40,325 L 40,130 Q 75,90 110,130 L 110,310 Z"
-          fill="url(#arch-shadow)"
-          stroke="#ffffff"
-          strokeWidth="1.2"
-        />
-        {/* Pure Black Inner Void */}
-        <path
-          d="M 50,322 L 50,140 Q 75,108 100,140 L 100,308 Z"
-          fill="#030611"
-        />
-        {/* Moebius Stipple hatching inside arch */}
-        <path
-          d="M 50,322 L 50,140 Q 75,108 100,140 L 100,308 Z"
-          fill="url(#stipple-dots)"
-        />
-        {/* Arch Impost & Keystone Accent */}
-        <line x1="36" y1="130" x2="114" y2="130" stroke="#ffffff" strokeWidth="1.5" />
-        <rect x="71" y="90" width="8" height="12" fill="#ffffff" />
-      </g>
-
-      {/* Arch 2 (Middle) */}
-      <g>
-        <path
-          d="M 130,305 L 130,150 Q 158,118 186,150 L 186,290 Z"
-          fill="url(#arch-shadow)"
-          stroke="#ffffff"
-          strokeWidth="1.2"
-        />
-        <path
-          d="M 138,302 L 138,158 Q 158,132 178,158 L 178,288 Z"
-          fill="#030611"
-        />
-        <path
-          d="M 138,302 L 138,158 Q 158,132 178,158 L 178,288 Z"
-          fill="url(#stipple-dots)"
-        />
-        <line x1="126" y1="150" x2="190" y2="150" stroke="#ffffff" strokeWidth="1.5" />
-        <rect x="154" y="118" width="7" height="10" fill="#ffffff" />
-      </g>
-
-      {/* Arch 3 (Background, Receding) */}
-      <g>
-        <path
-          d="M 206,285 L 206,168 Q 228,142 250,168 L 250,274 Z"
-          fill="url(#arch-shadow)"
-          stroke="#ffffff"
-          strokeWidth="1.2"
-        />
-        <path
-          d="M 212,282 L 212,174 Q 228,154 244,174 L 244,272 Z"
-          fill="#030611"
-        />
-        <line x1="202" y1="168" x2="254" y2="168" stroke="#ffffff" strokeWidth="1.5" />
-        <rect x="225" y="142" width="6" height="8" fill="#ffffff" />
-      </g>
-
-      {/* Arcade Entablature & Roof Cornice */}
-      <polygon
-        points="15,40 285,120 285,108 15,28"
-        fill="#ffffff"
-        stroke="#ffffff"
-        strokeWidth="1.5"
-      />
-      <line x1="15" y1="46" x2="285" y2="126" stroke="#0d173d" strokeWidth="1.5" />
-
-      {/* --- SURREALIST PRIMARY COLOR BLOCK MONOLITH (Stark Red / Minimalist Accent) --- */}
-      {/* High-contrast geometric plinth */}
-      <g>
-        {/* Monolith Front Face (Vibrant Vermilion Red) */}
-        <polygon
-          points="530,120 575,105 575,225 530,240"
-          fill="#dc2626"
-          stroke="#ffffff"
-          strokeWidth="1.5"
-        />
-        {/* Monolith Top Face (Pure White) */}
-        <polygon
-          points="530,120 575,105 560,95 515,110"
-          fill="#ffffff"
-          stroke="#ffffff"
-          strokeWidth="1.5"
-        />
-        {/* Monolith Side Face (Midnight Shadow) */}
-        <polygon
-          points="515,110 530,120 530,240 515,230"
-          fill="#070e24"
-          stroke="#ffffff"
-          strokeWidth="1.5"
-        />
-        {/* Perlin noise texture over monolith face */}
-        <polygon
-          points="530,120 575,105 575,225 530,240"
-          fill="#000000"
-          fillOpacity="0.1"
-          filter="url(#monolith-noise)"
-        />
-      </g>
-
-      {/* Classical Geometric Sphere / Orb casting shadow (De Chirico Motif) */}
-      <g>
-        <circle cx="430" cy="275" r="22" fill="#ffffff" stroke="#ffffff" strokeWidth="1.5" />
-        <circle cx="430" cy="275" r="22" fill="url(#stipple-dots)" />
-        {/* Sphere 3D shading */}
-        <path
-          d="M 430,253 A 22,22 0 0,1 452,275 A 22,14 0 0,1 430,289 A 22,22 0 0,1 408,275 A 22,22 0 0,1 430,253 Z"
-          fill="#0d173d"
-          fillOpacity="0.5"
-        />
-        {/* Ground shadow ellipse */}
-        <ellipse cx="448" cy="285" rx="26" ry="7" fill="#040816" fillOpacity="0.7" />
-      </g>
-
-      {/* Architectural Chimney / Distant Metaphysical Tower */}
-      <polygon
-        points="630,70 655,70 655,220 630,220"
-        fill="#0d173d"
-        stroke="#ffffff"
-        strokeWidth="1.2"
-      />
-      <polygon
-        points="625,70 660,70 655,62 630,62"
-        fill="#ffffff"
-        stroke="#ffffff"
-        strokeWidth="1"
-      />
-
-      {/* Global Perlin Noise Grain Overlay across the entire artwork */}
-      <rect
-        x="0"
-        y="0"
-        width="700"
-        height="380"
-        fill="#ffffff"
-        filter="url(#perlin-grain)"
-        pointerEvents="none"
-      />
-
-      {/* Frame Border Accent */}
-      <rect
-        x="1"
-        y="1"
-        width="698"
-        height="378"
-        fill="none"
-        stroke="#ffffff"
-        strokeWidth="1"
-        strokeOpacity="0.3"
-      />
-
-      {/* Typography Inscription In-Canvas */}
-      <text
-        x="680"
-        y="365"
-        fill="#ffffff"
-        fillOpacity="0.5"
-        fontSize="9"
-        fontFamily="monospace"
-        textAnchor="end"
-      >
-        KALE DIRECT LLVM 18 IR PIPELINE // PROCEDURAL VECTOR SCHEMATIC
-      </text>
-    </svg>
-  );
-}
-
 export default function HomePage() {
   return (
     <div className="w-full min-h-screen bg-[#162b6b] text-white pb-32">
@@ -712,91 +428,23 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* 4. SYSTEMS BENCHMARK & COMPARISON METRICS */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
-        <div className="p-6 sm:p-8 rounded-[6px] bg-[#0d173d] border border-[#243b82] space-y-6 relative overflow-hidden">
-          <HatchingOverlay />
-          <div className="flex flex-col sm:flex-row sm:items-end justify-between border-b border-[#243b82] pb-4">
-            <div>
-              <span className="text-[10px] uppercase font-mono tracking-widest text-white/60">
-                Hardware & Runtime Telemetry
-              </span>
-              <h2 className="text-2xl font-renaissance font-normal text-white mt-1">
-                Systems Performance Benchmark
-              </h2>
-            </div>
-            <p className="text-xs font-mono text-white/60 mt-2 sm:mt-0">
-              Native x86_64 Execution Targets
-            </p>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs font-mono">
-              <thead>
-                <tr className="border-b border-[#243b82] text-white/60">
-                  <th className="py-3 px-4 font-normal">Subsystem Metric</th>
-                  <th className="py-3 px-4 font-normal text-white">Kale (Native LLVM)</th>
-                  <th className="py-3 px-4 font-normal">C / Clang</th>
-                  <th className="py-3 px-4 font-normal">Rust (rustc)</th>
-                  <th className="py-3 px-4 font-normal">Zig</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#243b82]">
-                <tr>
-                  <td className="py-3.5 px-4 text-white font-medium">Input to Frame Latency</td>
-                  <td className="py-3.5 px-4 text-white font-semibold">0.8 ms</td>
-                  <td className="py-3.5 px-4 text-white/70">1.2 ms</td>
-                  <td className="py-3.5 px-4 text-white/70">2.1 ms</td>
-                  <td className="py-3.5 px-4 text-white/70">1.4 ms</td>
-                </tr>
-                <tr>
-                  <td className="py-3.5 px-4 text-white font-medium">Garbage Collector Pause</td>
-                  <td className="py-3.5 px-4 text-white font-semibold">0.0 ms (Zero GC)</td>
-                  <td className="py-3.5 px-4 text-white/70">0.0 ms</td>
-                  <td className="py-3.5 px-4 text-white/70">0.0 ms</td>
-                  <td className="py-3.5 px-4 text-white/70">0.0 ms</td>
-                </tr>
-                <tr>
-                  <td className="py-3.5 px-4 text-white font-medium">Cold Compilation Latency</td>
-                  <td className="py-3.5 px-4 text-white font-semibold">&lt; 24 ms</td>
-                  <td className="py-3.5 px-4 text-white/70">48 ms</td>
-                  <td className="py-3.5 px-4 text-white/70">310 ms</td>
-                  <td className="py-3.5 px-4 text-white/70">65 ms</td>
-                </tr>
-                <tr>
-                  <td className="py-3.5 px-4 text-white font-medium">Heap Overhead for Structs</td>
-                  <td className="py-3.5 px-4 text-white font-semibold">0 Bytes (Stack Only)</td>
-                  <td className="py-3.5 px-4 text-white/70">0 Bytes</td>
-                  <td className="py-3.5 px-4 text-white/70">0 Bytes</td>
-                  <td className="py-3.5 px-4 text-white/70">0 Bytes</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
-      {/* 5. PROCEDURAL METAPHYSICAL GRAPHICS & ARCHITECTURAL PHILOSOPHY BENTO */}
+      {/* 4. COMPILER SPECIFICATION & PIPELINE ARCHITECTURE BENTO */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
         <div className="rounded-[6px] bg-[#0d173d] border border-[#243b82] overflow-hidden grid grid-cols-1 lg:grid-cols-12 items-stretch relative">
           <HatchingOverlay />
 
-          {/* Left 7 Columns: Metaphysical Procedural SVG Graphic (Perlin Noise, Colonnade, Stark Shadows, Color Blocks) */}
-          <div className="lg:col-span-7 relative min-h-[380px] lg:min-h-[460px] border-b lg:border-b-0 lg:border-r border-[#243b82] overflow-hidden bg-[#08102b] flex items-center justify-center">
-            <MetaphysicalPerlinGraphic />
-            <div className="absolute top-4 left-4 px-3 py-1 rounded-[6px] bg-[#0d173d]/90 border border-white/20 text-[10px] font-mono text-white flex items-center gap-1.5 backdrop-blur-sm">
-              <Sparkle size={12} weight="fill" className="text-white" />
-              <span>PROCEDURAL LLVM 18 PIPELINE // PERLIN DITHERING</span>
-            </div>
-            <div className="absolute bottom-4 left-4 right-4 hidden sm:flex items-center justify-between px-3 py-1.5 rounded-[6px] bg-[#0d173d]/90 border border-white/10 text-[9px] font-mono text-white/70 backdrop-blur-sm">
-              <span>uv run kale build -o bin/app.exe</span>
-              <span>Target: x86_64-pc-windows-msvc</span>
-              <span>Zero GC • Stack Primitives</span>
-            </div>
+          {/* Left 6 Columns: Clean Classical Lithograph Art from kaleimages (Zero text overlays) */}
+          <div className="lg:col-span-6 relative min-h-[380px] lg:min-h-[460px] border-b lg:border-b-0 lg:border-r border-[#243b82] overflow-hidden">
+            <Image
+              src="/assets/kaleimages/HR-35Y_bUAAMBp-.jpg"
+              alt="Kale Classical Architectural Lithograph"
+              fill
+              className="object-cover object-center"
+            />
           </div>
 
-          {/* Right 5 Columns: Concrete Product Specification & Engineering Architecture */}
-          <div className="lg:col-span-5 p-8 sm:p-10 flex flex-col justify-between space-y-6 z-10">
+          {/* Right 6 Columns: Concrete Product Specification & Engineering Architecture */}
+          <div className="lg:col-span-6 p-8 sm:p-10 flex flex-col justify-between space-y-6 z-10">
             <div className="space-y-4">
               <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-[6px] border border-white/20 bg-[#162b6b] text-[10px] font-mono text-white">
                 <span>COMPILER CORE SPECIFICATION</span>
@@ -1006,27 +654,27 @@ export default function HomePage() {
                     fill
                     className="object-cover object-center"
                   />
-                  <div className="absolute top-3 left-3 px-2 py-0.5 rounded-[6px] bg-[#0d173d]/90 border border-white/20 text-[10px] font-mono text-white">
-                    {project.tier}
-                  </div>
-                  <div className="absolute top-3 right-3 px-2 py-0.5 rounded-[6px] bg-[#0d173d]/90 border border-white/20 text-[10px] font-mono text-white">
-                    {project.version}
-                  </div>
                 </div>
 
                 {/* Card Body */}
                 <div className="p-5 space-y-3 flex-1 flex flex-col justify-between">
                   <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-[6px] bg-[#162b6b] border border-white/20 text-white flex items-center justify-center">
-                        <IconComponent size={14} weight="regular" />
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-[6px] bg-[#162b6b] border border-white/20 text-white flex items-center justify-center">
+                          <IconComponent size={14} weight="regular" />
+                        </div>
+                        <h3 className="text-base font-normal text-white font-renaissance">
+                          {project.name}
+                        </h3>
                       </div>
-                      <h3 className="text-base font-normal text-white font-renaissance">
-                        {project.name}
-                      </h3>
+                      <span className="px-2 py-0.5 rounded-[4px] bg-[#162b6b] border border-white/20 text-[10px] font-mono text-white">
+                        {project.version}
+                      </span>
                     </div>
-                    <div className="text-[11px] text-white/60 font-mono">
-                      {project.path}
+                    <div className="flex items-center justify-between text-[11px] font-mono text-white/60">
+                      <span>{project.path}</span>
+                      <span className="text-white/40">{project.tier}</span>
                     </div>
                     <p className="text-xs text-white/80 line-clamp-2 leading-relaxed font-normal pt-1">
                       {project.tagline}
