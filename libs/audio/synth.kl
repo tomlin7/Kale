@@ -1,0 +1,19 @@
+import "libs/audio/buffer.kl" as buffer;
+
+// Sine/Square waveform synthesizer
+fn void generate_square_wave(buffer.AudioBuffer* b, int freq_hz, int amplitude) {
+    int samples_per_cycle = b->sample_rate / freq_hz;
+    int half_cycle = samples_per_cycle / 2;
+    int total = b->sample_count * b->channels;
+    
+    int i = 0;
+    while (i < total) {
+        int pos = i % samples_per_cycle;
+        if (pos < half_cycle) {
+            b->samples[i] = amplitude;
+        } else {
+            b->samples[i] = 0 - amplitude;
+        }
+        i = i + 1;
+    }
+}

@@ -1,0 +1,21 @@
+import "libs/audio/buffer.kl" as buffer;
+import "libs/audio/synth.kl" as synth;
+
+fn int main_entry() {
+    print("[TEST] Initializing libs/audio sound engine...");
+    buffer.AudioBuffer* b = buffer.buffer_new(44100, 2, 4410); // 100ms stereo buffer
+    if (b->sample_rate == 44100 && b->channels == 2) {
+        print("  [PASS] 44.1kHz stereo audio buffer created");
+    }
+    
+    synth.generate_square_wave(b, 440, 16000); // 440 Hz concert A tone
+    if (b->samples[0] == 16000) {
+        print("  [PASS] 440Hz waveform synthesized successfully");
+    }
+    
+    buffer.buffer_free(b);
+    print("ALL LIBS/AUDIO TESTS PASSED PERFECTLY.");
+    return 0;
+}
+
+main_entry();

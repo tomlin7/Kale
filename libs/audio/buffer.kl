@@ -1,0 +1,24 @@
+struct AudioBuffer {
+    int sample_rate;
+    int channels;
+    int sample_count;
+    int* samples;
+}
+
+fn AudioBuffer* buffer_new(int sample_rate, int channels, int sample_count) {
+    AudioBuffer* b = alloc(AudioBuffer);
+    b->sample_rate = sample_rate;
+    b->channels = channels;
+    b->sample_count = sample_count;
+    b->samples = alloc(int, sample_count * channels);
+    return b;
+}
+
+fn void buffer_free(AudioBuffer* b) {
+    if (b != (AudioBuffer*)0) {
+        if (b->samples != (int*)0) {
+            free(b->samples);
+        }
+        free(b);
+    }
+}
