@@ -1,0 +1,105 @@
+// libs/ui/widgets.kl
+// Standard Immediate-Mode Interactive UI Widgets (Buttons, Panels, Text, Sliders)
+
+import "libs/ui/ui.kl" as ui;
+import "libs/render/math.kl" as rmath;
+
+extern int strlen(string s);
+
+fn void ui_panel(ui.UIContext* ctx, float x, float y, float w, float h, rmath.Color color) {
+    ctx->renderer.push_quad(ctx->gl_ctx, x, y, w, h, color);
+}
+
+fn void ui_label(ui.UIContext* ctx, string text, float x, float y, rmath.Color color) {
+    ctx->font.draw_text(&ctx->renderer, ctx->gl_ctx, text, x, y, color);
+}
+
+fn int ui_button(ui.UIContext* ctx, int id, string text, float x, float y, float w, float h) {
+    int clicked = 0;
+    int hovered = ctx->is_hovered(x, y, w, h);
+
+    if (hovered != 0) {
+        ctx->hot_id = id;
+        if (ctx->active_id == 0 && ctx->mouse_pressed != 0) {
+            ctx->active_id = id;
+            ctx->focused_id = id;
+        }
+    }
+
+    rmath.Color btn_col = ctx->theme.button_normal;
+    if (ctx->active_id == id) {
+        btn_col = ctx->theme.button_active;
+        if (ctx->mouse_released != 0) {
+            if (hovered != 0) {
+                clicked = 1;
+                ctx->last_clicked_id = id;
+            }
+            ctx->active_id = 0;
+        }
+    } else if (ctx->hot_id == id) {
+        btn_col = ctx->theme.button_hover;
+    }
+
+    // Render button background
+    ctx->renderer.push_quad(ctx->gl_ctx, x, y, w, h, btn_col);
+
+    // Center text label within button bounds
+    int len = strlen(text);
+    float text_w = (float)len * 11.0f; // Approximate character width for monospace
+    float tx = x + (w - text_w) * 0.5f;
+    if (tx < x + 8.0f) {
+        tx = x + 8.0f;
+    }
+    float ty = y + (h - 20.0f) * 0.5f;
+
+    ctx->font.draw_text(&ctx->renderer, ctx->gl_ctx, text, tx, ty, ctx->theme.button_text);
+    return clicked;
+}
+
+fn float ui_slider(ui.UIContext* ctx, int id, float value, float min_val, float max_val, float x, float y, float w, float h) {
+    float cur_val = value;
+    int hovered = ctx->is_hovered(x, y, w, h);
+
+    if (hovered != 0) {
+        ctx->hot_id = id;
+        if (ctx->active_id == 0 && ctx->mouse_pressed != 0) {
+            ctx->active_id = id;
+            ctx->focused_id = id;
+        }
+    }
+
+    if (ctx->active_id == id) {
+        float rel_x = ctx->mouse_x - x;
+        if (rel_x < 0.0f) {
+            rel_x = 0.0f;
+        }
+        if (rel_x > w) {
+            rel_x = w;
+        }
+        float frac = rel_x / w;
+        cur_val = min_val + frac * (max_val - min_val);
+        if (ctx->mouse_released != 0) {
+            ctx->active_id = 0;
+        }
+    }
+
+    // Render slider track
+    float track_h = 6.0f;
+    float track_y = y + (h - track_h) * 0.5f;
+    ctx->renderer.push_quad(ctx->gl_ctx, x, track_y, w, track_h, ctx->theme.input_border);
+
+    // Render thumb handle
+    float frac = (cur_val - min_val) / (max_val - min_val);
+    if (frac < 0.0f) { frac = 0.0f; }
+    if (frac > 1.0f) { frac = 1.0f; }
+    float thumb_w = 14.0f;
+    float thumb_x = x + frac * (w - thumb_w);
+
+    rmath.Color thumb_col = ctx->theme.button_hover;
+    if (ctx->active_id == id) {
+        thumb_col = ctx->theme.accent;
+    }
+    ctx->renderer.push_quad(ctx->gl_ctx, thumb_x, y, thumb_w, h, thumb_col);
+
+    return cur_val;
+}

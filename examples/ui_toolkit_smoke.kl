@@ -1,0 +1,109 @@
+// examples/ui_toolkit_smoke.kl
+// Smoke test verifying Milestone 6: Immediate-Mode GPU UI Toolkit & Widgets
+
+import "libs/glfw/glfw.kl" as glfw;
+import "libs/glfw/constants.kl" as glc;
+import "libs/gl/gl.kl" as gl;
+import "libs/gl/constants.kl" as kgl;
+import "libs/gl/loader.kl" as glloader;
+import "libs/render/math.kl" as rmath;
+import "libs/ui/ui.kl" as ui;
+import "libs/ui/widgets.kl" as uiw;
+
+fn int run_ui_smoke() {
+    int init_res = glfw.glfwInit();
+    if (init_res == 0) {
+        return 1;
+    }
+
+    glfw.glfwWindowHint(glc.GLFW_CONTEXT_VERSION_MAJOR(), 3);
+    glfw.glfwWindowHint(glc.GLFW_CONTEXT_VERSION_MINOR(), 3);
+    glfw.glfwWindowHint(glc.GLFW_OPENGL_PROFILE(), glc.GLFW_OPENGL_CORE_PROFILE());
+
+    void* window = glfw.glfwCreateWindow(960, 640, "Kale Engine - Immediate-Mode UI Toolkit", (void*)0, (void*)0);
+    if (window == (void*)0) {
+        glfw.glfwTerminate();
+        return 2;
+    }
+
+    glfw.glfwMakeContextCurrent(window);
+    glfw.glfwSwapInterval(1);
+
+    glloader.GLContext gl_ctx;
+    int loaded = gl_ctx.load();
+    if (loaded == 0) {
+        glfw.glfwDestroyWindow(window);
+        glfw.glfwTerminate();
+        return 3;
+    }
+
+    ui.UIContext ui_ctx;
+    int ui_ok = ui_ctx.init(window, &gl_ctx, "C:\\Windows\\Fonts\\consola.ttf", 20.0f);
+    if (ui_ok == 0) {
+        print("Failed to initialize UIContext!");
+        return 4;
+    }
+
+    print("Immediate-Mode GPU UI Toolkit Initialized Successfully!");
+
+    gl.glViewport(0, 0, 960, 640);
+
+    float slider_val = 50.0f;
+    int click_counter = 0;
+    int frames = 0;
+
+    while (glfw.glfwWindowShouldClose(window) == 0) {
+        gl.glClearColor(ui_ctx.theme.bg.r, ui_ctx.theme.bg.g, ui_ctx.theme.bg.b, 1.0f);
+        gl.glClear(kgl.GL_COLOR_BUFFER_BIT());
+
+        ui_ctx.begin(960, 640);
+
+        // Sidebar Panel
+        uiw.ui_panel(&ui_ctx, 20.0f, 20.0f, 260.0f, 600.0f, ui_ctx.theme.panel_bg);
+        uiw.ui_label(&ui_ctx, "EXPLORER", 40.0f, 40.0f, ui_ctx.theme.accent);
+        uiw.ui_label(&ui_ctx, "> src/kale/", 40.0f, 80.0f, ui_ctx.theme.text);
+        uiw.ui_label(&ui_ctx, "> libs/ui/", 40.0f, 110.0f, ui_ctx.theme.text);
+        uiw.ui_label(&ui_ctx, "> libs/render/", 40.0f, 140.0f, ui_ctx.theme.text);
+        uiw.ui_label(&ui_ctx, "> editor/main.kl", 40.0f, 170.0f, ui_ctx.theme.text_muted);
+
+        // Main Workspace Panel
+        uiw.ui_panel(&ui_ctx, 300.0f, 20.0f, 640.0f, 600.0f, ui_ctx.theme.panel_bg);
+        uiw.ui_panel(&ui_ctx, 300.0f, 20.0f, 640.0f, 48.0f, ui_ctx.theme.header_bg);
+        uiw.ui_label(&ui_ctx, "Kale Immediate-Mode UI Control Gallery", 320.0f, 34.0f, ui_ctx.theme.text);
+
+        // Interactive Button 1
+        if (uiw.ui_button(&ui_ctx, 101, "Compile Target", 330.0f, 100.0f, 180.0f, 40.0f) != 0) {
+            click_counter = click_counter + 1;
+            print("Compile Target Clicked! Total clicks:", click_counter);
+        }
+
+        // Interactive Button 2
+        if (uiw.ui_button(&ui_ctx, 102, "Run Tests", 530.0f, 100.0f, 160.0f, 40.0f) != 0) {
+            click_counter = click_counter + 10;
+            print("Run Tests Clicked! Total clicks:", click_counter);
+        }
+
+        // Interactive Slider
+        uiw.ui_label(&ui_ctx, "Font Scaling / Zoom Level:", 330.0f, 180.0f, ui_ctx.theme.text_muted);
+        slider_val = uiw.ui_slider(&ui_ctx, 201, slider_val, 10.0f, 100.0f, 330.0f, 210.0f, 360.0f, 24.0f);
+
+        uiw.ui_label(&ui_ctx, "Status: Operational (Immediate Mode)", 330.0f, 560.0f, ui_ctx.theme.accent);
+
+        ui_ctx.end();
+
+        glfw.glfwPollEvents();
+        glfw.glfwSwapBuffers(window);
+
+        frames = frames + 1;
+        if (frames > 60) {
+            glfw.glfwSetWindowShouldClose(window, 1);
+        }
+    }
+
+    glfw.glfwDestroyWindow(window);
+    glfw.glfwTerminate();
+    return 0;
+}
+
+int status = run_ui_smoke();
+print("UI Smoke Exited With Status:", status);

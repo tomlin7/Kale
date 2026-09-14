@@ -1,0 +1,107 @@
+// libs/ui/ui.kl
+// Core Immediate-Mode UI Context, Event State, and Widget Interaction Model
+
+import "libs/glfw/glfw.kl" as glfw;
+import "libs/glfw/input.kl" as ginput;
+import "libs/gl/loader.kl" as glloader;
+import "libs/render/math.kl" as rmath;
+import "libs/render/batch.kl" as rbatch;
+import "libs/render/font.kl" as rfont;
+import "libs/ui/theme.kl" as uitheme;
+
+struct UIContext {
+    void* window;
+    glloader.GLContext* gl_ctx;
+    rbatch.BatchRenderer renderer;
+    rfont.FontAtlas font;
+    uitheme.Theme theme;
+
+    // Viewport
+    int width;
+    int height;
+
+    // Pointer Input
+    float mouse_x;
+    float mouse_y;
+    int mouse_down;
+    int mouse_pressed;
+    int mouse_released;
+
+    // State Tracking
+    int hot_id;
+    int active_id;
+    int focused_id;
+
+    // Last interaction
+    int last_clicked_id;
+}
+
+fn int UIContext.init(void* window, glloader.GLContext* gl_ctx, string font_path, float font_size) {
+    this->window = window;
+    this->gl_ctx = gl_ctx;
+    this->theme = uitheme.theme_dark();
+
+    int rend_ok = this->renderer.init(gl_ctx, 4096);
+    if (rend_ok == 0) {
+        return 0;
+    }
+
+    int font_ok = this->font.init(gl_ctx, font_path, font_size);
+    if (font_ok == 0) {
+        return 0;
+    }
+
+    this->hot_id = 0;
+    this->active_id = 0;
+    this->focused_id = 0;
+    this->last_clicked_id = 0;
+    this->mouse_down = 0;
+    this->mouse_pressed = 0;
+    this->mouse_released = 0;
+    return 1;
+}
+
+fn void UIContext.begin(int w, int h) {
+    this->width = w;
+    this->height = h;
+
+    // Poll mouse state
+    double mx = 0.0;
+    double my = 0.0;
+    ginput.glfwGetCursorPos(this->window, &mx, &my);
+    this->mouse_x = (float)mx;
+    this->mouse_y = (float)my;
+
+    int is_down = ginput.glfwGetMouseButton(this->window, 0); // GLFW_MOUSE_BUTTON_1 = 0
+    if (is_down != 0 && this->mouse_down == 0) {
+        this->mouse_pressed = 1;
+    } else {
+        this->mouse_pressed = 0;
+    }
+
+    if (is_down == 0 && this->mouse_down != 0) {
+        this->mouse_released = 1;
+    } else {
+        this->mouse_released = 0;
+    }
+
+    this->mouse_down = is_down;
+    this->last_clicked_id = 0;
+    this->hot_id = 0;
+
+    this->renderer.begin(w, h);
+}
+
+fn void UIContext.end() {
+    if (this->mouse_down == 0) {
+        this->active_id = 0;
+    }
+    this->renderer.flush(this->gl_ctx);
+}
+
+fn int UIContext.is_hovered(float x, float y, float w, float h) {
+    if (this->mouse_x >= x && this->mouse_x <= (x + w) && this->mouse_y >= y && this->mouse_y <= (y + h)) {
+        return 1;
+    }
+    return 0;
+}
