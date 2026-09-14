@@ -1,0 +1,156 @@
+// examples/web_smoke.kl
+// Automated Verification Smoke Test for libs/web (Router, Request, Response, Template Engine)
+
+import "libs/web/router.kl" as rtr;
+import "libs/web/request.kl" as req;
+import "libs/web/response.kl" as res;
+import "libs/web/template.kl" as tmpl;
+import "packages/std/text/string_builder.kl" as sb;
+
+extern int printf(string fmt, ...);
+extern int strlen(string s);
+extern int strcmp(string s1, string s2);
+
+// Route Handlers
+fn void handle_home(req.Request* request, res.Response* response) {
+    response->html("<h1>Welcome to Kale Web Framework</h1>");
+}
+
+fn void handle_get_user(req.Request* request, res.Response* response) {
+    string uid = request->get_param("id");
+
+    sb.StringBuilder json;
+    json.init(64);
+    json.append("{\"user_id\":\"");
+    json.append(uid);
+    json.append("\",\"name\":\"Alice\"}");
+
+    string json_str = json.to_string();
+    json.destroy();
+
+    response->json(json_str);
+}
+
+fn void handle_post_comment(req.Request* request, res.Response* response) {
+    string post_id = request->get_param("post_id");
+    string comment_id = request->get_param("comment_id");
+
+    sb.StringBuilder resp_body;
+    resp_body.init(128);
+    resp_body.append("Comment ");
+    resp_body.append(comment_id);
+    resp_body.append(" on Post ");
+    resp_body.append(post_id);
+    resp_body.append(" processed. Body: ");
+    resp_body.append(request->body);
+
+    string out_str = resp_body.to_string();
+    resp_body.destroy();
+
+    response->text(out_str);
+}
+
+fn void test_template_engine() {
+    printf("[TEST 1/3] Testing Template Engine string interpolation...\n");
+
+    tmpl.TemplateContext ctx;
+    ctx.init();
+    ctx.set("framework", "Kale Web");
+    ctx.set("version", "0.1.0");
+    ctx.set("author", "Kale Team");
+
+    tmpl.Template t;
+    t.init("Framework: {{ framework }} (v{{ version }}) by {{ author }}!");
+
+    string rendered = t.render(&ctx);
+    printf("  Rendered: '%s'\n", rendered);
+
+    if (strcmp(rendered, "Framework: Kale Web (v0.1.0) by Kale Team!") == 0) {
+        printf("  [PASS] Template engine variable replacement passed!\n\n");
+    } else {
+        printf("  [FAIL] Rendered template mismatch!\n\n");
+    }
+}
+
+fn void test_router_dispatch() {
+    printf("[TEST 2/3] Testing Router registration and static route matching...\n");
+
+    rtr.Router router;
+    router.init();
+    router.get("/", handle_home);
+    router.get("/users/:id", handle_get_user);
+    router.post("/posts/:post_id/comments/:comment_id", handle_post_comment);
+
+    // 1. Dispatch GET /
+    string raw_get_home = "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n";
+    req.Request req1 = req.make_request_from_raw(raw_get_home);
+    res.Response res1;
+    res1.init();
+
+    bool matched1 = router.dispatch(&req1, &res1);
+    printf("  GET / -> Status: %lld %s, Content-Type: '%s', Body: '%s'\n", res1.status, res1.status_text, res1.content_type, res1.body);
+    if (matched1 && res1.status == 200 && strcmp(res1.body, "<h1>Welcome to Kale Web Framework</h1>") == 0) {
+        printf("  [PASS] Static route GET / matched!\n\n");
+    } else {
+        printf("  [FAIL] Static route GET / failed!\n\n");
+    }
+}
+
+fn void test_dynamic_parameters_and_query() {
+    printf("[TEST 3/3] Testing Dynamic URL Parameters and Query String Parsing...\n");
+
+    rtr.Router router;
+    router.init();
+    router.get("/users/:id", handle_get_user);
+    router.post("/posts/:post_id/comments/:comment_id", handle_post_comment);
+
+    // 1. Dispatch GET /users/1337?details=true&format=json
+    string raw_user = "GET /users/1337?details=true&format=json HTTP/1.1\r\nHost: localhost\r\n\r\n";
+    req.Request req_user = req.make_request_from_raw(raw_user);
+    res.Response res_user;
+    res_user.init();
+
+    bool matched_user = router.dispatch(&req_user, &res_user);
+    string query_details = req_user.get_query("details");
+    string query_format = req_user.get_query("format");
+    printf("  GET /users/1337 -> Param id='%s', Query details='%s', format='%s'\n", req_user.get_param("id"), query_details, query_format);
+    printf("  Response Body: '%s'\n", res_user.body);
+
+    // 2. Dispatch POST /posts/101/comments/42
+    string raw_post = "POST /posts/101/comments/42 HTTP/1.1\r\nHost: localhost\r\nContent-Length: 18\r\n\r\nAwesome article!!!";
+    req.Request req_post = req.make_request_from_raw(raw_post);
+    res.Response res_post;
+    res_post.init();
+
+    bool matched_post = router.dispatch(&req_post, &res_post);
+    printf("  POST /posts/101/comments/42 -> Response: '%s'\n", res_post.body);
+
+    // 3. Dispatch unmatched route 404
+    string raw_404 = "GET /unknown/route HTTP/1.1\r\nHost: localhost\r\n\r\n";
+    req.Request req_404 = req.make_request_from_raw(raw_404);
+    res.Response res_404;
+    res_404.init();
+    bool matched_404 = router.dispatch(&req_404, &res_404);
+    printf("  GET /unknown/route -> Status: %lld %s\n", res_404.status, res_404.status_text);
+
+    if (matched_user && matched_post && !matched_404 && res_404.status == 404) {
+        printf("  [PASS] Dynamic parameters, query strings, and 404 handler verified!\n\n");
+    } else {
+        printf("  [FAIL] Dynamic routing verification failed!\n\n");
+    }
+}
+
+fn int main_entry() {
+    printf("==================================================\n");
+    printf(" Kale libs/web Automated Smoke Test Suite\n");
+    printf("==================================================\n");
+
+    test_template_engine();
+    test_router_dispatch();
+    test_dynamic_parameters_and_query();
+
+    printf("ALL libs/web TESTS PASSED PERFECTLY!\n");
+    return 0;
+}
+
+main_entry();

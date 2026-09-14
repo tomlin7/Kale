@@ -1,0 +1,151 @@
+// libs/web/router.kl
+// Parameter-Matching URL Router for Kale Web Framework
+
+import "libs/web/request.kl" as req;
+import "libs/web/response.kl" as res;
+import "packages/std/text/string_builder.kl" as sb;
+
+extern int strlen(string s);
+extern int strcmp(string s1, string s2);
+extern void* malloc(int size);
+
+// Route Handler function signature
+// fn void handler(req.Request* request, res.Response* response);
+
+struct RouteEntry {
+    string method;
+    string pattern;
+    fn(req.Request*, res.Response*): void handler;
+    bool is_defined;
+}
+
+struct Router {
+    RouteEntry* routes;
+    int capacity;
+    int count;
+}
+
+fn void Router.init() {
+    this->capacity = 32;
+    this->count = 0;
+    this->routes = alloc(RouteEntry, 32);
+
+    int i = 0;
+    while (i < 32) {
+        this->routes[i].is_defined = false;
+        i = i + 1;
+    }
+}
+
+fn void Router.add_route(string method, string pattern, fn(req.Request*, res.Response*): void handler) {
+    if (this->count >= this->capacity) {
+        int old_cap = this->capacity;
+        int new_cap = old_cap * 2;
+        RouteEntry* new_routes = alloc(RouteEntry, new_cap);
+
+        int j = 0;
+        while (j < old_cap) {
+            new_routes[j] = this->routes[j];
+            j = j + 1;
+        }
+        while (j < new_cap) {
+            new_routes[j].is_defined = false;
+            j = j + 1;
+        }
+
+        free(this->routes);
+        this->routes = new_routes;
+        this->capacity = new_cap;
+    }
+
+    this->routes[this->count].method = method;
+    this->routes[this->count].pattern = pattern;
+    this->routes[this->count].handler = handler;
+    this->routes[this->count].is_defined = true;
+    this->count = this->count + 1;
+}
+
+fn void Router.get(string pattern, fn(req.Request*, res.Response*): void handler) {
+    this->add_route("GET", pattern, handler);
+}
+
+fn void Router.post(string pattern, fn(req.Request*, res.Response*): void handler) {
+    this->add_route("POST", pattern, handler);
+}
+
+fn void Router.put(string pattern, fn(req.Request*, res.Response*): void handler) {
+    this->add_route("PUT", pattern, handler);
+}
+
+fn void Router.delete(string pattern, fn(req.Request*, res.Response*): void handler) {
+    this->add_route("DELETE", pattern, handler);
+}
+
+// Matches a route pattern (e.g. /users/:id/edit) against a real path (/users/42/edit)
+// Extracts matched params into request.params if match succeeds
+fn bool match_and_extract_params(string pattern, string path, req.Request* request) {
+    int pat_len = strlen(pattern);
+    int path_len = strlen(path);
+
+    int p_i = 0;
+    int r_i = 0;
+
+    while (p_i < pat_len && r_i < path_len) {
+        if (pattern[p_i] == ':') {
+            // Dynamic parameter segment: :param_name
+            p_i = p_i + 1;
+            sb.StringBuilder param_name;
+            param_name.init(16);
+            while (p_i < pat_len && pattern[p_i] != '/') {
+                param_name.append_char(pattern[p_i]);
+                p_i = p_i + 1;
+            }
+
+            // Extract corresponding value from request path
+            sb.StringBuilder param_val;
+            param_val.init(32);
+            while (r_i < path_len && path[r_i] != '/') {
+                param_val.append_char(path[r_i]);
+                r_i = r_i + 1;
+            }
+
+            if (param_val.len() == 0) {
+                param_name.destroy();
+                param_val.destroy();
+                return false;
+            }
+
+            request->params.put(param_name.to_string(), param_val.to_string());
+            param_name.destroy();
+            param_val.destroy();
+        } else {
+            if (pattern[p_i] != path[r_i]) {
+                return false;
+            }
+            p_i = p_i + 1;
+            r_i = r_i + 1;
+        }
+    }
+
+    return (p_i == pat_len && r_i == path_len);
+}
+
+fn bool Router.dispatch(req.Request* request, res.Response* response) {
+    int i = 0;
+    while (i < this->count) {
+        if (this->routes[i].is_defined) {
+            if (strcmp(this->routes[i].method, request->method) == 0) {
+                if (match_and_extract_params(this->routes[i].pattern, request->path, request)) {
+                    fn(req.Request*, res.Response*): void h = this->routes[i].handler;
+                    h(request, response);
+                    return true;
+                }
+            }
+        }
+        i = i + 1;
+    }
+
+    // No route matched
+    response->not_found("404 Not Found: Route does not exist");
+    return false;
+}

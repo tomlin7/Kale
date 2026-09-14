@@ -1,0 +1,60 @@
+// libs/web/response.kl
+// HTTP Response Abstraction and Builders for Kale Web Framework
+
+import "libs/net/tcp.kl" as tcp;
+import "libs/net/server.kl" as srv;
+import "packages/std/text/string_builder.kl" as sb;
+
+extern int strlen(string s);
+extern void* malloc(int size);
+
+struct Response {
+    int status;
+    string status_text;
+    string content_type;
+    string body;
+}
+
+fn void Response.init() {
+    this->status = 200;
+    this->status_text = "OK";
+    this->content_type = "text/plain; charset=utf-8";
+    this->body = "";
+}
+
+fn void Response.status_code(int code, string text) {
+    this->status = code;
+    this->status_text = text;
+}
+
+fn void Response.text(string content) {
+    this->status = 200;
+    this->status_text = "OK";
+    this->content_type = "text/plain; charset=utf-8";
+    this->body = content;
+}
+
+fn void Response.html(string content) {
+    this->status = 200;
+    this->status_text = "OK";
+    this->content_type = "text/html; charset=utf-8";
+    this->body = content;
+}
+
+fn void Response.json(string json_str) {
+    this->status = 200;
+    this->status_text = "OK";
+    this->content_type = "application/json; charset=utf-8";
+    this->body = json_str;
+}
+
+fn void Response.not_found(string msg) {
+    this->status = 404;
+    this->status_text = "Not Found";
+    this->content_type = "text/plain; charset=utf-8";
+    this->body = msg;
+}
+
+fn void Response.send_to(tcp.TcpStream* client) {
+    srv.send_http_response(client, this->status, this->status_text, this->content_type, this->body);
+}

@@ -1,0 +1,124 @@
+// libs/web/template.kl
+// String Interpolation and Key-Value Template Engine for Kale Web Framework
+
+import "packages/std/text/string_builder.kl" as sb;
+
+extern int strlen(string s);
+extern int strcmp(string s1, string s2);
+extern void* malloc(int size);
+
+struct TmplKeyVal {
+    string key;
+    string val;
+}
+
+struct TemplateContext {
+    TmplKeyVal* entries;
+    int count;
+    int capacity;
+}
+
+fn void TemplateContext.init() {
+    this->capacity = 16;
+    this->count = 0;
+    this->entries = alloc(TmplKeyVal, 16);
+}
+
+fn void TemplateContext.set(string key, string val) {
+    int i = 0;
+    while (i < this->count) {
+        if (strcmp(this->entries[i].key, key) == 0) {
+            this->entries[i].val = val;
+            return;
+        }
+        i = i + 1;
+    }
+
+    if (this->count >= this->capacity) {
+        int new_cap = this->capacity * 2;
+        TmplKeyVal* new_entries = alloc(TmplKeyVal, new_cap);
+        int j = 0;
+        while (j < this->count) {
+            new_entries[j] = this->entries[j];
+            j = j + 1;
+        }
+        free(this->entries);
+        this->entries = new_entries;
+        this->capacity = new_cap;
+    }
+
+    this->entries[this->count].key = key;
+    this->entries[this->count].val = val;
+    this->count = this->count + 1;
+}
+
+fn string TemplateContext.get(string key) {
+    int i = 0;
+    while (i < this->count) {
+        if (strcmp(this->entries[i].key, key) == 0) {
+            return this->entries[i].val;
+        }
+        i = i + 1;
+    }
+    return "";
+}
+
+struct Template {
+    string raw_template;
+}
+
+fn void Template.init(string content) {
+    this->raw_template = content;
+}
+
+// Renders template replacing {{ var_name }} placeholders with values from ctx
+fn string Template.render(TemplateContext* ctx) {
+    int len = strlen(this->raw_template);
+    if (len == 0) {
+        return "";
+    }
+
+    sb.StringBuilder output;
+    output.init(len * 2);
+
+    int i = 0;
+    while (i < len) {
+        // Look for opening "{{"
+        if (i < len - 1 && this->raw_template[i] == '{' && this->raw_template[i + 1] == '{') {
+            i = i + 2;
+            // Trim leading spaces
+            while (i < len && this->raw_template[i] == ' ') {
+                i = i + 1;
+            }
+
+            // Collect variable key
+            sb.StringBuilder key_sb;
+            key_sb.init(16);
+            while (i < len - 1 && !(this->raw_template[i] == '}' && this->raw_template[i + 1] == '}')) {
+                if (this->raw_template[i] != ' ') {
+                    key_sb.append_char(this->raw_template[i]);
+                }
+                i = i + 1;
+            }
+
+            // Skip closing "}}"
+            if (i < len - 1 && this->raw_template[i] == '}' && this->raw_template[i + 1] == '}') {
+                i = i + 2;
+            }
+
+            string key = key_sb.to_string();
+            string val = ctx->get(key);
+            output.append(val);
+
+            key_sb.destroy();
+            free((void*)key);
+        } else {
+            output.append_char(this->raw_template[i]);
+            i = i + 1;
+        }
+    }
+
+    string res = output.to_string();
+    output.destroy();
+    return res;
+}

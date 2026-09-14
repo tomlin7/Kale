@@ -1,0 +1,156 @@
+// libs/web/request.kl
+// HTTP Request Abstraction for Kale Web Framework
+
+import "packages/std/text/string_builder.kl" as sb;
+import "libs/net/server.kl" as srv;
+
+extern int strlen(string s);
+extern int strcmp(string s1, string s2);
+extern void* malloc(int size);
+
+struct KeyVal {
+    string key;
+    string val;
+}
+
+struct ParamMap {
+    KeyVal* entries;
+    int count;
+    int capacity;
+}
+
+fn void ParamMap.init(int initial_cap) {
+    int cap = 16;
+    if (initial_cap > 16) {
+        cap = initial_cap;
+    }
+    this->capacity = cap;
+    this->count = 0;
+    this->entries = alloc(KeyVal, cap);
+}
+
+fn void ParamMap.put(string key, string val) {
+    int i = 0;
+    while (i < this->count) {
+        if (strcmp(this->entries[i].key, key) == 0) {
+            this->entries[i].val = val;
+            return;
+        }
+        i = i + 1;
+    }
+
+    if (this->count >= this->capacity) {
+        int new_cap = this->capacity * 2;
+        KeyVal* new_entries = alloc(KeyVal, new_cap);
+        int j = 0;
+        while (j < this->count) {
+            new_entries[j] = this->entries[j];
+            j = j + 1;
+        }
+        free(this->entries);
+        this->entries = new_entries;
+        this->capacity = new_cap;
+    }
+
+    this->entries[this->count].key = key;
+    this->entries[this->count].val = val;
+    this->count = this->count + 1;
+}
+
+fn string ParamMap.get(string key) {
+    int i = 0;
+    while (i < this->count) {
+        if (strcmp(this->entries[i].key, key) == 0) {
+            return this->entries[i].val;
+        }
+        i = i + 1;
+    }
+    return "";
+}
+
+struct Request {
+    string method;
+    string path;
+    string body;
+    int content_length;
+    ParamMap params;
+    ParamMap query;
+}
+
+fn Request make_request_from_raw(string raw_text) {
+    srv.HttpRequest raw = srv.parse_http_request(raw_text);
+
+    Request req;
+    req.method = raw.method;
+    req.body = raw.body;
+    req.content_length = raw.content_length;
+    req.params.init(8);
+    req.query.init(8);
+
+    // Extract path and query string (e.g. /api/users?sort=asc&limit=10)
+    int raw_path_len = strlen(raw.path);
+    int q_idx = -1;
+    int i = 0;
+    while (i < raw_path_len) {
+        if (raw.path[i] == '?') {
+            q_idx = i;
+            i = raw_path_len; // break
+        }
+        i = i + 1;
+    }
+
+    if (q_idx == -1) {
+        req.path = raw.path;
+    } else {
+        sb.StringBuilder path_sb;
+        path_sb.init(q_idx + 1);
+        int p_i = 0;
+        while (p_i < q_idx) {
+            path_sb.append_char(raw.path[p_i]);
+            p_i = p_i + 1;
+        }
+        req.path = path_sb.to_string();
+        path_sb.destroy();
+
+        // Parse query params (key=value&...)
+        int cur = q_idx + 1;
+        while (cur < raw_path_len) {
+            sb.StringBuilder key_sb;
+            key_sb.init(16);
+            while (cur < raw_path_len && raw.path[cur] != '=' && raw.path[cur] != '&') {
+                key_sb.append_char(raw.path[cur]);
+                cur = cur + 1;
+            }
+
+            sb.StringBuilder val_sb;
+            val_sb.init(16);
+            if (cur < raw_path_len && raw.path[cur] == '=') {
+                cur = cur + 1;
+                while (cur < raw_path_len && raw.path[cur] != '&') {
+                    val_sb.append_char(raw.path[cur]);
+                    cur = cur + 1;
+                }
+            }
+
+            if (cur < raw_path_len && raw.path[cur] == '&') {
+                cur = cur + 1;
+            }
+
+            if (key_sb.len() > 0) {
+                req.query.put(key_sb.to_string(), val_sb.to_string());
+            }
+            key_sb.destroy();
+            val_sb.destroy();
+        }
+    }
+
+    return req;
+}
+
+fn string Request.get_param(string key) {
+    return this->params.get(key);
+}
+
+fn string Request.get_query(string key) {
+    return this->query.get(key);
+}

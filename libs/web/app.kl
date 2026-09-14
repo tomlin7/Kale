@@ -1,0 +1,61 @@
+// libs/web/app.kl
+// Top-Level Web Application Harness for Kale
+
+import "libs/net/tcp.kl" as tcp;
+import "libs/net/server.kl" as srv;
+import "libs/web/router.kl" as rtr;
+import "libs/web/request.kl" as req;
+import "libs/web/response.kl" as res;
+
+extern void* malloc(int size);
+
+struct WebApp {
+    rtr.Router router;
+    srv.HttpServer server;
+    string host;
+    int port;
+}
+
+fn void WebApp.init(string host, int port) {
+    this->router.init();
+    this->host = host;
+    this->port = port;
+}
+
+fn void WebApp.get(string pattern, fn(req.Request*, res.Response*): void handler) {
+    this->router.get(pattern, handler);
+}
+
+fn void WebApp.post(string pattern, fn(req.Request*, res.Response*): void handler) {
+    this->router.post(pattern, handler);
+}
+
+fn void WebApp.handle_client(tcp.TcpStream* client) {
+    char* buf = alloc(char, 2048);
+    int n = client->read_bytes((void*)buf, 2047);
+    if (n > 0) {
+        buf[n] = (char)0;
+        req.Request r = req.make_request_from_raw((string)buf);
+        res.Response w;
+        w.init();
+
+        this->router.dispatch(&r, &w);
+        w.send_to(client);
+    }
+    free(buf);
+    client->close();
+}
+
+fn void WebApp.run() {
+    this->server = srv.http_listen(this->host, this->port);
+    if (!this->server.is_running) {
+        return;
+    }
+
+    while (this->server.is_running) {
+        tcp.TcpStream client = this->server.listener.accept_client();
+        if (client.is_connected) {
+            this->handle_client(&client);
+        }
+    }
+}
