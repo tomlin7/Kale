@@ -41,7 +41,7 @@ class LLVMDriver:
 
         cmd = [self.clang_path, ll_path, f"-O{opt_level}", "-o", output_path]
         if is_windows:
-            cmd.extend(["--target=x86_64-pc-windows-msvc", "-luser32", "-lgdi32", "-lkernel32"])
+            cmd.extend(["--target=x86_64-pc-windows-msvc", "-luser32", "-lgdi32", "-lkernel32", "-lshell32"])
         else:
             cmd.append("-lm")
 
@@ -55,7 +55,8 @@ class LLVMDriver:
 
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
-            raise RuntimeError(f"Clang LLVM compilation failed:\n{result.stderr or result.stdout}")
+            err_msg = f"STDERR:\n{result.stderr}\nSTDOUT:\n{result.stdout}"
+            raise RuntimeError(f"Clang LLVM compilation failed:\n{err_msg}")
 
         return output_path
 

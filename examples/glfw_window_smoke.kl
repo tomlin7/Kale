@@ -1,0 +1,42 @@
+// examples/glfw_window_smoke.kl
+// Smoke test verifying GLFW window initialization, event polling, and buffer presentation
+
+import "libs/glfw/glfw.kl" as glfw;
+import "libs/glfw/constants.kl" as glc;
+
+fn int run_app() {
+    int init_res = glfw.glfwInit();
+    if (init_res == 0) {
+        return 1;
+    }
+
+    // Request OpenGL 3.3 Core Profile
+    glfw.glfwWindowHint(glc.GLFW_CONTEXT_VERSION_MAJOR(), 3);
+    glfw.glfwWindowHint(glc.GLFW_CONTEXT_VERSION_MINOR(), 3);
+    glfw.glfwWindowHint(glc.GLFW_OPENGL_PROFILE(), glc.GLFW_OPENGL_CORE_PROFILE());
+
+    void* window = glfw.glfwCreateWindow(800, 600, "Kale Engine - GLFW Window Test", (void*)0, (void*)0);
+    if (window == (void*)0) {
+        glfw.glfwTerminate();
+        return 2;
+    }
+
+    glfw.glfwMakeContextCurrent(window);
+    glfw.glfwSwapInterval(1);
+
+    int frames = 0;
+    while (glfw.glfwWindowShouldClose(window) == 0) {
+        glfw.glfwPollEvents();
+        glfw.glfwSwapBuffers(window);
+        frames = frames + 1;
+        if (frames > 120) {
+            glfw.glfwSetWindowShouldClose(window, 1);
+        }
+    }
+
+    glfw.glfwDestroyWindow(window);
+    glfw.glfwTerminate();
+    return 0;
+}
+
+run_app();
