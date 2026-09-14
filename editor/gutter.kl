@@ -1,43 +1,61 @@
-// apps/editor/gutter.kl
-// Line Number Gutter Component for Kale Code Editor
+// editor/gutter.kl
+// GPU-Accelerated Line Number Gutter Component for Kale Code Editor
 
-import "libs/ui_native/geom.kl" as geom;
-import "libs/ui_native/canvas.kl" as cv;
+import "libs/gl/loader.kl" as glloader;
+import "libs/render/math.kl" as rmath;
+import "libs/render/batch.kl" as rbatch;
+import "libs/render/font.kl" as rfont;
 import "packages/std/text/string_builder.kl" as sb;
 
 extern int strlen(string s);
 
 struct Gutter {
-    geom.Rect bounds;
-    geom.Color bg;
-    geom.Color fg;
-    geom.Color active_fg;
-    geom.Color divider_color;
-    int line_height;
+    float x;
+    float y;
+    float width;
+    float height;
+    float line_height;
+
+    rmath.Color bg;
+    rmath.Color fg;
+    rmath.Color active_fg;
+    rmath.Color divider_color;
 }
 
-fn void Gutter.init(int x, int y, int w, int h, int line_h) {
-    this->bounds.init(x, y, w, h);
+fn void Gutter.init(float x, float y, float w, float h, float line_h) {
+    this->x = x;
+    this->y = y;
+    this->width = w;
+    this->height = h;
     this->line_height = line_h;
-    this->bg.init(30, 30, 30, 255);        // #1E1E1E
-    this->fg.init(100, 100, 100, 255);     // Muted gray
-    this->active_fg.init(200, 200, 200, 255); // Highlighted active line number
-    this->divider_color.init(50, 50, 50, 255); // Subtle separator
+
+    this->bg = rmath.color_rgba(0.14f, 0.14f, 0.16f, 1.0f);
+    this->fg = rmath.color_rgba(0.45f, 0.47f, 0.52f, 1.0f);
+    this->active_fg = rmath.color_rgba(0.95f, 0.95f, 0.98f, 1.0f);
+    this->divider_color = rmath.color_rgba(0.20f, 0.22f, 0.25f, 1.0f);
 }
 
-fn void Gutter.render(cv.Canvas* canvas, int scroll_row, int cursor_row, int total_lines) {
+fn void Gutter.render(
+    rbatch.BatchRenderer* renderer,
+    glloader.GLContext* gl_ctx,
+    rfont.FontAtlas* font,
+    int scroll_row,
+    int cursor_row,
+    int total_lines
+) {
     // Fill gutter background
-    canvas->fill_rect(this->bounds.x, this->bounds.y, this->bounds.width, this->bounds.height, this->bg);
+    renderer->push_quad(gl_ctx, this->x, this->y, this->width, this->height, this->bg);
 
-    // Draw vertical divider
-    int divider_x = this->bounds.x + this->bounds.width - 1;
-    canvas->draw_line(divider_x, this->bounds.y, divider_x, this->bounds.y + this->bounds.height, this->divider_color, 1);
+    // Draw vertical divider bar
+    float divider_x = this->x + this->width - 1.0f;
+    renderer->push_quad(gl_ctx, divider_x, this->y, 1.0f, this->height, this->divider_color);
 
-    int visible_lines = this->bounds.height / this->line_height;
+    int visible_lines = (int)(this->height / this->line_height);
     int idx = 0;
+
     while (idx < visible_lines) {
         int line_num = scroll_row + idx;
-        int y = this->bounds.y + (idx * this->line_height) + 2;
+        float cur_y = this->y + ((float)idx * this->line_height);
 
         if (line_num < total_lines) {
             sb.StringBuilder num_sb;
@@ -45,21 +63,20 @@ fn void Gutter.render(cv.Canvas* canvas, int scroll_row, int cursor_row, int tot
             num_sb.append_int(line_num + 1);
             string num_str = num_sb.to_string();
 
-            geom.Color num_color = this->fg;
+            rmath.Color num_color = this->fg;
             if (line_num == cursor_row) {
                 num_color = this->active_fg;
             }
 
-            int num_x = this->bounds.x + this->bounds.width - 12 - (strlen(num_str) * 8);
-            if (num_x < this->bounds.x + 4) {
-                num_x = this->bounds.x + 4;
+            float num_x = this->x + this->width - 16.0f - ((float)strlen(num_str) * 11.0f);
+            if (num_x < this->x + 6.0f) {
+                num_x = this->x + 6.0f;
             }
 
-            canvas->draw_text(num_str, num_x, y, num_color, this->bg);
+            font->draw_text(renderer, gl_ctx, num_str, num_x, cur_y + 2.0f, num_color);
             num_sb.destroy();
         } else {
-            // Tilde for lines past EOF
-            canvas->draw_text("~", this->bounds.x + 12, y, this->fg, this->bg);
+            font->draw_text(renderer, gl_ctx, "~", this->x + 16.0f, cur_y + 2.0f, this->fg);
         }
 
         idx = idx + 1;

@@ -428,6 +428,8 @@ class LLVMEmitter:
                             ret_val = self._builder.fptrunc(ret_val, ir.FloatType())
                         elif isinstance(ret_t, ir.DoubleType) and ret_val.type == ir.FloatType():
                             ret_val = self._builder.fpext(ret_val, ir.DoubleType())
+                        elif isinstance(ret_t, (ir.LiteralStructType, ir.IdentifiedStructType)) and isinstance(ret_val.type, ir.PointerType) and ret_val.type.pointee == ret_t:
+                            ret_val = self._builder.load(ret_val)
                         elif ret_t.is_pointer and ret_val.type.is_pointer:
                             ret_val = self._builder.bitcast(ret_val, ret_t)
                         elif isinstance(ret_t, ir.IntType) and isinstance(ret_val.type, ir.IntType):
@@ -912,6 +914,13 @@ class LLVMEmitter:
                 left_val = self._builder.fpext(left_val, ir.DoubleType())
             elif left_val.type == ir.DoubleType() and right_val.type == ir.FloatType():
                 right_val = self._builder.fpext(right_val, ir.DoubleType())
+
+            # If both are integers but have different bit widths: sign-extend to larger bit width
+            if isinstance(left_val.type, ir.IntType) and isinstance(right_val.type, ir.IntType):
+                if left_val.type.width < right_val.type.width:
+                    left_val = self._builder.sext(left_val, right_val.type)
+                elif right_val.type.width < left_val.type.width:
+                    right_val = self._builder.sext(right_val, left_val.type)
 
             is_flt = isinstance(left_val.type, (ir.FloatType, ir.DoubleType))
 

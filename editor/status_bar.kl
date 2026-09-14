@@ -1,58 +1,76 @@
-// apps/editor/status_bar.kl
-// Status Bar Component for Kale Code Editor
+// editor/status_bar.kl
+// GPU-Accelerated Status Bar Component for Kale Code Editor
 
-import "libs/ui_native/geom.kl" as geom;
-import "libs/ui_native/canvas.kl" as cv;
+import "libs/gl/loader.kl" as glloader;
+import "libs/render/math.kl" as rmath;
+import "libs/render/batch.kl" as rbatch;
+import "libs/render/font.kl" as rfont;
 import "packages/std/text/string_builder.kl" as sb;
 
 extern int strlen(string s);
 
 struct StatusBar {
-    geom.Rect bounds;
-    geom.Color bg;
-    geom.Color fg;
-    geom.Color accent_bg;
-    geom.Color accent_fg;
+    float x;
+    float y;
+    float width;
+    float height;
+
+    rmath.Color bg;
+    rmath.Color fg;
+    rmath.Color accent_fg;
+    rmath.Color border;
 }
 
-fn void StatusBar.init(int x, int y, int w, int h) {
-    this->bounds.init(x, y, w, h);
-    this->bg.init(0, 122, 204, 255);       // VS Code blue #007ACC
-    this->fg.init(255, 255, 255, 255);     // White text
-    this->accent_bg.init(0, 95, 160, 255); // Darker blue
-    this->accent_fg.init(240, 240, 240, 255);
+fn void StatusBar.init(float x, float y, float w, float h) {
+    this->x = x;
+    this->y = y;
+    this->width = w;
+    this->height = h;
+
+    this->bg = rmath.color_rgba(0.08f, 0.40f, 0.65f, 1.0f);       // VS Code blue tint
+    this->fg = rmath.color_rgba(0.96f, 0.96f, 0.98f, 1.0f);
+    this->accent_fg = rmath.color_rgba(0.75f, 0.88f, 1.0f, 1.0f);
+    this->border = rmath.color_rgba(0.12f, 0.45f, 0.72f, 1.0f);
 }
 
-fn void StatusBar.render(cv.Canvas* canvas, int cursor_row, int cursor_col, int total_lines, bool is_dirty) {
+fn void StatusBar.render(
+    rbatch.BatchRenderer* renderer,
+    glloader.GLContext* gl_ctx,
+    rfont.FontAtlas* font,
+    int cursor_row,
+    int cursor_col,
+    int total_lines,
+    bool is_dirty
+) {
     // Fill status bar background
-    canvas->fill_rect(this->bounds.x, this->bounds.y, this->bounds.width, this->bounds.height, this->bg);
+    renderer->push_quad(gl_ctx, this->x, this->y, this->width, this->height, this->bg);
 
-    int text_y = this->bounds.y + (this->bounds.height - 14) / 2;
+    float text_y = this->y + 4.0f;
 
-    // Left info: Mode and Dirty indicator
-    string status_tag = " [Kale Native Editor] ";
+    // Left info
+    string status_tag = " [Kale GPU Editor] ";
     if (is_dirty) {
-        status_tag = " [Kale Native Editor *] ";
+        status_tag = " [Kale GPU Editor *] ";
     }
-    canvas->draw_text(status_tag, this->bounds.x + 8, text_y, this->fg, this->bg);
+    font->draw_text(renderer, gl_ctx, status_tag, this->x + 12.0f, text_y, this->fg);
 
-    // Center help: Keys
-    string help_msg = " [Arrows] Navigate  [Type] Edit  [Enter] Newline  [Bksp] Delete";
-    canvas->draw_text(help_msg, this->bounds.x + 220, text_y, this->accent_fg, this->bg);
+    // Center help
+    string help_msg = " [Arrows] Navigate   [Type] Edit   [Enter] Newline   [Bksp] Delete";
+    font->draw_text(renderer, gl_ctx, help_msg, this->x + 240.0f, text_y, this->accent_fg);
 
-    // Right info: Ln X, Col Y, UTF-8
+    // Right info: Ln X, Col Y, UTF-8, Kale
     sb.StringBuilder pos_sb;
     pos_sb.init(32);
     pos_sb.append("Ln ");
     pos_sb.append_int(cursor_row + 1);
     pos_sb.append(", Col ");
     pos_sb.append_int(cursor_col + 1);
-    pos_sb.append("  |  UTF-8  |  Kale ");
+    pos_sb.append("  |  UTF-8  |  Kale (OpenGL 3.3)");
     string pos_str = pos_sb.to_string();
 
-    int right_x = this->bounds.x + this->bounds.width - (strlen(pos_str) * 8) - 16;
-    if (right_x > this->bounds.x + 500) {
-        canvas->draw_text(pos_str, right_x, text_y, this->fg, this->bg);
+    float right_x = this->x + this->width - ((float)strlen(pos_str) * 11.0f) - 20.0f;
+    if (right_x > this->x + 500.0f) {
+        font->draw_text(renderer, gl_ctx, pos_str, right_x, text_y, this->fg);
     }
     pos_sb.destroy();
 }
