@@ -1,0 +1,106 @@
+// libs/sql/statement.kl
+// SQLite Prepared Statement and Column Extractor for Kale
+
+import "libs/sql/sqlite.kl" as sql;
+
+extern int strlen(string s);
+
+struct Statement {
+    void* handle;
+    bool is_valid;
+    bool has_row;
+}
+
+fn void Statement.init(void* stmt_handle) {
+    this->handle = stmt_handle;
+    this->is_valid = (stmt_handle != (void*)0);
+    this->has_row = false;
+}
+
+// 1-indexed parameter bindings
+fn bool Statement.bind_int(int param_idx, int val) {
+    if (!this->is_valid) { return false; }
+    int res = sql.sqlite3_bind_int64(this->handle, param_idx, val);
+    return res == sql.SQLITE_OK();
+}
+
+fn bool Statement.bind_double(int param_idx, double val) {
+    if (!this->is_valid) { return false; }
+    int res = sql.sqlite3_bind_double(this->handle, param_idx, val);
+    return res == sql.SQLITE_OK();
+}
+
+fn bool Statement.bind_string(int param_idx, string text) {
+    if (!this->is_valid) { return false; }
+    int len = strlen(text);
+    // Destructor (void*)0 corresponds to SQLITE_STATIC
+    int res = sql.sqlite3_bind_text(this->handle, param_idx, text, len, (void*)0);
+    return res == sql.SQLITE_OK();
+}
+
+fn bool Statement.bind_null(int param_idx) {
+    if (!this->is_valid) { return false; }
+    int res = sql.sqlite3_bind_null(this->handle, param_idx);
+    return res == sql.SQLITE_OK();
+}
+
+// Step / Row Iteration
+fn bool Statement.step() {
+    if (!this->is_valid) { return false; }
+    int rc = sql.sqlite3_step(this->handle);
+    if (rc == sql.SQLITE_ROW()) {
+        this->has_row = true;
+        return true;
+    }
+    this->has_row = false;
+    return false;
+}
+
+fn bool Statement.execute() {
+    if (!this->is_valid) { return false; }
+    int rc = sql.sqlite3_step(this->handle);
+    this->has_row = false;
+    return (rc == sql.SQLITE_DONE() || rc == sql.SQLITE_ROW() || rc == sql.SQLITE_OK());
+}
+
+fn void Statement.reset() {
+    if (this->is_valid) {
+        sql.sqlite3_reset(this->handle);
+        this->has_row = false;
+    }
+}
+
+// 0-indexed column extraction
+fn int Statement.column_count() {
+    if (!this->is_valid) { return 0; }
+    return sql.sqlite3_column_count(this->handle);
+}
+
+fn string Statement.column_name(int col_idx) {
+    if (!this->is_valid) { return ""; }
+    return sql.sqlite3_column_name(this->handle, col_idx);
+}
+
+fn int Statement.get_int(int col_idx) {
+    if (!this->is_valid) { return 0; }
+    return sql.sqlite3_column_int64(this->handle, col_idx);
+}
+
+fn double Statement.get_double(int col_idx) {
+    if (!this->is_valid) { return 0.0; }
+    return sql.sqlite3_column_double(this->handle, col_idx);
+}
+
+fn string Statement.get_string(int col_idx) {
+    if (!this->is_valid) { return ""; }
+    return sql.sqlite3_column_text(this->handle, col_idx);
+}
+
+fn void Statement.finalize() {
+    if (this->is_valid) {
+        sql.sqlite3_finalize(this->handle);
+        this->handle = (void*)0;
+        this->is_valid = false;
+        this->has_row = false;
+    }
+}

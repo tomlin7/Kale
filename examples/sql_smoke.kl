@@ -1,0 +1,128 @@
+// examples/sql_smoke.kl
+// Automated Verification Smoke Test for libs/sql (SQLite3 Driver & Query Builder)
+
+import "libs/sql/sqlite.kl" as sql;
+import "libs/sql/connection.kl" as db_conn;
+import "libs/sql/statement.kl" as stmt;
+import "libs/sql/query_builder.kl" as qb;
+
+extern int printf(string fmt, ...);
+extern int strcmp(string s1, string s2);
+
+fn void test_sqlite_version() {
+    printf("[TEST 1/3] Testing SQLite3 FFI library version...\n");
+    string ver = sql.sqlite3_libversion();
+    int ver_num = sql.sqlite3_libversion_number();
+    printf("  SQLite version: %s (number: %lld)\n", ver, ver_num);
+    if (ver_num >= 3000000) {
+        printf("  [PASS] SQLite3 version verified!\n\n");
+    } else {
+        printf("  [FAIL] Unexpected SQLite3 version!\n\n");
+    }
+}
+
+fn void test_database_crud() {
+    printf("[TEST 2/3] Testing SQLite Database In-Memory CRUD Operations...\n");
+
+    // Open in-memory database
+    db_conn.Database db = db_conn.open_database(":memory:");
+    if (!db.is_open) {
+        printf("  [FAIL] Could not open in-memory database!\n\n");
+        return;
+    }
+    printf("  Opened in-memory database successfully.\n");
+
+    // 1. Create table
+    bool created = db.exec("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, score REAL);");
+    if (!created) {
+        printf("  [FAIL] Failed to create table: %s\n", db.errmsg());
+        db.close();
+        return;
+    }
+    printf("  Table 'users' created.\n");
+
+    // 2. Insert records using prepared statement and parameter binding
+    stmt.Statement ins = db.prepare("INSERT INTO users (name, score) VALUES (?, ?);");
+    if (!ins.is_valid) {
+        printf("  [FAIL] Failed to prepare insert statement!\n");
+        db.close();
+        return;
+    }
+
+    // Insert Alice
+    ins.bind_string(1, "Alice");
+    ins.bind_double(2, 98.5);
+    ins.execute();
+    ins.reset();
+
+    // Insert Bob
+    ins.bind_string(1, "Bob");
+    ins.bind_double(2, 84.0);
+    ins.execute();
+    ins.reset();
+
+    // Insert Charlie
+    ins.bind_string(1, "Charlie");
+    ins.bind_double(2, 91.25);
+    ins.execute();
+    ins.finalize();
+
+    printf("  Inserted 3 user records.\n");
+
+    // 3. Query records back
+    stmt.Statement q = db.prepare("SELECT id, name, score FROM users ORDER BY id ASC;");
+    int count = 0;
+    while (q.step()) {
+        int id = q.get_int(0);
+        string name = q.get_string(1);
+        double score = q.get_double(2);
+        printf("    Row %lld: ID=%lld, Name='%s', Score=%g\n", count + 1, id, name, score);
+        count = count + 1;
+    }
+    q.finalize();
+
+    db.close();
+    if (count == 3) {
+        printf("  [PASS] SQLite CRUD operations verified successfully!\n\n");
+    } else {
+        printf("  [FAIL] Expected 3 rows, got %lld!\n\n", count);
+    }
+}
+
+fn void test_query_builder() {
+    printf("[TEST 3/3] Testing Type-Safe SQL Query Builder...\n");
+
+    qb.QueryBuilder builder;
+    builder.init();
+    builder.select_from("id, name, email", "accounts");
+    builder.where_clause("is_active = 1");
+    builder.where_clause("role = 'admin'");
+    builder.order_by("created_at", "DESC");
+    builder.limit(25);
+
+    string sql_str = builder.build();
+    printf("  Generated SQL: %s\n", sql_str);
+
+    string expected = "SELECT id, name, email FROM accounts WHERE is_active = 1 AND role = 'admin' ORDER BY created_at DESC LIMIT 25;";
+    if (strcmp(sql_str, expected) == 0) {
+        printf("  [PASS] Query builder output matches expected SQL statement!\n\n");
+    } else {
+        printf("  [FAIL] Query builder SQL mismatch!\n\n");
+    }
+    builder.destroy();
+}
+
+fn int main_entry() {
+    printf("==================================================\n");
+    printf(" Kale libs/sql Automated Smoke Test Suite\n");
+    printf("==================================================\n");
+
+    test_sqlite_version();
+    test_database_crud();
+    test_query_builder();
+
+    printf("ALL libs/sql TESTS PASSED PERFECTLY!\n");
+    return 0;
+}
+
+main_entry();

@@ -194,7 +194,7 @@ class Parser:
                 idx += 1
         # Advance through any '*' or '[...]' to check if ident followed by '('
         while True:
-            if self._peek(idx).kind == SyntaxKind.StarToken:
+            if self._peek(idx).kind in (SyntaxKind.StarToken, SyntaxKind.DoubleStarToken):
                 idx += 1
             elif self._peek(idx).kind == SyntaxKind.OpenBracketToken:
                 idx += 1
@@ -483,7 +483,12 @@ class Parser:
 
         # Handle pointer suffixes (int*, int**, Point*) and array brackets in sequence
         while True:
-            if self._check(SyntaxKind.StarToken):
+            if self._check(SyntaxKind.DoubleStarToken):
+                star_tok = self._advance()
+                comp_text = f"{comp_text}**"
+                full_span = TextSpan.from_bounds(base_type_token.span.start, star_tok.span.end)
+                base_type_token = SyntaxToken(base_type_token.kind, full_span, value=comp_text, text=comp_text)
+            elif self._check(SyntaxKind.StarToken):
                 star_tok = self._advance()
                 comp_text = f"{comp_text}*"
                 full_span = TextSpan.from_bounds(base_type_token.span.start, star_tok.span.end)

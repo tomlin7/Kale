@@ -17,10 +17,10 @@ This document provides actionable, discrete milestones designed to be dispatched
 | **M6** | `libs/ui` GPU Immediate-Mode Widget Toolkit | UI Engineer | M5 | 🟢 Complete |
 | **M7** | `libs/framework` v2 GPU App Harness | Framework Engineer | M6 | 🟢 Complete |
 | **M8** | `libs/net` Sockets & HTTP/1.1 Client/Server | Network Engineer | M1 | 🟢 Complete |
-| **M9** | `libs/web` Routing, Middleware & Templates | Web Engineer | M8 | 🟡 Next Up |
-| **M10** | `libs/sql` SQLite3 Driver & Query Builder | Database Engineer | M1 | 🔴 Not Started |
+| **M9** | `libs/web` Routing, Middleware & Templates | Web Engineer | M8 | 🟢 Complete |
+| **M10** | `libs/sql` SQLite3 Driver & Query Builder | Database Engineer | M1 | 🟢 Complete |
 | **M11** | `editor` v2 Flagship GPU Code Editor | Editor Engineer | M6, M7 | 🟢 Complete |
-| **M12** | `vcs` Distributed Version Control Core | Systems Engineer | M1, M8 | 🔴 Not Started |
+| **M12** | `vcs` Distributed Version Control Core | Systems Engineer | M1, M8 | 🟡 Next Up |
 | **M13** | `apps/blog` Publishing Engine & CMS | Web Engineer | M9, M10 | 🔴 Not Started |
 | **M14** | Self-Hosting Kale Compiler Bootstrap | Lead Compiler Engineer | All | 🔵 Long-Term |
 
@@ -137,26 +137,29 @@ This document provides actionable, discrete milestones designed to be dispatched
 
 ---
 
-## 📍 Milestone 9: `libs/web` Web Framework
+## 📍 Milestone 9: `libs/web` Web Framework (Completed)
 **Role**: Web Engineer  
 **Prerequisites**: Milestone 8  
-**Target Files**: `libs/web/` (`router.kl`, `request.kl`, `response.kl`, `template.kl`)
+**Target Files**: `libs/web/` (`router.kl`, `request.kl`, `response.kl`, `template.kl`, `app.kl`)
 
 ### Deliverables:
-1. Parameterized URL router supporting routes like `/api/v1/users/:id`.
-2. Request and Response objects with JSON/HTML body serialization.
-3. Fast string-interpolating template engine.
+1. [x] Parameterized URL router supporting routes like `/api/v1/users/:id`.
+2. [x] Request and Response objects with JSON/HTML body serialization.
+3. [x] Fast string-interpolating template engine.
+4. [x] WebApp integration harness and automated smoke test (`examples/web_smoke.kl`).
 
 ---
 
-## 📍 Milestone 10: `libs/sql` SQLite3 Driver & Query Builder
+## 📍 Milestone 10: `libs/sql` SQLite3 Driver & Query Builder (Completed)
 **Role**: Database Engineer  
 **Prerequisites**: Milestone 1  
-**Target Files**: `libs/sql/` (`sqlite.kl`, `query.kl`)
+**Target Files**: `libs/sql/` (`sqlite.kl`, `connection.kl`, `statement.kl`, `query_builder.kl`)
 
 ### Deliverables:
-1. SQLite3 C bindings (`sqlite3_open`, `sqlite3_prepare_v2`, `sqlite3_step`, `sqlite3_finalize`).
-2. Ergonomic `Database` struct supporting parameterized execution and record set iteration.
+1. [x] SQLite3 C bindings (`sqlite3_initialize`, `sqlite3_open`, `sqlite3_prepare_v2`, `sqlite3_step`, `sqlite3_finalize`).
+2. [x] Ergonomic `Database` struct supporting parameterized execution and record set iteration.
+3. [x] Fluent SQL `QueryBuilder` supporting `SELECT`, `WHERE`, `ORDER BY`, and `LIMIT`.
+4. [x] Automated CRUD smoke test verified against in-memory database (`examples/sql_smoke.kl`).
 
 ---
 

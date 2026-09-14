@@ -1,0 +1,88 @@
+// libs/sql/sqlite.kl
+// Direct FFI Declarations and SQLite3 Core Constants for Kale
+
+// SQLite Result / Status Codes
+int SQLITE_OK()         { return 0; }
+int SQLITE_ERROR()      { return 1; }
+int SQLITE_INTERNAL()   { return 2; }
+int SQLITE_PERM()       { return 3; }
+int SQLITE_ABORT()      { return 4; }
+int SQLITE_BUSY()       { return 5; }
+int SQLITE_LOCKED()     { return 6; }
+int SQLITE_NOMEM()      { return 7; }
+int SQLITE_READONLY()   { return 8; }
+int SQLITE_INTERRUPT()  { return 9; }
+int SQLITE_IOERR()      { return 10; }
+int SQLITE_CORRUPT()    { return 11; }
+int SQLITE_NOTFOUND()   { return 12; }
+int SQLITE_FULL()       { return 13; }
+int SQLITE_CANTOPEN()   { return 14; }
+int SQLITE_PROTOCOL()   { return 15; }
+int SQLITE_EMPTY()      { return 16; }
+int SQLITE_SCHEMA()     { return 17; }
+int SQLITE_TOOBIG()     { return 18; }
+int SQLITE_CONSTRAINT() { return 19; }
+int SQLITE_MISMATCH()   { return 20; }
+int SQLITE_MISUSE()     { return 21; }
+int SQLITE_NOLFS()      { return 22; }
+int SQLITE_AUTH()       { return 23; }
+int SQLITE_FORMAT()     { return 24; }
+int SQLITE_RANGE()      { return 25; }
+int SQLITE_NOTADB()     { return 26; }
+int SQLITE_ROW()        { return 100; }
+int SQLITE_DONE()       { return 101; }
+
+// SQLite Column Fundamental Data Types
+int SQLITE_INTEGER() { return 1; }
+int SQLITE_FLOAT()   { return 2; }
+int SQLITE_TEXT()    { return 3; }
+int SQLITE_BLOB()    { return 4; }
+int SQLITE_NULL()    { return 5; }
+
+// ============================================================================
+// SQLite3 C API Function Declarations (sqlite3.dll)
+// ============================================================================
+extern string sqlite3_libversion();
+extern int sqlite3_libversion_number();
+
+// Database lifecycle
+extern int sqlite3_initialize();
+extern int sqlite3_shutdown();
+extern int sqlite3_open(string filename, void** ppDb);
+extern int sqlite3_close(void* db);
+extern int sqlite3_close_v2(void* db);
+
+// Error diagnostics
+extern string sqlite3_errmsg(void* db);
+extern int sqlite3_errcode(void* db);
+
+// Direct execution
+extern int sqlite3_exec(void* db, string sql, void* callback, void* arg, void** errmsg);
+
+// Prepared statements
+extern int sqlite3_prepare_v2(void* db, string zSql, int nByte, void** ppStmt, void** pzTail);
+extern int sqlite3_step(void* stmt);
+extern int sqlite3_reset(void* stmt);
+extern int sqlite3_finalize(void* stmt);
+extern int sqlite3_clear_bindings(void* stmt);
+
+// Parameter binding (1-indexed)
+extern int sqlite3_bind_int(void* stmt, int idx, int val);
+extern int sqlite3_bind_int64(void* stmt, int idx, int val);
+extern int sqlite3_bind_double(void* stmt, int idx, double val);
+extern int sqlite3_bind_text(void* stmt, int idx, string val, int len, void* destructor);
+extern int sqlite3_bind_null(void* stmt, int idx);
+
+// Result column querying (0-indexed)
+extern int sqlite3_column_count(void* stmt);
+extern string sqlite3_column_name(void* stmt, int iCol);
+extern int sqlite3_column_type(void* stmt, int iCol);
+extern int sqlite3_column_int(void* stmt, int iCol);
+extern int sqlite3_column_int64(void* stmt, int iCol);
+extern double sqlite3_column_double(void* stmt, int iCol);
+extern string sqlite3_column_text(void* stmt, int iCol);
+extern int sqlite3_column_bytes(void* stmt, int iCol);
+
+// Utility functions
+extern int sqlite3_changes(void* db);
+extern int sqlite3_last_insert_rowid(void* db);

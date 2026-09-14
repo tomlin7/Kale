@@ -1,0 +1,77 @@
+// libs/sql/query_builder.kl
+// Type-Safe SQL Query Builder for Kale
+
+import "packages/std/text/string_builder.kl" as sb;
+
+extern int strlen(string s);
+extern void* malloc(int size);
+
+struct QueryBuilder {
+    sb.StringBuilder query;
+    bool has_where;
+}
+
+fn void QueryBuilder.init() {
+    this->query.init(128);
+    this->has_where = false;
+}
+
+fn void QueryBuilder.select_from(string columns, string table) {
+    this->query.append("SELECT ");
+    this->query.append(columns);
+    this->query.append(" FROM ");
+    this->query.append(table);
+}
+
+fn void QueryBuilder.insert_into(string table, string columns, string values_placeholder) {
+    this->query.append("INSERT INTO ");
+    this->query.append(table);
+    this->query.append(" (");
+    this->query.append(columns);
+    this->query.append(") VALUES (");
+    this->query.append(values_placeholder);
+    this->query.append(")");
+}
+
+fn void QueryBuilder.update(string table, string set_clause) {
+    this->query.append("UPDATE ");
+    this->query.append(table);
+    this->query.append(" SET ");
+    this->query.append(set_clause);
+}
+
+fn void QueryBuilder.delete_from(string table) {
+    this->query.append("DELETE FROM ");
+    this->query.append(table);
+}
+
+fn void QueryBuilder.where_clause(string condition) {
+    if (!this->has_where) {
+        this->query.append(" WHERE ");
+        this->has_where = true;
+    } else {
+        this->query.append(" AND ");
+    }
+    this->query.append(condition);
+}
+
+fn void QueryBuilder.order_by(string column, string direction) {
+    this->query.append(" ORDER BY ");
+    this->query.append(column);
+    this->query.append(" ");
+    this->query.append(direction);
+}
+
+fn void QueryBuilder.limit(int count) {
+    this->query.append(" LIMIT ");
+    this->query.append_int(count);
+}
+
+fn string QueryBuilder.build() {
+    this->query.append(";");
+    return this->query.to_string();
+}
+
+fn void QueryBuilder.destroy() {
+    this->query.destroy();
+}

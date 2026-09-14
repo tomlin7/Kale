@@ -1,0 +1,89 @@
+// libs/sql/connection.kl
+// SQLite Connection and Database Handle for Kale
+
+import "libs/sql/sqlite.kl" as sql;
+import "libs/sql/statement.kl" as stmt;
+
+extern int strlen(string s);
+extern void* malloc(int size);
+
+struct Database {
+    void* handle;
+    bool is_open;
+}
+
+fn void Database.init() {
+    this->handle = (void*)0;
+    this->is_open = false;
+}
+
+fn Database open_database(string filepath) {
+    sql.sqlite3_initialize();
+    Database db;
+    db.init();
+
+    void* db_ptr = (void*)0;
+    int rc = sql.sqlite3_open(filepath, &db_ptr);
+    if (rc == sql.SQLITE_OK() && db_ptr != (void*)0) {
+        db.handle = db_ptr;
+        db.is_open = true;
+    }
+    return db;
+}
+
+fn bool Database.exec(string sql_stmt) {
+    if (!this->is_open || this->handle == (void*)0) {
+        return false;
+    }
+    void* errmsg = (void*)0;
+    int rc = sql.sqlite3_exec(this->handle, sql_stmt, (void*)0, (void*)0, &errmsg);
+    return rc == sql.SQLITE_OK();
+}
+
+fn stmt.Statement Database.prepare(string sql_query) {
+    stmt.Statement s;
+    s.init((void*)0);
+
+    if (!this->is_open || this->handle == (void*)0) {
+        return s;
+    }
+
+    void* stmt_handle = (void*)0;
+    void* tail = (void*)0;
+    int len = strlen(sql_query);
+    int rc = sql.sqlite3_prepare_v2(this->handle, sql_query, len, &stmt_handle, &tail);
+
+    if (rc == sql.SQLITE_OK() && stmt_handle != (void*)0) {
+        s.init(stmt_handle);
+    }
+    return s;
+}
+
+fn string Database.errmsg() {
+    if (!this->is_open || this->handle == (void*)0) {
+        return "Database not open";
+    }
+    return sql.sqlite3_errmsg(this->handle);
+}
+
+fn int Database.changes() {
+    if (!this->is_open || this->handle == (void*)0) {
+        return 0;
+    }
+    return sql.sqlite3_changes(this->handle);
+}
+
+fn int Database.last_insert_rowid() {
+    if (!this->is_open || this->handle == (void*)0) {
+        return 0;
+    }
+    return sql.sqlite3_last_insert_rowid(this->handle);
+}
+
+fn void Database.close() {
+    if (this->is_open && this->handle != (void*)0) {
+        sql.sqlite3_close_v2(this->handle);
+        this->handle = (void*)0;
+        this->is_open = false;
+    }
+}
