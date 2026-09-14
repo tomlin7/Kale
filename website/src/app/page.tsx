@@ -347,7 +347,7 @@ function MetaphysicalPerlinGraphic() {
         fontFamily="monospace"
         textAnchor="end"
       >
-        METAPHYSICAL PROCEDURAL MATRIX // PERLIN NOISE &amp; PERSPECTIVE
+        KALE DIRECT LLVM 18 IR PIPELINE // PROCEDURAL VECTOR SCHEMATIC
       </text>
     </svg>
   );
@@ -786,58 +786,60 @@ export default function HomePage() {
             <MetaphysicalPerlinGraphic />
             <div className="absolute top-4 left-4 px-3 py-1 rounded-[6px] bg-[#0d173d]/90 border border-white/20 text-[10px] font-mono text-white flex items-center gap-1.5 backdrop-blur-sm">
               <Sparkle size={12} weight="fill" className="text-white" />
-              <span>NATIVE SVG FRACTAL NOISE // DE CHIRICO ARCADE</span>
+              <span>PROCEDURAL LLVM 18 PIPELINE // PERLIN DITHERING</span>
             </div>
             <div className="absolute bottom-4 left-4 right-4 hidden sm:flex items-center justify-between px-3 py-1.5 rounded-[6px] bg-[#0d173d]/90 border border-white/10 text-[9px] font-mono text-white/70 backdrop-blur-sm">
-              <span>feTurbulence baseFrequency=0.65 (Perlin)</span>
-              <span>Vanishing Point: (520, 220)</span>
-              <span>Pittura Metafisica</span>
+              <span>uv run kale build -o bin/app.exe</span>
+              <span>Target: x86_64-pc-windows-msvc</span>
+              <span>Zero GC • Stack Primitives</span>
             </div>
           </div>
 
-          {/* Right 5 Columns: Architectural & Surrealist Philosophy Specification */}
+          {/* Right 5 Columns: Concrete Product Specification & Engineering Architecture */}
           <div className="lg:col-span-5 p-8 sm:p-10 flex flex-col justify-between space-y-6 z-10">
             <div className="space-y-4">
               <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-[6px] border border-white/20 bg-[#162b6b] text-[10px] font-mono text-white">
-                <span>METAPHYSICAL SYSTEMS DOCTRINE</span>
+                <span>COMPILER CORE SPECIFICATION</span>
               </div>
 
               <h2 className="text-2xl sm:text-3xl font-renaissance font-normal text-white leading-snug">
-                Uncanny Stillness. <br />
-                Geometric Solitude.
+                LLVM 18 IR Emitter &amp; Native JIT Engine
               </h2>
 
               <p className="text-xs sm:text-sm text-white/80 leading-relaxed font-normal">
-                Drawing direct heritage from Giorgio de Chirico&apos;s <em>Pittura Metafisica</em> and Jean Giraud (Moebius)&apos; clean-line graphic formalism, Kale rejects decorative noise in both software architecture and visual expression.
+                Kale transforms statically-typed <code className="text-white bg-[#0a1333] px-1 py-0.5 rounded-[4px] font-mono">.kl</code> source code directly into LLVM 18 Intermediate Representation with zero intermediate translation overhead.
               </p>
 
               <div className="space-y-2.5 pt-2">
                 <div className="p-3 rounded-[6px] bg-[#0a1333] border border-white/10 space-y-1">
-                  <div className="text-[10px] uppercase font-mono text-white/60">I. Architectural Rigor</div>
+                  <div className="text-[10px] uppercase font-mono text-white/60">I. Direct Clang &amp; LLD Linker</div>
                   <div className="text-xs text-white/90">
-                    Stark classical columns and Roman arches mirror rigid deterministic type bounds. No dynamic indirection.
+                    Standalone <code className="text-white font-mono">.exe</code> emission with direct native dynamic linking to GLFW3, OpenGL32, Win32, and SQLite3.
                   </div>
                 </div>
 
                 <div className="p-3 rounded-[6px] bg-[#0a1333] border border-white/10 space-y-1">
-                  <div className="text-[10px] uppercase font-mono text-white/60">II. Exaggerated Cast Shadows</div>
+                  <div className="text-[10px] uppercase font-mono text-white/60">II. Pratt Parser &amp; Lexical Binding</div>
                   <div className="text-xs text-white/90">
-                    Dramatic 45° black/midnight geometry exposes hardware reality. Zero hidden runtime abstractions or GC pauses.
+                    Operator precedence climbing with hierarchical lexical scopes, constant immutability, numeric promotion, and instant caret diagnostics.
                   </div>
                 </div>
 
                 <div className="p-3 rounded-[6px] bg-[#0a1333] border border-white/10 space-y-1">
-                  <div className="text-[10px] uppercase font-mono text-white/60">III. Procedural Perlin Grain</div>
+                  <div className="text-[10px] uppercase font-mono text-white/60">III. In-Memory ORC/MCJIT Execution</div>
                   <div className="text-xs text-white/90">
-                    Pure mathematical turbulence rendered in-browser without raster assets. Deterministic from first principles.
+                    Instant zero-compilation-delay execution via <code className="text-white font-mono">uv run kale run</code> for rapid scripting and sub-second feedback loops.
                   </div>
                 </div>
               </div>
             </div>
 
             <div className="pt-4 border-t border-[#243b82] flex items-center justify-between text-xs font-mono text-white/70">
-              <span>ANNO MMXXVI</span>
-              <span className="text-white">x86_64 PURE SYSTEM</span>
+              <Link href="/projects/compiler" className="text-white hover:underline flex items-center gap-1">
+                <span>Inspect Compiler Code</span>
+                <ArrowRight size={12} weight="bold" />
+              </Link>
+              <span className="text-white/60">src/kale/codegen/</span>
             </div>
           </div>
         </div>
