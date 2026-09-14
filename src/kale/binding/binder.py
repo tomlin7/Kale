@@ -1232,11 +1232,25 @@ class Binder:
                     symbol = method_sym
                     func_name = f"{st_sym.name}.{m_name}"
                     if isinstance(target.type, StructTypeSymbol):
-                        # Receiver is a value, pass &target to method (which expects struct*)
                         extra_first_arg = BoundAddressOfExpression(target, PointerTypeSymbol(target.type))
                     else:
-                        # Receiver is already a pointer
                         extra_first_arg = target
+                elif st_sym.get_field_type(m_name) is not None:
+                    # Field access: evaluate target.member as an expression
+                    callee_expr = self.bind_expression(expression.callee)
+                    if isinstance(callee_expr.type, FunctionTypeSymbol):
+                        fn_t = callee_expr.type
+                        bound_args = []
+                        for i, arg in enumerate(expression.arguments):
+                            b_arg = self.bind_expression(arg)
+                            if i < len(fn_t.parameter_types):
+                                if not can_convert(b_arg.type, fn_t.parameter_types[i]):
+                                    self.diagnostics.report_cannot_convert(arg.span, str(b_arg.type), str(fn_t.parameter_types[i]))
+                            bound_args.append(b_arg)
+                        return BoundIndirectCallExpression(callee_expr, bound_args, fn_t.return_type)
+                    else:
+                        self.diagnostics.report(expression.callee.member_token.span, f"Field '{m_name}' of struct '{st_sym.name}' is not callable.")
+                        return BoundLiteralExpression(None, TypeUnknown)
                 else:
                     self.diagnostics.report(expression.callee.member_token.span, f"Struct '{st_sym.name}' has no method named '{m_name}'.")
                     return BoundLiteralExpression(None, TypeUnknown)
@@ -1254,6 +1268,22 @@ class Binder:
                     symbol = method_sym
                     func_name = f"{st_sym.name}.{m_name}"
                     extra_first_arg = target
+                elif st_sym.get_field_type(m_name) is not None:
+                    # Field access: evaluate target->member as an expression
+                    callee_expr = self.bind_expression(expression.callee)
+                    if isinstance(callee_expr.type, FunctionTypeSymbol):
+                        fn_t = callee_expr.type
+                        bound_args = []
+                        for i, arg in enumerate(expression.arguments):
+                            b_arg = self.bind_expression(arg)
+                            if i < len(fn_t.parameter_types):
+                                if not can_convert(b_arg.type, fn_t.parameter_types[i]):
+                                    self.diagnostics.report_cannot_convert(arg.span, str(b_arg.type), str(fn_t.parameter_types[i]))
+                            bound_args.append(b_arg)
+                        return BoundIndirectCallExpression(callee_expr, bound_args, fn_t.return_type)
+                    else:
+                        self.diagnostics.report(expression.callee.member_token.span, f"Field '{m_name}' of struct '{st_sym.name}' is not callable.")
+                        return BoundLiteralExpression(None, TypeUnknown)
                 else:
                     self.diagnostics.report(expression.callee.member_token.span, f"Struct '{st_sym.name}' has no method named '{m_name}'.")
                     return BoundLiteralExpression(None, TypeUnknown)

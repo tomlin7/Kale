@@ -1,0 +1,220 @@
+// libs/render/batch.kl
+// 2D Batched GPU Vertex & Index Pipeline for Quads, Panels, and Glyphs
+
+import "libs/gl/gl.kl" as gl;
+import "libs/gl/constants.kl" as kgl;
+import "libs/gl/loader.kl" as glloader;
+import "libs/render/math.kl" as rmath;
+import "libs/render/shader.kl" as rshader;
+
+struct Vertex2D {
+    float x;
+    float y;
+    float u;
+    float v;
+    float r;
+    float g;
+    float b;
+    float a;
+}
+
+struct BatchRenderer {
+    int vao;
+    int vbo;
+    int ebo;
+    int white_texture;
+    int current_texture;
+
+    Vertex2D* vertex_buffer;
+    int vertex_count;
+    int max_vertices;
+
+    int* index_buffer;
+    int index_count;
+    int max_indices;
+
+    rshader.ShaderProgram shader;
+    int width;
+    int height;
+}
+
+fn int BatchRenderer.init(glloader.GLContext* gl_ctx, int max_quads) {
+    this->max_vertices = max_quads * 4;
+    this->max_indices = max_quads * 6;
+    this->vertex_count = 0;
+    this->index_count = 0;
+
+    this->vertex_buffer = alloc(Vertex2D, this->max_vertices);
+    this->index_buffer = alloc(int, this->max_indices);
+
+    // Pre-fill index buffer pattern: 0, 1, 2, 2, 3, 0 offset by (i * 4)
+    int i = 0;
+    int offset = 0;
+    while (i < max_quads) {
+        int base_idx = i * 6;
+        this->index_buffer[base_idx + 0] = offset + 0;
+        this->index_buffer[base_idx + 1] = offset + 1;
+        this->index_buffer[base_idx + 2] = offset + 2;
+        this->index_buffer[base_idx + 3] = offset + 2;
+        this->index_buffer[base_idx + 4] = offset + 3;
+        this->index_buffer[base_idx + 5] = offset + 0;
+        offset = offset + 4;
+        i = i + 1;
+    }
+
+    // Initialize Shader
+    int shader_ok = this->shader.init(gl_ctx, rshader.default_2d_vertex_shader(), rshader.default_2d_fragment_shader());
+    if (shader_ok == 0) {
+        return 0;
+    }
+
+    // Initialize VAO, VBO, EBO
+    int va = 0;
+    int vb = 0;
+    int eb = 0;
+    gl_ctx->GenVertexArrays(1, &va);
+    gl_ctx->GenBuffers(1, &vb);
+    gl_ctx->GenBuffers(1, &eb);
+
+    this->vao = va;
+    this->vbo = vb;
+    this->ebo = eb;
+
+    gl_ctx->BindVertexArray(this->vao);
+
+    gl_ctx->BindBuffer(kgl.GL_ARRAY_BUFFER(), this->vbo);
+    // Dynamic buffer data: 32 bytes per vertex
+    gl_ctx->BufferData(kgl.GL_ARRAY_BUFFER(), this->max_vertices * 32, (void*)0, kgl.GL_DYNAMIC_DRAW());
+
+    gl_ctx->BindBuffer(kgl.GL_ELEMENT_ARRAY_BUFFER(), this->ebo);
+    gl_ctx->BufferData(kgl.GL_ELEMENT_ARRAY_BUFFER(), this->max_indices * 4, (void*)this->index_buffer, kgl.GL_STATIC_DRAW());
+
+    // Attribute 0: vec2 a_pos (offset 0)
+    gl_ctx->EnableVertexAttribArray(0);
+    gl_ctx->VertexAttribPointer(0, 2, kgl.GL_FLOAT(), 0, 32, (void*)0);
+
+    // Attribute 1: vec2 a_uv (offset 8)
+    gl_ctx->EnableVertexAttribArray(1);
+    gl_ctx->VertexAttribPointer(1, 2, kgl.GL_FLOAT(), 0, 32, (void*)8);
+
+    // Attribute 2: vec4 a_color (offset 16)
+    gl_ctx->EnableVertexAttribArray(2);
+    gl_ctx->VertexAttribPointer(2, 4, kgl.GL_FLOAT(), 0, 32, (void*)16);
+
+    gl_ctx->BindVertexArray(0);
+
+    // Create 1x1 white texture for untextured solid color quads
+    int tex = 0;
+    gl.glGenTextures(1, &tex);
+    gl.glBindTexture(kgl.GL_TEXTURE_2D(), tex);
+    gl.glTexParameteri(kgl.GL_TEXTURE_2D(), kgl.GL_TEXTURE_MIN_FILTER(), kgl.GL_LINEAR());
+    gl.glTexParameteri(kgl.GL_TEXTURE_2D(), kgl.GL_TEXTURE_MAG_FILTER(), kgl.GL_LINEAR());
+    int white_pixel = 0xFFFFFFFF;
+    gl.glTexImage2D(kgl.GL_TEXTURE_2D(), 0, kgl.GL_RGBA(), 1, 1, 0, kgl.GL_RGBA(), kgl.GL_UNSIGNED_BYTE(), (void*)&white_pixel);
+
+    this->white_texture = tex;
+    this->current_texture = tex;
+    return 1;
+}
+
+fn void BatchRenderer.begin(int viewport_w, int viewport_h) {
+    this->width = viewport_w;
+    this->height = viewport_h;
+    this->vertex_count = 0;
+    this->index_count = 0;
+    this->current_texture = this->white_texture;
+}
+
+fn void BatchRenderer.flush(glloader.GLContext* gl_ctx) {
+    if (this->vertex_count == 0 || this->index_count == 0) {
+        return;
+    }
+
+    // Enable standard alpha blending
+    gl.glEnable(kgl.GL_BLEND());
+    gl.glBlendFunc(kgl.GL_SRC_ALPHA(), kgl.GL_ONE_MINUS_SRC_ALPHA());
+    gl.glDisable(kgl.GL_DEPTH_TEST());
+
+    this->shader.bind(gl_ctx);
+
+    // Calculate projection matrix: (0,0) at top-left
+    rmath.Mat4 proj = rmath.mat4_ortho(0.0f, (float)this->width, (float)this->height, 0.0f, -1.0f, 1.0f);
+    gl_ctx->UniformMatrix4fv(this->shader.u_proj_loc, 1, 0, &proj.m00);
+
+    // Bind texture unit 0
+    gl_ctx->ActiveTexture(0x84C0); // GL_TEXTURE0
+    gl.glBindTexture(kgl.GL_TEXTURE_2D(), this->current_texture);
+    gl_ctx->Uniform1i(this->shader.u_tex_loc, 0);
+
+    // Upload vertices to dynamic VBO
+    gl_ctx->BindBuffer(kgl.GL_ARRAY_BUFFER(), this->vbo);
+    gl_ctx->BufferSubData(kgl.GL_ARRAY_BUFFER(), 0, this->vertex_count * 32, (void*)this->vertex_buffer);
+
+    // Issue draw call
+    gl_ctx->BindVertexArray(this->vao);
+    gl.glDrawElements(kgl.GL_TRIANGLES(), this->index_count, kgl.GL_UNSIGNED_INT(), (void*)0);
+    gl_ctx->BindVertexArray(0);
+
+    this->vertex_count = 0;
+    this->index_count = 0;
+}
+
+fn void BatchRenderer.push_textured_quad(glloader.GLContext* gl_ctx, float x, float y, float w, float h, float u0, float v0, float u1, float v1, rmath.Color color, int texture_id) {
+    if (texture_id != this->current_texture && this->vertex_count > 0) {
+        this->flush(gl_ctx);
+        this->current_texture = texture_id;
+    }
+
+    if (this->vertex_count + 4 > this->max_vertices) {
+        this->flush(gl_ctx);
+    }
+
+    int idx = this->vertex_count;
+
+    // Top-Left
+    this->vertex_buffer[idx + 0].x = x;
+    this->vertex_buffer[idx + 0].y = y;
+    this->vertex_buffer[idx + 0].u = u0;
+    this->vertex_buffer[idx + 0].v = v0;
+    this->vertex_buffer[idx + 0].r = color.r;
+    this->vertex_buffer[idx + 0].g = color.g;
+    this->vertex_buffer[idx + 0].b = color.b;
+    this->vertex_buffer[idx + 0].a = color.a;
+
+    // Top-Right
+    this->vertex_buffer[idx + 1].x = x + w;
+    this->vertex_buffer[idx + 1].y = y;
+    this->vertex_buffer[idx + 1].u = u1;
+    this->vertex_buffer[idx + 1].v = v0;
+    this->vertex_buffer[idx + 1].r = color.r;
+    this->vertex_buffer[idx + 1].g = color.g;
+    this->vertex_buffer[idx + 1].b = color.b;
+    this->vertex_buffer[idx + 1].a = color.a;
+
+    // Bottom-Right
+    this->vertex_buffer[idx + 2].x = x + w;
+    this->vertex_buffer[idx + 2].y = y + h;
+    this->vertex_buffer[idx + 2].u = u1;
+    this->vertex_buffer[idx + 2].v = v1;
+    this->vertex_buffer[idx + 2].r = color.r;
+    this->vertex_buffer[idx + 2].g = color.g;
+    this->vertex_buffer[idx + 2].b = color.b;
+    this->vertex_buffer[idx + 2].a = color.a;
+
+    // Bottom-Left
+    this->vertex_buffer[idx + 3].x = x;
+    this->vertex_buffer[idx + 3].y = y + h;
+    this->vertex_buffer[idx + 3].u = u0;
+    this->vertex_buffer[idx + 3].v = v1;
+    this->vertex_buffer[idx + 3].r = color.r;
+    this->vertex_buffer[idx + 3].g = color.g;
+    this->vertex_buffer[idx + 3].b = color.b;
+    this->vertex_buffer[idx + 3].a = color.a;
+
+    this->vertex_count = this->vertex_count + 4;
+    this->index_count = this->index_count + 6;
+}
+
+fn void BatchRenderer.push_quad(glloader.GLContext* gl_ctx, float x, float y, float w, float h, rmath.Color color) {
+    this->push_textured_quad(gl_ctx, x, y, w, h, 0.0f, 0.0f, 1.0f, 1.0f, color, this->white_texture);
+}

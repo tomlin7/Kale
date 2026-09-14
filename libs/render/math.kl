@@ -1,0 +1,79 @@
+// libs/render/math.kl
+// 2D Vector, 4D Vector, Color, and Matrix Math Primitives for GPU Rendering
+
+struct Vec2 {
+    float x;
+    float y;
+}
+
+struct Vec4 {
+    float x;
+    float y;
+    float z;
+    float w;
+}
+
+struct Color {
+    float r;
+    float g;
+    float b;
+    float a;
+}
+
+fn Color color_rgba(float r, float g, float b, float a) {
+    Color c;
+    c.r = r;
+    c.g = g;
+    c.b = b;
+    c.a = a;
+    return c;
+}
+
+fn Color color_rgb(float r, float g, float b) {
+    return color_rgba(r, g, b, 1.0f);
+}
+
+fn Color color_hex(int hex) {
+    float r = (float)((hex >> 16) & 0xFF) / 255.0f;
+    float g = (float)((hex >> 8) & 0xFF) / 255.0f;
+    float b = (float)(hex & 0xFF) / 255.0f;
+    return color_rgba(r, g, b, 1.0f);
+}
+
+// 4x4 Column-Major Transformation Matrix
+struct Mat4 {
+    float m00; float m10; float m20; float m30;
+    float m01; float m11; float m21; float m31;
+    float m02; float m12; float m22; float m32;
+    float m03; float m13; float m23; float m33;
+}
+
+// Generates an orthographic projection matrix for screen coordinates: (0,0) at top-left
+fn Mat4 mat4_ortho(float left, float right, float bottom, float top, float near_val, float far_val) {
+    Mat4 m;
+    // Col 0
+    m.m00 = 2.0f / (right - left);
+    m.m10 = 0.0f;
+    m.m20 = 0.0f;
+    m.m30 = 0.0f;
+
+    // Col 1
+    m.m01 = 0.0f;
+    m.m11 = 2.0f / (top - bottom);
+    m.m21 = 0.0f;
+    m.m31 = 0.0f;
+
+    // Col 2
+    m.m02 = 0.0f;
+    m.m12 = 0.0f;
+    m.m22 = -2.0f / (far_val - near_val);
+    m.m32 = 0.0f;
+
+    // Col 3
+    m.m03 = -(right + left) / (right - left);
+    m.m13 = -(top + bottom) / (top - bottom);
+    m.m23 = -(far_val + near_val) / (far_val - near_val);
+    m.m33 = 1.0f;
+
+    return m;
+}

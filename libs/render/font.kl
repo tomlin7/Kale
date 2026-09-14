@@ -1,0 +1,141 @@
+// libs/render/font.kl
+// Font Atlas & Text Layout Renderer for 2D GPU Rendering
+
+import "libs/gl/gl.kl" as gl;
+import "libs/gl/constants.kl" as kgl;
+import "libs/gl/loader.kl" as glloader;
+import "libs/stb/truetype.kl" as ttf;
+import "libs/render/math.kl" as rmath;
+import "libs/render/batch.kl" as rbatch;
+
+extern int strlen(string s);
+
+struct GlyphInfo {
+    float u0;
+    float v0;
+    float u1;
+    float v1;
+    int width;
+    int height;
+    int xoff;
+    int yoff;
+    int xadvance;
+}
+
+struct FontAtlas {
+    ttf.TrueTypeFont font;
+    int texture_id;
+    int atlas_width;
+    int atlas_height;
+    GlyphInfo* glyphs;
+    float font_size;
+}
+
+fn int FontAtlas.init(glloader.GLContext* gl_ctx, string font_path, float font_size) {
+    this->font_size = font_size;
+    this->atlas_width = 512;
+    this->atlas_height = 512;
+
+    int loaded = this->font.load_file(font_path, font_size);
+    if (loaded == 0) {
+        return 0;
+    }
+
+    this->glyphs = alloc(GlyphInfo, 128);
+
+    // Allocate single-channel atlas buffer (512x512)
+    int total_pixels = this->atlas_width * this->atlas_height;
+    int* atlas_pixels = alloc(int, total_pixels);
+    int p_idx = 0;
+    while (p_idx < total_pixels) {
+        atlas_pixels[p_idx] = 0;
+        p_idx = p_idx + 1;
+    }
+
+    // Simple shelf packing for ASCII 32..126
+    int cur_x = 2;
+    int cur_y = 2;
+    int max_row_h = 0;
+
+    int c = 32;
+    while (c < 127) {
+        int glyph_idx = this->font.find_glyph(c);
+        ttf.GlyphHMetrics hmetrics = this->font.get_glyph_metrics(glyph_idx);
+        ttf.GlyphBitmap bmp = this->font.rasterize_glyph(glyph_idx);
+
+        if (cur_x + bmp.width + 2 >= this->atlas_width) {
+            cur_x = 2;
+            cur_y = cur_y + max_row_h + 2;
+            max_row_h = 0;
+        }
+
+        if (bmp.height > max_row_h) {
+            max_row_h = bmp.height;
+        }
+
+        // Copy glyph bitmap into atlas
+        if (bmp.width > 0 && bmp.height > 0 && bmp.pixels != (void*)0) {
+            int row = 0;
+            while (row < bmp.height) {
+                int col = 0;
+                while (col < bmp.width) {
+                    char* src_bytes = (char*)bmp.pixels;
+                    int alpha = (int)src_bytes[row * bmp.width + col] & 0xFF;
+                    int dest_idx = (cur_y + row) * this->atlas_width + (cur_x + col);
+                    // Store as RGBA: white color with alpha (alpha << 24 | 0x00FFFFFF)
+                    atlas_pixels[dest_idx] = (alpha << 24) | 0x00FFFFFF;
+                    col = col + 1;
+                }
+                row = row + 1;
+            }
+        }
+
+        // Record UVs
+        this->glyphs[c].u0 = (float)cur_x / (float)this->atlas_width;
+        this->glyphs[c].v0 = (float)cur_y / (float)this->atlas_height;
+        this->glyphs[c].u1 = (float)(cur_x + bmp.width) / (float)this->atlas_width;
+        this->glyphs[c].v1 = (float)(cur_y + bmp.height) / (float)this->atlas_height;
+        this->glyphs[c].width = bmp.width;
+        this->glyphs[c].height = bmp.height;
+        this->glyphs[c].xoff = bmp.xoff;
+        this->glyphs[c].yoff = bmp.yoff;
+        this->glyphs[c].xadvance = (int)((float)hmetrics.advance_width * this->font.scale);
+
+        cur_x = cur_x + bmp.width + 2;
+        this->font.free_glyph_bitmap(bmp);
+        c = c + 1;
+    }
+
+    // Upload atlas to OpenGL texture
+    int tex = 0;
+    gl.glGenTextures(1, &tex);
+    gl.glBindTexture(kgl.GL_TEXTURE_2D(), tex);
+    gl.glTexParameteri(kgl.GL_TEXTURE_2D(), kgl.GL_TEXTURE_MIN_FILTER(), kgl.GL_LINEAR());
+    gl.glTexParameteri(kgl.GL_TEXTURE_2D(), kgl.GL_TEXTURE_MAG_FILTER(), kgl.GL_LINEAR());
+    gl.glTexImage2D(kgl.GL_TEXTURE_2D(), 0, kgl.GL_RGBA(), this->atlas_width, this->atlas_height, 0, kgl.GL_RGBA(), kgl.GL_UNSIGNED_BYTE(), (void*)atlas_pixels);
+
+    this->texture_id = tex;
+    free(atlas_pixels);
+    return 1;
+}
+
+fn void FontAtlas.draw_text(rbatch.BatchRenderer* renderer, glloader.GLContext* gl_ctx, string text, float x, float y, rmath.Color color) {
+    int len = strlen(text);
+    float pen_x = x;
+    float pen_y = y + (float)this->font.ascent * this->font.scale;
+
+    int i = 0;
+    while (i < len) {
+        int ch = (int)text[i];
+        if (ch >= 32 && ch < 127) {
+            GlyphInfo g = this->glyphs[ch];
+            if (g.width > 0 && g.height > 0) {
+                float gx = pen_x + (float)g.xoff;
+                float gy = pen_y + (float)g.yoff;
+                renderer->push_textured_quad(gl_ctx, gx, gy, (float)g.width, (float)g.height, g.u0, g.v0, g.u1, g.v1, color, this->texture_id);
+            }
+            pen_x = pen_x + (float)g.xadvance;
+        }
+        i = i + 1;
+    }
+}

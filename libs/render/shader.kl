@@ -1,0 +1,77 @@
+// libs/render/shader.kl
+// OpenGL 3.3 GLSL Shader Compilation and Program Management
+
+import "libs/gl/constants.kl" as kgl;
+import "libs/gl/loader.kl" as glloader;
+
+struct ShaderProgram {
+    int program_id;
+    int u_proj_loc;
+    int u_tex_loc;
+}
+
+fn int compile_single_shader(glloader.GLContext* gl_ctx, int shader_type, string source) {
+    int shader = gl_ctx->CreateShader(shader_type);
+    string src = source;
+    string* src_ptr = &src;
+    int* null_len = (int*)0;
+    gl_ctx->ShaderSource(shader, 1, src_ptr, null_len);
+    gl_ctx->CompileShader(shader);
+
+    int compiled = 0;
+    gl_ctx->GetShaderiv(shader, kgl.GL_COMPILE_STATUS(), &compiled);
+    if (compiled == 0) {
+        gl_ctx->DeleteShader(shader);
+        return 0;
+    }
+    return shader;
+}
+
+fn int ShaderProgram.init(glloader.GLContext* gl_ctx, string vert_src, string frag_src) {
+    int vs = compile_single_shader(gl_ctx, kgl.GL_VERTEX_SHADER(), vert_src);
+    if (vs == 0) {
+        return 0;
+    }
+    int fs = compile_single_shader(gl_ctx, kgl.GL_FRAGMENT_SHADER(), frag_src);
+    if (fs == 0) {
+        gl_ctx->DeleteShader(vs);
+        return 0;
+    }
+
+    int prog = gl_ctx->CreateProgram();
+    gl_ctx->AttachShader(prog, vs);
+    gl_ctx->AttachShader(prog, fs);
+    gl_ctx->LinkProgram(prog);
+
+    int linked = 0;
+    gl_ctx->GetProgramiv(prog, kgl.GL_LINK_STATUS(), &linked);
+
+    gl_ctx->DeleteShader(vs);
+    gl_ctx->DeleteShader(fs);
+
+    if (linked == 0) {
+        gl_ctx->DeleteProgram(prog);
+        return 0;
+    }
+
+    this->program_id = prog;
+    this->u_proj_loc = gl_ctx->GetUniformLocation(prog, "u_projection");
+    this->u_tex_loc = gl_ctx->GetUniformLocation(prog, "u_texture");
+    return 1;
+}
+
+fn void ShaderProgram.bind(glloader.GLContext* gl_ctx) {
+    gl_ctx->UseProgram(this->program_id);
+}
+
+fn void ShaderProgram.unbind(glloader.GLContext* gl_ctx) {
+    gl_ctx->UseProgram(0);
+}
+
+fn string default_2d_vertex_shader() {
+    return "#version 330 core\nlayout (location = 0) in vec2 a_pos;\nlayout (location = 1) in vec2 a_uv;\nlayout (location = 2) in vec4 a_color;\nuniform mat4 u_projection;\nout vec2 v_uv;\nout vec4 v_color;\nvoid main() {\n    v_uv = a_uv;\n    v_color = a_color;\n    gl_Position = u_projection * vec4(a_pos, 0.0, 1.0);\n}\n";
+}
+
+fn string default_2d_fragment_shader() {
+    return "#version 330 core\nin vec2 v_uv;\nin vec4 v_color;\nuniform sampler2D u_texture;\nout vec4 frag_color;\nvoid main() {\n    vec4 tex_color = texture(u_texture, v_uv);\n    frag_color = v_color * tex_color;\n}\n";
+}

@@ -1,0 +1,98 @@
+// examples/render_pipeline_smoke.kl
+// Smoke test verifying Milestone 5: 2D GPU Batched Render Engine & Font Atlas
+
+import "libs/glfw/glfw.kl" as glfw;
+import "libs/glfw/constants.kl" as glc;
+import "libs/gl/gl.kl" as gl;
+import "libs/gl/constants.kl" as kgl;
+import "libs/gl/loader.kl" as glloader;
+import "libs/render/math.kl" as rmath;
+import "libs/render/batch.kl" as rbatch;
+import "libs/render/font.kl" as rfont;
+
+fn int run_render_smoke() {
+    int init_res = glfw.glfwInit();
+    if (init_res == 0) {
+        return 1;
+    }
+
+    glfw.glfwWindowHint(glc.GLFW_CONTEXT_VERSION_MAJOR(), 3);
+    glfw.glfwWindowHint(glc.GLFW_CONTEXT_VERSION_MINOR(), 3);
+    glfw.glfwWindowHint(glc.GLFW_OPENGL_PROFILE(), glc.GLFW_OPENGL_CORE_PROFILE());
+
+    void* window = glfw.glfwCreateWindow(960, 640, "Kale Engine - GPU Render Pipeline Smoke", (void*)0, (void*)0);
+    if (window == (void*)0) {
+        glfw.glfwTerminate();
+        return 2;
+    }
+
+    glfw.glfwMakeContextCurrent(window);
+    glfw.glfwSwapInterval(1);
+
+    glloader.GLContext gl_ctx;
+    int loaded = gl_ctx.load();
+    if (loaded == 0) {
+        glfw.glfwDestroyWindow(window);
+        glfw.glfwTerminate();
+        return 3;
+    }
+
+    rbatch.BatchRenderer renderer;
+    int rend_ok = renderer.init(&gl_ctx, 2048);
+    if (rend_ok == 0) {
+        print("Failed to initialize BatchRenderer!");
+        return 4;
+    }
+
+    rfont.FontAtlas atlas;
+    int font_ok = atlas.init(&gl_ctx, "C:\\Windows\\Fonts\\consola.ttf", 22.0f);
+    if (font_ok == 0) {
+        print("Failed to initialize FontAtlas!");
+        return 5;
+    }
+
+    print("GPU Render Pipeline Initialized Successfully!");
+
+    gl.glViewport(0, 0, 960, 640);
+    gl.glClearColor(0.12f, 0.12f, 0.14f, 1.0f);
+
+    int frames = 0;
+    while (glfw.glfwWindowShouldClose(window) == 0) {
+        gl.glClear(kgl.GL_COLOR_BUFFER_BIT());
+
+        renderer.begin(960, 640);
+
+        // Draw background panel
+        renderer.push_quad(&gl_ctx, 40.0f, 40.0f, 880.0f, 560.0f, rmath.color_rgba(0.18f, 0.18f, 0.22f, 1.0f));
+
+        // Draw header bar
+        renderer.push_quad(&gl_ctx, 40.0f, 40.0f, 880.0f, 50.0f, rmath.color_rgba(0.24f, 0.24f, 0.30f, 1.0f));
+
+        // Draw interactive button mockups
+        renderer.push_quad(&gl_ctx, 60.0f, 120.0f, 180.0f, 44.0f, rmath.color_rgba(0.20f, 0.60f, 0.45f, 1.0f));
+        renderer.push_quad(&gl_ctx, 260.0f, 120.0f, 180.0f, 44.0f, rmath.color_rgba(0.35f, 0.45f, 0.70f, 1.0f));
+
+        // Render Typography via Font Atlas
+        atlas.draw_text(&renderer, &gl_ctx, "Kale Engine 2D GPU Render Pipeline", 60.0f, 52.0f, rmath.color_rgba(0.95f, 0.95f, 0.98f, 1.0f));
+        atlas.draw_text(&renderer, &gl_ctx, "Submit Code", 85.0f, 132.0f, rmath.color_rgba(1.0f, 1.0f, 1.0f, 1.0f));
+        atlas.draw_text(&renderer, &gl_ctx, "Format Buffer", 280.0f, 132.0f, rmath.color_rgba(1.0f, 1.0f, 1.0f, 1.0f));
+        atlas.draw_text(&renderer, &gl_ctx, "Fast batched OpenGL 3.3 Core rendering with dynamic font atlas.", 60.0f, 200.0f, rmath.color_rgba(0.80f, 0.82f, 0.85f, 1.0f));
+
+        renderer.flush(&gl_ctx);
+
+        glfw.glfwPollEvents();
+        glfw.glfwSwapBuffers(window);
+
+        frames = frames + 1;
+        if (frames > 60) {
+            glfw.glfwSetWindowShouldClose(window, 1);
+        }
+    }
+
+    glfw.glfwDestroyWindow(window);
+    glfw.glfwTerminate();
+    return 0;
+}
+
+int status = run_render_smoke();
+print("Render Smoke Exited With Status:", status);
