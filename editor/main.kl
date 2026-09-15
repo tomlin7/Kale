@@ -101,7 +101,7 @@ fn void run_editor() {
                 cb.command_bar_handle_navigation(&command_bar, glc.GLFW_KEY_DOWN());
             } else if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_ENTER()) == glc.GLFW_PRESS()) {
                 string accepted = cb.command_bar_accept(&command_bar);
-                if (accepted == ">save") { state.is_dirty = false; }
+                state.execute_command(accepted);
             } else if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_BACKSPACE()) == glc.GLFW_PRESS()) {
                 if (command_key_delay <= 0) {
                     cb.command_bar_backspace(&command_bar);

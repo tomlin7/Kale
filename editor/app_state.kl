@@ -4,6 +4,7 @@
 import "packages/std/text/piece_table.kl" as pt;
 
 extern int strlen(string s);
+extern int strcmp(string a, string b);
 extern void* malloc(int size);
 
 struct EditAction {
@@ -36,6 +37,10 @@ struct EditorState {
     BufferTab[8] tabs;
     int tab_count;
     int active_tab;
+    int save_requested;
+    int format_requested;
+    int open_requested;
+    int find_requested;
 }
 
 fn void EditorState.init(string initial_code, string file_path) {
@@ -54,6 +59,10 @@ fn void EditorState.init(string initial_code, string file_path) {
     this->active_command = 0;
     this->tab_count = 1;
     this->active_tab = 0;
+    this->save_requested = 0;
+    this->format_requested = 0;
+    this->open_requested = 0;
+    this->find_requested = 0;
     this->tabs[0].buffer.init(initial_code);
     this->tabs[0].file_path = file_path;
     this->tabs[0].is_dirty = false;
@@ -86,6 +95,26 @@ fn int EditorState.switch_buffer(int tab_index) {
     this->cursor_col = 0;
     this->scroll_row = 0;
     return 1;
+}
+
+fn int EditorState.execute_command(string command) {
+    if (strcmp(command, ">save") == 0) {
+        this->save_requested = 1;
+        return 1;
+    }
+    if (strcmp(command, ">format") == 0) {
+        this->format_requested = 1;
+        return 2;
+    }
+    if (strcmp(command, ">open") == 0) {
+        this->open_requested = 1;
+        return 3;
+    }
+    if (strcmp(command, ">find") == 0) {
+        this->find_requested = 1;
+        return 4;
+    }
+    return 0;
 }
 
 fn int EditorState.cursor_offset() {
