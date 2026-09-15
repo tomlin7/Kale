@@ -1,108 +1,221 @@
+<div align="center">
+
+<img src="logo.svg" height="72" />
+
+```
+╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱
+  K A L E   ·   Autonomous Monorepo Ecosystem   ·   v0.2.0
+╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱
+```
+
+A statically-typed compiled language with direct **LLVM 18 IR** emission,<br>
+stack-allocated data structures, zero garbage collection, and sub-millisecond graphics.<br>
+Built entirely in Kale.
+
+`pip install kale-lang` &nbsp;&nbsp;·&nbsp;&nbsp; [Website](https://tomlin7.github.io/Kale) &nbsp;&nbsp;·&nbsp;&nbsp; [PyPI](https://pypi.org/project/kale-lang/) &nbsp;&nbsp;·&nbsp;&nbsp; [Actions](https://github.com/tomlin7/Kale/actions)
+
+</div>
+
+<br>
+
 <table>
-  <td>
-    <img src="./logo.svg" height=80 />
-  </td>
+<tr>
+<td width="50%" valign="top">
+
+```
+┌─────────────────────────────────────────┐
+│  COMPILATION PIPELINE                   │
+├─────────────────────────────────────────┤
+│                                         │
+│  Source .kl                             │
+│      │                                  │
+│      ▼                                  │
+│  [ Lexer ]──────────► DiagnosticBag     │
+│      │                                  │
+│      ▼                                  │
+│  [ Pratt Parser ]                       │
+│      │                                  │
+│      ▼                                  │
+│  [ AST Binder ]──────► Lexical Scopes   │
+│      │                                  │
+│      ▼                                  │
+│  [ LLVM 18 IR Emitter ]                 │
+│      │                    │             │
+│      ▼                    ▼             │
+│  [ LLD Native ]     [ ORC JIT ]         │
+│      │                    │             │
+│      ▼                    ▼             │
+│  x86_64 binary      In-memory exec      │
+│                                         │
+└─────────────────────────────────────────┘
+```
+
+</td>
+<td width="50%" valign="top">
+<img src="website/public/assets/kale_hero_classical.jpg" width="100%" />
+</td>
+</tr>
 </table>
 
-# Kale &nbsp;·&nbsp; Autonomous Monorepo Ecosystem
-
-> Architectural Precision. Deterministic Systems.
->
-> A statically-typed compiled language with direct **LLVM 18 IR** emission, stack-allocated data structures, zero GC, and sub-millisecond graphics — built entirely in Kale.
+<br>
 
 ```
-pip install kale-lang        # compiler & CLI
+░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+  CORE TOOLCHAIN
+░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 ```
 
-→ **[Website](https://tomlin7.github.io/Kale)** &nbsp;·&nbsp; **[PyPI](https://pypi.org/project/kale-lang/)** &nbsp;·&nbsp; **[Actions](https://github.com/tomlin7/Kale/actions)**
+<table>
+<tr>
+<td width="34%">
+<img src="website/public/assets/kaleimages/HQ35R2NaIAAZecs.jpg" width="100%" />
+<sub><b>Kale Compiler</b> · <a href="src/kale/">src/kale/</a><br>
+LLVM 18 IR emitter, Pratt parser, binder, JIT &amp; AOT via Clang/LLD.<br>
+<code>pip install kale-lang</code></sub>
+</td>
+<td width="34%">
+<img src="website/public/assets/kaleimages/HQNfWuaaAAAE3LA.jpg" width="100%" />
+<sub><b>packages/std</b> · <a href="packages/std/">packages/std/</a><br>
+Standard library — collections, strings, I/O, memory, generics, text.</sub>
+</td>
+<td width="34%">
+<img src="website/public/assets/kaleimages/HQQA_vJa0AAgpAa.jpg" width="100%" />
+<sub><b>tools/pkg</b> · <a href="tools/pkg/">tools/pkg/</a><br>
+<code>kale-pm</code> package manager &amp; manifest resolver.</sub>
+</td>
+</tr>
+</table>
 
----
+<br>
 
-## Monorepo Map
+```
+░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+  FLAGSHIP APPS
+░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+```
 
-### ⚙ Core Toolchain
+<table>
+<tr>
+<td width="50%">
+<img src="website/public/assets/kaleimages/HQ35R2VakAAcg4J.jpg" width="100%" />
+<sub><b>Kale Editor</b> · <a href="editor/">editor/</a><br>
+144 Hz GPU-accelerated code editor. Piece table buffer, dynamic font atlas,<br>sub-pixel glyph rendering, multi-cursor, lexical syntax highlighting.</sub>
+</td>
+<td width="50%">
+<img src="website/public/assets/kaleimages/HQc8WvxbkAAuSWq.jpg" width="100%" />
+<sub><b>Kale VCS</b> · <a href="vcs/">vcs/</a><br>
+Distributed version control in pure Kale. SHA-1 engine, DAG object store,<br>binary staging index, two-way diff, porcelain CLI: init/add/commit/log.</sub>
+</td>
+</tr>
+<tr>
+<td width="50%">
+<img src="website/public/assets/kaleimages/HRvckHmasAAjgR4.jpg" width="100%" />
+<sub><b>apps/lsp</b> · <a href="apps/lsp/">apps/lsp/</a><br>
+Language Server Protocol server for IDE integration and diagnostics.</sub>
+</td>
+<td width="50%">
+<img src="website/public/assets/kaleimages/HSL0Uk6bsAAylir.jpg" width="100%" />
+<sub><b>apps/kv</b> · <a href="apps/kv/">apps/kv/</a><br>
+High-performance key-value daemon.</sub>
+</td>
+</tr>
+</table>
 
-| Project | Path | Description |
-|---------|------|-------------|
-| **Kale Compiler** | [`src/kale/`](src/kale/) | LLVM 18 IR emitter, Pratt parser, binder, JIT & AOT via Clang/LLD |
-| **packages/std** | [`packages/std/`](packages/std/) | Standard library — collections, strings, I/O, memory, generics |
-| **tools/pkg** | [`tools/pkg/`](tools/pkg/) | `kale-pm` package manager & manifest resolver |
+<br>
 
-### 🖥 Flagship Apps
+```
+░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+  FOUNDATION LIBRARIES
+░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+```
 
-| Project | Path | Description |
-|---------|------|-------------|
-| **Kale Editor** | [`editor/`](editor/) | 144 Hz GPU-accelerated code editor, piece table buffer, font atlas |
-| **Kale VCS** | [`vcs/`](vcs/) | Distributed VCS — pure-Kale SHA-1, DAG object store, porcelain CLI |
-| **apps/lsp** | [`apps/lsp/`](apps/lsp/) | Language Server Protocol server for IDE integration |
-| **apps/kv** | [`apps/kv/`](apps/kv/) | High-performance key-value daemon |
+<table>
+<tr>
+<td width="34%">
+<img src="website/public/assets/kaleimages/HQfeyisasAAhFNU.jpg" width="100%" />
+<sub><b>libs/render</b> · <a href="libs/render/">libs/render/</a><br>
+2D GPU batch renderer. SDF rounded rects, dynamic stb_truetype font atlas,<br>65k-vertex batches, single draw call per frame.</sub>
+</td>
+<td width="34%">
+<img src="website/public/assets/kaleimages/HQk2PcnaUAE5CfX.jpg" width="100%" />
+<sub><b>libs/ui</b> · <a href="libs/ui/">libs/ui/</a><br>
+Immediate-mode widget toolkit. Buttons, sliders, inputs, scrollers,<br>declarative flow layout, ID-hash interaction state.</sub>
+</td>
+<td width="34%">
+<img src="website/public/assets/kaleimages/HQk2PcYboAAyKNc.jpg" width="100%" />
+<sub><b>libs/framework</b> · <a href="libs/framework/">libs/framework/</a><br>
+App harness — GLFW3 window, OpenGL 3.3 context,<br>frame pacing, unified input dispatch.</sub>
+</td>
+</tr>
+</table>
 
-### 📦 Foundation Libraries
+<table>
+<tr>
+<td width="25%"><sub><b>libs/net</b> · <a href="libs/net/">libs/net/</a><br>Raw sockets &amp; HTTP/1.1 engine.</sub></td>
+<td width="25%"><sub><b>libs/web</b> · <a href="libs/web/">libs/web/</a><br>HTTP router &amp; JSON responder.</sub></td>
+<td width="25%"><sub><b>libs/sql</b> · <a href="libs/sql/">libs/sql/</a><br>SQLite3 FFI bindings &amp; query builder.</sub></td>
+<td width="25%"><sub><b>libs/tls</b> · <a href="libs/tls/">libs/tls/</a><br>TLS 1.3 client over raw sockets.</sub></td>
+</tr>
+<tr>
+<td width="25%"><sub><b>libs/audio</b> · <a href="libs/audio/">libs/audio/</a><br>PCM audio playback &amp; mixer.</sub></td>
+<td width="25%"><sub><b>libs/physics</b> · <a href="libs/physics/">libs/physics/</a><br>2D rigid body physics engine.</sub></td>
+<td width="25%"><sub><b>libs/term</b> · <a href="libs/term/">libs/term/</a><br>ANSI terminal engine &amp; TUI widgets.</sub></td>
+<td width="25%"><sub><b>libs/fs_watch</b> · <a href="libs/fs_watch/">libs/fs_watch/</a><br>Cross-platform filesystem watcher.</sub></td>
+</tr>
+</table>
 
-| Project | Path | Description |
-|---------|------|-------------|
-| **libs/render** | [`libs/render/`](libs/render/) | 2D GPU batch renderer, SDF rects, dynamic font atlas (stb_truetype) |
-| **libs/ui** | [`libs/ui/`](libs/ui/) | Immediate-mode widget toolkit — buttons, sliders, scrollers, layout stacks |
-| **libs/framework** | [`libs/framework/`](libs/framework/) | App harness — GLFW3 window, OpenGL context, frame pacing, input dispatch |
-| **libs/net** | [`libs/net/`](libs/net/) | Raw sockets & HTTP/1.1 engine |
-| **libs/web** | [`libs/web/`](libs/web/) | Lightweight HTTP router & JSON responder |
-| **libs/sql** | [`libs/sql/`](libs/sql/) | SQLite3 FFI bindings & query builder |
-| **libs/tls** | [`libs/tls/`](libs/tls/) | TLS 1.3 client over raw sockets |
-| **libs/audio** | [`libs/audio/`](libs/audio/) | PCM audio playback & mixer |
-| **libs/physics** | [`libs/physics/`](libs/physics/) | 2D rigid body physics engine |
-| **libs/term** | [`libs/term/`](libs/term/) | ANSI terminal engine & TUI widgets |
-| **libs/fs_watch** | [`libs/fs_watch/`](libs/fs_watch/) | Cross-platform filesystem watcher |
+<br>
 
-### 🔩 Low-Level & OS
+```
+░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+  LOW-LEVEL & OS
+░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+```
 
-| Project | Path | Description |
-|---------|------|-------------|
-| **sys/ (Kale OS)** | [`sys/`](sys/) | Bare-metal x86_64 kernel — Multiboot, IDT, paging, direct framebuffer |
-| **sys/sysmon** | [`sys/`](sys/) | Real-time system monitor & diagnostics dashboard |
+<table>
+<tr>
+<td width="50%">
+<img src="website/public/assets/kaleimages/HQX6KvPaEAALJnz.jpg" width="100%" />
+<sub><b>sys/ (Kale OS)</b> · <a href="sys/">sys/</a><br>
+Bare-metal x86_64 kernel. Multiboot loader, IDT dispatcher, 4KB paging,<br>direct linear framebuffer — no host OS dependencies.</sub>
+</td>
+<td width="50%">
+<img src="website/public/assets/kaleimages/HQqY7DDbkAAp-Xf.jpg" width="100%" />
+<sub><b>sys/sysmon</b> · <a href="sys/">sys/</a><br>
+Real-time system monitor &amp; diagnostics dashboard.</sub>
+</td>
+</tr>
+</table>
 
-### 🔌 Tooling & Packages
+<br>
 
-| Project | Path | Description |
-|---------|------|-------------|
-| **packages/bindings** | [`packages/bindings/`](packages/bindings/) | Win32, GLFW3, OpenGL FFI binding headers |
-| **packages/vscode-kale** | [`packages/vscode-kale/`](packages/vscode-kale/) | VS Code extension — syntax highlighting & snippets |
-| **website** | [`website/`](website/) | Next.js project showcase site |
-
----
-
-## Quick Start
+```
+╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱
+  QUICK START
+╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱
+```
 
 ```bash
-# Install
 pip install kale-lang
 
-# Run a program (LLVM JIT)
-kale run examples/fibonacci.kl
-
-# Compile to native binary
-kale build examples/fibonacci.kl -o fib.exe
-
-# Typecheck only
-kale check examples/fibonacci.kl
-
-# Dump LLVM IR
-kale dump-llvm examples/fibonacci.kl
+kale run   examples/fibonacci.kl          # LLVM JIT — in-memory execution
+kale build examples/fibonacci.kl -o fib   # AOT — native binary via Clang/LLD
+kale check examples/fibonacci.kl          # typecheck only
+kale dump-llvm examples/fibonacci.kl      # inspect generated LLVM IR
 ```
-
-## Compiler Pipeline
-
-```
-Source .kl  →  Lexer  →  Pratt Parser  →  AST Binder  →  LLVM 18 IR  →  LLD  →  x86_64
-```
-
-## Development
 
 ```bash
-uv sync          # install deps
-uv run pytest    # run test suite (~60 tests)
-uv build         # build wheel + sdist
+# from source
+uv sync && uv run pytest                  # install deps + run ~60 tests
 ```
 
----
+<br>
 
-<sub>MIT License · Built with Python & llvmlite · Requires Python ≥ 3.10</sub>
+```
+╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱
+  packages/vscode-kale  ·  Syntax highlighting & snippets for VS Code
+  website/              ·  Next.js project showcase  →  tomlin7.github.io/Kale
+╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱
+```
+
+<sub>MIT License · Python ≥ 3.10 · llvmlite · Clang/LLD</sub>
