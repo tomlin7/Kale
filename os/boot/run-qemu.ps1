@@ -1,6 +1,7 @@
 param(
     [string]$Image = "",
-    [string]$Display = "gtk"
+    [string]$Display = "gtk",
+    [string]$SerialLog = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -32,9 +33,15 @@ if ($null -eq $qemu) {
 
 Write-Output "Launching QEMU: $qemu"
 Write-Output "Boot image: $Image"
+$serialMode = "none"
+if (-not [string]::IsNullOrWhiteSpace($SerialLog)) {
+    $SerialLog = [System.IO.Path]::GetFullPath($SerialLog)
+    $serialMode = "file=$SerialLog"
+    Write-Output "Serial log: $SerialLog"
+}
 & $qemu `
     "-drive" "format=raw,file=$Image" `
     "-m" "128M" `
     "-no-reboot" `
-    "-serial" "none" `
+    "-serial" $serialMode `
     "-display" $Display

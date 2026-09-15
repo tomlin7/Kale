@@ -51,5 +51,6 @@ os/
 - [x] Add a disk-loading second stage and transfer control to a long-mode payload.
 - [x] Install a minimal IDT and remap/unmask the PIC for keyboard IRQ1.
 - [x] Buffer keyboard IRQ1 scancodes in a bounded circular queue.
+- [x] Initialize COM1 and emit an early-boot serial diagnostic line.
 - [ ] Replace the fixed payload with a linked Kale kernel image.
 - [ ] Add a freestanding Kale linker/runtime profile.

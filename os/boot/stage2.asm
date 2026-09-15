@@ -4,6 +4,9 @@
 default abs
 
 start:
+    call serial_init
+    mov rsi, msg_serial
+    call serial_print
     call idt_init
     call pic_init
     mov rdi, 0xB8000
@@ -22,6 +25,46 @@ start:
     sti
     hlt
     jmp .halt
+
+serial_init:
+    mov dx, 0x3F9
+    xor al, al
+    out dx, al
+    mov dx, 0x3FB
+    mov al, 0x80
+    out dx, al
+    mov dx, 0x3F8
+    mov al, 3
+    out dx, al
+    mov dx, 0x3F9
+    xor al, al
+    out dx, al
+    mov dx, 0x3FB
+    mov al, 3
+    out dx, al
+    mov dx, 0x3FA
+    mov al, 0xC7
+    out dx, al
+    mov dx, 0x3FC
+    mov al, 0x0B
+    out dx, al
+    ret
+
+serial_print:
+    lodsb
+    test al, al
+    jz .done
+    mov dx, 0x3FD
+.wait:
+    in al, dx
+    test al, 0x20
+    jz .wait
+    mov dx, 0x3F8
+    mov al, [rsi - 1]
+    out dx, al
+    jmp serial_print
+.done:
+    ret
 
 ; Install the keyboard gate (vector 0x21) in a compact IDT covering vectors
 ; 0..33. All other vectors remain masked until the linked kernel replaces it.
@@ -85,6 +128,7 @@ kbd_isr:
     iretq
 
 msg_stage2: db " [KALE OS] STAGE2 LOADED - LONG MODE KERNEL HANDOFF READY ", 0
+msg_serial: db "KALE OS stage2: serial, IDT, PIC, keyboard queue online", 13, 10, 0
 kbd_head: db 0
 kbd_tail: db 0
 kbd_queue: times 32 db 0
