@@ -1,0 +1,146 @@
+{
+  "name": "vscode-kale",
+  "displayName": "Kale Language",
+  "description": "Syntax highlighting, bracket matching, and language support for the Kale programming language (.kl files)",
+  "version": "0.1.0",
+  "publisher": "kale-lang",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kale-lang/kale"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "kale",
+    "kl",
+    "kale-lang",
+    "syntax highlighting"
+  ],
+  "icon": "images/icon.svg",
+  "activationEvents": [
+    "onLanguage:kale"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "kale",
+        "aliases": [
+          "Kale",
+          "kale"
+        ],
+        "extensions": [
+          ".kl"
+        ],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./images/icon.svg",
+          "dark": "./images/icon.svg"
+        }
+      }
+    ],
+    "grammars": [
+      {
+        "language": "kale",
+        "scopeName": "source.kale",
+        "path": "./syntaxes/kale.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "kale.runFile",
+        "title": "Kale: Run File",
+        "category": "Kale"
+      },
+      {
+        "command": "kale.buildFile",
+        "title": "Kale: Build File",
+        "category": "Kale"
+      },
+      {
+        "command": "kale.checkFile",
+        "title": "Kale: Check File (Type Check)",
+        "category": "Kale"
+      },
+      {
+        "command": "kale.dumpAst",
+        "title": "Kale: Dump AST",
+        "category": "Kale"
+      },
+      {
+        "command": "kale.dumpTokens",
+        "title": "Kale: Dump Tokens",
+        "category": "Kale"
+      },
+      {
+        "command": "kale.dumpLlvm",
+        "title": "Kale: Dump LLVM IR",
+        "category": "Kale"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "when": "resourceExtname == .kl",
+          "command": "kale.runFile",
+          "group": "kale@1"
+        },
+        {
+          "when": "resourceExtname == .kl",
+          "command": "kale.buildFile",
+          "group": "kale@2"
+        },
+        {
+          "when": "resourceExtname == .kl",
+          "command": "kale.checkFile",
+          "group": "kale@3"
+        }
+      ],
+      "explorer/context": [
+        {
+          "when": "resourceExtname == .kl",
+          "command": "kale.runFile",
+          "group": "kale@1"
+        },
+        {
+          "when": "resourceExtname == .kl",
+          "command": "kale.buildFile",
+          "group": "kale@2"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Kale",
+      "properties": {
+        "kale.executablePath": {
+          "type": "string",
+          "default": "uv run kale",
+          "description": "The command to invoke the Kale compiler/runner. Defaults to 'uv run kale' for monorepo usage."
+        },
+        "kale.showStatusBarItem": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the Kale status bar item when editing .kl files."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.3.0",
+    "@vscode/vsce": "^2.22.0"
+  }
+}

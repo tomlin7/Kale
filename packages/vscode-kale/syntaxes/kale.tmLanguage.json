@@ -1,0 +1,287 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Kale",
+  "scopeName": "source.kale",
+  "fileTypes": ["kl"],
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#chars" },
+    { "include": "#numbers" },
+    { "include": "#constants" },
+    { "include": "#import-statement" },
+    { "include": "#function-definition" },
+    { "include": "#struct-definition" },
+    { "include": "#enum-definition" },
+    { "include": "#extern-declaration" },
+    { "include": "#type-cast" },
+    { "include": "#function-call" },
+    { "include": "#keywords-control" },
+    { "include": "#keywords-declaration" },
+    { "include": "#keywords-type" },
+    { "include": "#keywords-builtin" },
+    { "include": "#operators" },
+    { "include": "#punctuation" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.kale",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.kale",
+          "begin": "/\\*",
+          "end": "\\*/",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.comment.begin.kale" }
+          },
+          "endCaptures": {
+            "0": { "name": "punctuation.definition.comment.end.kale" }
+          }
+        }
+      ]
+    },
+
+    "strings": {
+      "name": "string.quoted.double.kale",
+      "begin": "\"",
+      "end": "\"",
+      "beginCaptures": {
+        "0": { "name": "punctuation.definition.string.begin.kale" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.string.end.kale" }
+      },
+      "patterns": [
+        {
+          "name": "constant.character.escape.kale",
+          "match": "\\\\(?:[nrtbf0\\\\\"'\\n]|x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4})"
+        }
+      ]
+    },
+
+    "chars": {
+      "name": "string.quoted.single.kale",
+      "begin": "'",
+      "end": "'",
+      "beginCaptures": {
+        "0": { "name": "punctuation.definition.string.begin.kale" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.string.end.kale" }
+      },
+      "patterns": [
+        {
+          "name": "constant.character.escape.kale",
+          "match": "\\\\(?:[nrtbf0\\\\\"'\\n]|x[0-9A-Fa-f]{2})"
+        }
+      ]
+    },
+
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.float.kale",
+          "match": "\\b[0-9]+(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?[fFdD]?\\b"
+        },
+        {
+          "name": "constant.numeric.hex.kale",
+          "match": "\\b0[xX][0-9A-Fa-f]+\\b"
+        },
+        {
+          "name": "constant.numeric.integer.kale",
+          "match": "\\b[0-9]+\\b"
+        }
+      ]
+    },
+
+    "constants": {
+      "name": "constant.language.kale",
+      "match": "\\b(true|false|null)\\b"
+    },
+
+    "import-statement": {
+      "comment": "import \"path/to/file.kl\" as alias;",
+      "match": "\\b(import)\\s+(\"[^\"]*\")(?:\\s+(as)\\s+([a-zA-Z_][a-zA-Z0-9_]*))?",
+      "captures": {
+        "1": { "name": "keyword.declaration.import.kale" },
+        "2": { "name": "string.quoted.double.import.kale" },
+        "3": { "name": "keyword.declaration.as.kale" },
+        "4": { "name": "variable.other.namespace.kale" }
+      }
+    },
+
+    "function-definition": {
+      "comment": "fn <return-type>[*] <name>(",
+      "match": "\\b(fn)\\s+(?:(void|int|float|double|string|bool|char)\\s*(\\*?)\\s+)?([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()",
+      "captures": {
+        "1": { "name": "keyword.declaration.fn.kale" },
+        "2": { "name": "storage.type.kale" },
+        "3": { "name": "keyword.operator.pointer.kale" },
+        "4": { "name": "entity.name.function.kale" }
+      }
+    },
+
+    "struct-definition": {
+      "comment": "struct Name {",
+      "match": "\\b(struct)\\s+([A-Z][a-zA-Z0-9_]*)\\b",
+      "captures": {
+        "1": { "name": "keyword.declaration.struct.kale" },
+        "2": { "name": "entity.name.type.struct.kale" }
+      }
+    },
+
+    "enum-definition": {
+      "comment": "enum Name {",
+      "match": "\\b(enum)\\s+([A-Z][a-zA-Z0-9_]*)\\b",
+      "captures": {
+        "1": { "name": "keyword.declaration.enum.kale" },
+        "2": { "name": "entity.name.type.enum.kale" }
+      }
+    },
+
+    "extern-declaration": {
+      "comment": "extern <type> <name>(...);",
+      "match": "\\b(extern)\\b",
+      "name": "keyword.declaration.extern.kale"
+    },
+
+    "type-cast": {
+      "comment": "(int), (float), etc. cast expressions",
+      "match": "\\((void|int|float|double|string|bool|char)\\)",
+      "captures": {
+        "1": { "name": "storage.type.kale" }
+      }
+    },
+
+    "function-call": {
+      "comment": "Matches identifier followed by ( — but not keyword-followed calls",
+      "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()",
+      "captures": {
+        "1": { "name": "entity.name.function.kale" }
+      }
+    },
+
+    "keywords-control": {
+      "name": "keyword.control.kale",
+      "match": "\\b(if|else|while|for|switch|case|default|return|break|continue|goto|label)\\b"
+    },
+
+    "keywords-declaration": {
+      "name": "keyword.declaration.kale",
+      "match": "\\b(let|var|const|operator|from|as)\\b"
+    },
+
+    "keywords-type": {
+      "name": "storage.type.kale",
+      "match": "\\b(int|float|double|string|bool|char|void)\\b"
+    },
+
+    "keywords-builtin": {
+      "name": "support.function.builtin.kale",
+      "match": "\\b(print|input|alloc|free)\\b"
+    },
+
+    "operators": {
+      "patterns": [
+        {
+          "comment": "Pointer operators: *, &, ->, ^",
+          "name": "keyword.operator.pointer.kale",
+          "match": "(?<![=!<>])(?:->|\\^(?!=))"
+        },
+        {
+          "comment": "Compound assignment operators",
+          "name": "keyword.operator.assignment.compound.kale",
+          "match": "(?:\\+=|-=|\\*=|/=|%=|&=|\\|=|\\^=|<<=|>>=)"
+        },
+        {
+          "comment": "Simple assignment",
+          "name": "keyword.operator.assignment.kale",
+          "match": "(?<![=!<>])=(?!=)"
+        },
+        {
+          "comment": "Comparison operators",
+          "name": "keyword.operator.comparison.kale",
+          "match": "==|!=|<=|>=|<(?!<)|>(?!>)"
+        },
+        {
+          "comment": "Logical operators",
+          "name": "keyword.operator.logical.kale",
+          "match": "&&|\\|\\||!"
+        },
+        {
+          "comment": "Bitwise shift operators",
+          "name": "keyword.operator.bitwise.kale",
+          "match": "<<|>>"
+        },
+        {
+          "comment": "Arithmetic operators",
+          "name": "keyword.operator.arithmetic.kale",
+          "match": "\\*\\*|[+\\-*/%]"
+        },
+        {
+          "comment": "Bitwise operators",
+          "name": "keyword.operator.bitwise.kale",
+          "match": "[&|^~]"
+        },
+        {
+          "comment": "Increment / decrement",
+          "name": "keyword.operator.increment.kale",
+          "match": "\\+\\+|--"
+        },
+        {
+          "comment": "Ellipsis (variadic)",
+          "name": "keyword.operator.variadic.kale",
+          "match": "\\.\\.\\."
+        }
+      ]
+    },
+
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.definition.block.begin.kale",
+          "match": "\\{"
+        },
+        {
+          "name": "punctuation.definition.block.end.kale",
+          "match": "\\}"
+        },
+        {
+          "name": "punctuation.definition.parameters.begin.kale",
+          "match": "\\("
+        },
+        {
+          "name": "punctuation.definition.parameters.end.kale",
+          "match": "\\)"
+        },
+        {
+          "name": "punctuation.definition.array.begin.kale",
+          "match": "\\["
+        },
+        {
+          "name": "punctuation.definition.array.end.kale",
+          "match": "\\]"
+        },
+        {
+          "name": "punctuation.separator.comma.kale",
+          "match": ","
+        },
+        {
+          "name": "punctuation.terminator.statement.kale",
+          "match": ";"
+        },
+        {
+          "name": "punctuation.separator.colon.kale",
+          "match": ":"
+        },
+        {
+          "name": "punctuation.accessor.dot.kale",
+          "match": "\\.(?!\\.)"
+        }
+      ]
+    }
+  }
+}

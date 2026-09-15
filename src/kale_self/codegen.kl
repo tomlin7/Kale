@@ -1,0 +1,451 @@
+// src/kale_self/codegen.kl
+// Target C code generator for self-hosting Kale compiler
+
+import "src/kale_self/token.kl" as tok;
+import "src/kale_self/ast.kl" as ast;
+
+extern void* malloc(int size);
+extern int strlen(string s);
+extern int strcmp(string s1, string s2);
+
+struct CodeEmitter {
+    char* buffer;
+    int length;
+    int capacity;
+    int indent_level;
+}
+
+fn void emitter_reserve(CodeEmitter* e, int additional) {
+    if (e->length + additional + 1 > e->capacity) {
+        int new_cap = e->capacity * 2;
+        while (new_cap < e->length + additional + 1) {
+            new_cap = new_cap * 2;
+        }
+        char* new_buf = (char*)malloc(new_cap);
+        int i = 0;
+        while (i < e->length) {
+            new_buf[i] = e->buffer[i];
+            i = i + 1;
+        }
+        new_buf[e->length] = (char)0;
+        free(e->buffer);
+        e->buffer = new_buf;
+        e->capacity = new_cap;
+    }
+}
+
+fn CodeEmitter* emitter_new() {
+    CodeEmitter* e = alloc(CodeEmitter);
+    int cap = 512;
+    e->capacity = cap;
+    e->length = 0;
+    e->indent_level = 0;
+    e->buffer = (char*)malloc(cap);
+    e->buffer[0] = (char)0;
+    return e;
+}
+
+fn void emitter_free(CodeEmitter* e) {
+    if (e != (CodeEmitter*)0) {
+        if (e->buffer != (char*)0) {
+            free(e->buffer);
+        }
+        free(e);
+    }
+}
+
+fn int emitter_len(CodeEmitter* e) {
+    return e->length;
+}
+
+fn void emitter_emit_char(CodeEmitter* e, char c) {
+    emitter_reserve(e, 1);
+    e->buffer[e->length] = c;
+    e->length = e->length + 1;
+    e->buffer[e->length] = (char)0;
+}
+
+fn void emitter_emit(CodeEmitter* e, string s) {
+    int s_len = strlen(s);
+    if (s_len == 0) {
+        return;
+    }
+    emitter_reserve(e, s_len);
+    char* src = (char*)s;
+    int i = 0;
+    while (i < s_len) {
+        e->buffer[e->length + i] = src[i];
+        i = i + 1;
+    }
+    e->length = e->length + s_len;
+    e->buffer[e->length] = (char)0;
+}
+
+fn void emitter_emit_indent(CodeEmitter* e) {
+    int count = e->indent_level;
+    int i = 0;
+    while (i < count) {
+        emitter_emit(e, "    ");
+        i = i + 1;
+    }
+}
+
+fn void emitter_emit_line(CodeEmitter* e, string s) {
+    emitter_emit_indent(e);
+    emitter_emit(e, s);
+    emitter_emit_char(e, (char)10); // '\n'
+}
+
+fn void emitter_emit_int(CodeEmitter* e, int val) {
+    if (val == 0) {
+        emitter_emit_char(e, (char)48);
+        return;
+    }
+    int v = val;
+    if (v < 0) {
+        emitter_emit_char(e, (char)45);
+        v = 0 - v;
+    }
+    char* digits = alloc(char, 24);
+    int count = 0;
+    while (v > 0) {
+        int digit = v % 10;
+        digits[count] = (char)(48 + digit);
+        count = count + 1;
+        v = v / 10;
+    }
+    emitter_reserve(e, count);
+    int k = count - 1;
+    while (k >= 0) {
+        emitter_emit_char(e, digits[k]);
+        k = k - 1;
+    }
+    free(digits);
+}
+
+fn string emitter_to_string(CodeEmitter* e) {
+    string res = (string)malloc(e->length + 1);
+    char* dst = (char*)res;
+    int i = 0;
+    while (i < e->length) {
+        dst[i] = e->buffer[i];
+        i = i + 1;
+    }
+    dst[e->length] = (char)0;
+    return res;
+}
+
+fn string c_type(string t) {
+    if (strcmp(t, "int") == 0) { return "int64_t"; }
+    if (strcmp(t, "float") == 0) { return "double"; }
+    if (strcmp(t, "bool") == 0) { return "bool"; }
+    if (strcmp(t, "string") == 0) { return "const char*"; }
+    if (strcmp(t, "void") == 0) { return "void"; }
+    if (strcmp(t, "") == 0) { return "void"; }
+    return t;
+}
+
+fn string op_to_c(int op) {
+    if (op == tok.TOK_PLUS()) { return "+"; }
+    if (op == tok.TOK_MINUS()) { return "-"; }
+    if (op == tok.TOK_STAR()) { return "*"; }
+    if (op == tok.TOK_SLASH()) { return "/"; }
+    if (op == tok.TOK_PERCENT()) { return "%"; }
+    if (op == tok.TOK_EQEQ()) { return "=="; }
+    if (op == tok.TOK_NEQ()) { return "!="; }
+    if (op == tok.TOK_LT()) { return "<"; }
+    if (op == tok.TOK_LTE()) { return "<="; }
+    if (op == tok.TOK_GT()) { return ">"; }
+    if (op == tok.TOK_GTE()) { return ">="; }
+    if (op == tok.TOK_ANDAND()) { return "&&"; }
+    if (op == tok.TOK_OROR()) { return "||"; }
+    if (op == tok.TOK_EQUALS()) { return "="; }
+    return "?";
+}
+
+fn void emitter_emit_expr(CodeEmitter* e, ast.ASTNode* expr) {
+    if (expr == (ast.ASTNode*)0) {
+        return;
+    }
+
+    if (expr->kind == ast.AST_LITERAL()) {
+        emitter_emit_int(e, expr->int_val);
+        return;
+    }
+
+    if (expr->kind == ast.AST_IDENT()) {
+        emitter_emit(e, expr->text);
+        return;
+    }
+
+    if (expr->kind == ast.AST_UNARY()) {
+        if (expr->op == tok.TOK_BANG()) {
+            emitter_emit(e, "!");
+        } else if (expr->op == tok.TOK_MINUS()) {
+            emitter_emit(e, "-");
+        }
+        emitter_emit_expr(e, expr->left);
+        return;
+    }
+
+    if (expr->kind == ast.AST_BINARY()) {
+        emitter_emit(e, "(");
+        emitter_emit_expr(e, expr->left);
+        emitter_emit(e, " ");
+        emitter_emit(e, op_to_c(expr->op));
+        emitter_emit(e, " ");
+        emitter_emit_expr(e, expr->right);
+        emitter_emit(e, ")");
+        return;
+    }
+
+    if (expr->kind == ast.AST_CALL()) {
+        emitter_emit(e, expr->text);
+        emitter_emit(e, "(");
+        ast.ASTNode* arg = expr->left;
+        bool first = true;
+        while (arg != (ast.ASTNode*)0) {
+            if (!first) {
+                emitter_emit(e, ", ");
+            }
+            emitter_emit_expr(e, arg);
+            first = false;
+            arg = arg->next;
+        }
+        emitter_emit(e, ")");
+        return;
+    }
+
+    if (expr->kind == ast.AST_ASSIGN()) {
+        emitter_emit(e, expr->text);
+        emitter_emit(e, " = ");
+        emitter_emit_expr(e, expr->left);
+        return;
+    }
+}
+
+fn void emitter_emit_stmt(CodeEmitter* e, ast.ASTNode* stmt) {
+    if (stmt == (ast.ASTNode*)0) {
+        return;
+    }
+
+    if (stmt->kind == ast.AST_RETURN()) {
+        emitter_emit_indent(e);
+        emitter_emit(e, "return");
+        if (stmt->left != (ast.ASTNode*)0) {
+            emitter_emit(e, " ");
+            emitter_emit_expr(e, stmt->left);
+        }
+        emitter_emit(e, ";\n");
+        return;
+    }
+
+    if (stmt->kind == ast.AST_VAR_DECL()) {
+        emitter_emit_indent(e);
+        string t = stmt->type_name;
+        if (strcmp(t, "") == 0 || strcmp(t, "let") == 0 || strcmp(t, "var") == 0) {
+            emitter_emit(e, "int64_t");
+        } else {
+            emitter_emit(e, c_type(t));
+        }
+        emitter_emit(e, " ");
+        emitter_emit(e, stmt->text);
+        if (stmt->left != (ast.ASTNode*)0) {
+            emitter_emit(e, " = ");
+            emitter_emit_expr(e, stmt->left);
+        }
+        emitter_emit(e, ";\n");
+        return;
+    }
+
+    if (stmt->kind == ast.AST_IF()) {
+        emitter_emit_indent(e);
+        emitter_emit(e, "if (");
+        if (stmt->cond != (ast.ASTNode*)0) {
+            emitter_emit_expr(e, stmt->cond);
+        }
+        emitter_emit(e, ") {\n");
+        e->indent_level = e->indent_level + 1;
+        emitter_emit_stmt(e, stmt->body);
+        e->indent_level = e->indent_level - 1;
+        emitter_emit_indent(e);
+        if (stmt->else_body != (ast.ASTNode*)0) {
+            emitter_emit(e, "} else {\n");
+            e->indent_level = e->indent_level + 1;
+            emitter_emit_stmt(e, stmt->else_body);
+            e->indent_level = e->indent_level - 1;
+            emitter_emit_indent(e);
+            emitter_emit(e, "}\n");
+        } else {
+            emitter_emit(e, "}\n");
+        }
+        return;
+    }
+
+    if (stmt->kind == ast.AST_WHILE()) {
+        emitter_emit_indent(e);
+        emitter_emit(e, "while (");
+        if (stmt->cond != (ast.ASTNode*)0) {
+            emitter_emit_expr(e, stmt->cond);
+        }
+        emitter_emit(e, ") {\n");
+        e->indent_level = e->indent_level + 1;
+        emitter_emit_stmt(e, stmt->body);
+        e->indent_level = e->indent_level - 1;
+        emitter_emit_indent(e);
+        emitter_emit(e, "}\n");
+        return;
+    }
+
+    if (stmt->kind == ast.AST_FOR()) {
+        emitter_emit_indent(e);
+        emitter_emit(e, "for (");
+        if (stmt->left != (ast.ASTNode*)0) {
+            if (stmt->left->kind == ast.AST_VAR_DECL()) {
+                string t = stmt->left->type_name;
+                if (strcmp(t, "") == 0 || strcmp(t, "let") == 0 || strcmp(t, "var") == 0) {
+                    emitter_emit(e, "int64_t");
+                } else {
+                    emitter_emit(e, c_type(t));
+                }
+                emitter_emit(e, " ");
+                emitter_emit(e, stmt->left->text);
+                if (stmt->left->left != (ast.ASTNode*)0) {
+                    emitter_emit(e, " = ");
+                    emitter_emit_expr(e, stmt->left->left);
+                }
+            } else {
+                emitter_emit_expr(e, stmt->left);
+            }
+        }
+        emitter_emit(e, "; ");
+        if (stmt->cond != (ast.ASTNode*)0) {
+            emitter_emit_expr(e, stmt->cond);
+        }
+        emitter_emit(e, "; ");
+        if (stmt->right != (ast.ASTNode*)0) {
+            emitter_emit_expr(e, stmt->right);
+        }
+        emitter_emit(e, ") {\n");
+        e->indent_level = e->indent_level + 1;
+        emitter_emit_stmt(e, stmt->body);
+        e->indent_level = e->indent_level - 1;
+        emitter_emit_indent(e);
+        emitter_emit(e, "}\n");
+        return;
+    }
+
+    if (stmt->kind == ast.AST_BLOCK()) {
+        ast.ASTNode* cur = stmt->body;
+        while (cur != (ast.ASTNode*)0) {
+            emitter_emit_stmt(e, cur);
+            cur = cur->next;
+        }
+        return;
+    }
+
+    // Fallback: Expression statement
+    emitter_emit_indent(e);
+    emitter_emit_expr(e, stmt);
+    emitter_emit(e, ";\n");
+}
+
+fn void emitter_emit_decl(CodeEmitter* e, ast.ASTNode* decl) {
+    if (decl == (ast.ASTNode*)0) {
+        return;
+    }
+
+    if (decl->kind == ast.AST_STRUCT_DECL()) {
+        emitter_emit(e, "typedef struct ");
+        emitter_emit(e, decl->text);
+        emitter_emit(e, " {\n");
+        e->indent_level = e->indent_level + 1;
+        ast.ASTNode* field = decl->body;
+        while (field != (ast.ASTNode*)0) {
+            emitter_emit_indent(e);
+            emitter_emit(e, c_type(field->type_name));
+            emitter_emit(e, " ");
+            emitter_emit(e, field->text);
+            emitter_emit(e, ";\n");
+            field = field->next;
+        }
+        e->indent_level = e->indent_level - 1;
+        emitter_emit(e, "} ");
+        emitter_emit(e, decl->text);
+        emitter_emit(e, ";\n\n");
+        return;
+    }
+
+    if (decl->kind == ast.AST_FN_DECL()) {
+        emitter_emit(e, c_type(decl->type_name));
+        emitter_emit(e, " ");
+        emitter_emit(e, decl->text);
+        emitter_emit(e, "(");
+        ast.ASTNode* p = decl->left;
+        bool first = true;
+        while (p != (ast.ASTNode*)0) {
+            if (!first) {
+                emitter_emit(e, ", ");
+            }
+            emitter_emit(e, c_type(p->type_name));
+            emitter_emit(e, " ");
+            emitter_emit(e, p->text);
+            first = false;
+            p = p->next;
+        }
+        emitter_emit(e, ") {\n");
+        e->indent_level = e->indent_level + 1;
+        if (decl->body != (ast.ASTNode*)0) {
+            emitter_emit_stmt(e, decl->body);
+        }
+        e->indent_level = e->indent_level - 1;
+        emitter_emit(e, "}\n\n");
+        return;
+    }
+}
+
+fn void emitter_emit_program(CodeEmitter* e, ast.ASTNode* prog) {
+    if (prog == (ast.ASTNode*)0) {
+        return;
+    }
+
+    // Standard runtime preamble
+    emitter_emit(e, "#include <stdint.h>\n#include <stdbool.h>\n#include <stdio.h>\n\n");
+
+    // Forward declarations for functions
+    ast.ASTNode* cur = prog->body;
+    while (cur != (ast.ASTNode*)0) {
+        if (cur->kind == ast.AST_FN_DECL()) {
+            emitter_emit(e, c_type(cur->type_name));
+            emitter_emit(e, " ");
+            emitter_emit(e, cur->text);
+            emitter_emit(e, "(");
+            ast.ASTNode* p = cur->left;
+            bool first = true;
+            while (p != (ast.ASTNode*)0) {
+                if (!first) {
+                    emitter_emit(e, ", ");
+                }
+                emitter_emit(e, c_type(p->type_name));
+                emitter_emit(e, " ");
+                emitter_emit(e, p->text);
+                first = false;
+                p = p->next;
+            }
+            emitter_emit(e, ");\n");
+        }
+        cur = cur->next;
+    }
+    emitter_emit(e, "\n");
+
+    // Function and struct definitions
+    cur = prog->body;
+    while (cur != (ast.ASTNode*)0) {
+        if (cur->kind == ast.AST_FN_DECL() || cur->kind == ast.AST_STRUCT_DECL()) {
+            emitter_emit_decl(e, cur);
+        } else if (cur->kind != ast.AST_IMPORT()) {
+            emitter_emit_stmt(e, cur);
+        }
+        cur = cur->next;
+    }
+}

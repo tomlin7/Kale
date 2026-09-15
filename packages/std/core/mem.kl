@@ -1,0 +1,107 @@
+// packages/std/core/mem.kl
+// Arena memory allocator for scoped, high-throughput, and frame-based allocations
+
+struct ArenaBlock {
+    char* memory;
+    int size;
+    int used;
+    ArenaBlock* next;
+}
+
+struct Arena {
+    ArenaBlock* head;
+    int default_block_size;
+    int total_allocated;
+    int block_count;
+}
+
+fn void Arena.init(int default_block_size) {
+    int blk_size = 1024;
+    if (default_block_size > 0) {
+        blk_size = default_block_size;
+    }
+    this->default_block_size = blk_size;
+    this->total_allocated = 0;
+    this->block_count = 1;
+
+    ArenaBlock* first = alloc(ArenaBlock);
+    first->memory = alloc(char, blk_size);
+    first->size = blk_size;
+    first->used = 0;
+    first->next = (ArenaBlock*)0;
+
+    this->head = first;
+}
+
+fn char* Arena.alloc_bytes(int bytes) {
+    if (bytes <= 0) {
+        return (char*)0;
+    }
+
+    // 8-byte alignment
+    int rem = bytes % 8;
+    int aligned = bytes;
+    if (rem != 0) {
+        aligned = bytes + (8 - rem);
+    }
+
+    // Check if current head block has enough space
+    if (this->head->used + aligned <= this->head->size) {
+        char* ptr = &this->head->memory[this->head->used];
+        this->head->used = this->head->used + aligned;
+        this->total_allocated = this->total_allocated + aligned;
+        return ptr;
+    }
+
+    // Need a new block
+    int next_size = this->default_block_size;
+    if (aligned > next_size) {
+        next_size = aligned;
+    }
+
+    ArenaBlock* new_block = alloc(ArenaBlock);
+    new_block->memory = alloc(char, next_size);
+    new_block->size = next_size;
+    new_block->used = aligned;
+    new_block->next = this->head;
+
+    this->head = new_block;
+    this->block_count = this->block_count + 1;
+    this->total_allocated = this->total_allocated + aligned;
+
+    return new_block->memory;
+}
+
+fn void Arena.reset() {
+    // Keep blocks, reset used counters
+    ArenaBlock* cur = this->head;
+    while (cur != (ArenaBlock*)0) {
+        cur->used = 0;
+        cur = cur->next;
+    }
+    this->total_allocated = 0;
+}
+
+fn int Arena.get_total_allocated() {
+    return this->total_allocated;
+}
+
+fn int Arena.get_block_count() {
+    return this->block_count;
+}
+
+fn void Arena.destroy() {
+    ArenaBlock* cur = this->head;
+    while (cur != (ArenaBlock*)0) {
+        ArenaBlock* next = cur->next;
+        if (cur->memory != (char*)0) {
+            free(cur->memory);
+            cur->memory = (char*)0;
+        }
+        free(cur);
+        cur = next;
+    }
+    this->head = (ArenaBlock*)0;
+    this->total_allocated = 0;
+    this->block_count = 0;
+}

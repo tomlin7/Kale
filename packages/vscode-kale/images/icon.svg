@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <!-- Background -->
+  <rect width="128" height="128" rx="16" fill="#1e1f2e"/>
+
+  <!-- Letter K -->
+  <g fill="#4ec994">
+    <!-- Vertical bar of K -->
+    <rect x="24" y="24" width="14" height="80" rx="4"/>
+    <!-- Upper diagonal arm -->
+    <polygon points="38,64 80,24 98,24 56,64" rx="3"/>
+    <!-- Lower diagonal arm -->
+    <polygon points="38,64 80,104 98,104 56,64" rx="3"/>
+  </g>
+
+  <!-- Small dot / accent -->
+  <circle cx="104" cy="96" r="7" fill="#4ec994" opacity="0.6"/>
+</svg>
