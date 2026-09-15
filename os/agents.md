@@ -7,7 +7,7 @@
 Bare-metal x86_64 operating system, bootloader, and microkernel written in Kale and assembly, demonstrating freestanding language execution.
 
 ## Status
-Current status: 🟡 Stage-two long-mode handoff complete; linked kernel integration in progress
+Current status: 🟡 Boot, storage, memory, scheduling, and service foundations complete; freestanding kernel integration in progress
 
 ## Dependencies
 - Kale compiler (with freestanding / `-ffreestanding` bare-metal target)
@@ -22,10 +22,12 @@ pwsh os/boot/run-qemu.ps1
 pwsh os/boot/run-qemu.ps1 -Display none
 ```
 
-The bootable artifact loads a fixed four-sector stage-two payload at `0x8000`,
-enters protected mode and long mode, and transfers control to that payload. The
-Kale kernel sources are the next freestanding integration target; the host
-compiler does not yet expose a `--freestanding` linker mode.
+The bootable artifact loads an eight-sector stage-two payload at `0x8000`,
+collects the BIOS E820 map, enters protected mode and long mode, and transfers
+control to that payload. A companion FAT12 data disk is generated for the next
+ATA/VFS integration milestone. The Kale kernel sources are the next freestanding
+integration target; the host compiler does not yet expose a `--freestanding`
+linker mode.
 
 ## Coding Conventions
 - No standard library (`no_std` / freestanding mode).

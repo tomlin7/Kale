@@ -71,9 +71,9 @@ os/
 
 ## Current execution order
 
-The next implementation tranche delivers the first ten unchecked foundations:
-E820 discovery, counted/checksummed stage-two loading, boot information handoff,
-exception/panic gates, PIT ticks, RTC conversion, a generic block device,
-FAT12 parsing, VFS operations, and an interactive console. Hardware-dependent
-pieces remain isolated behind small interfaces so they can be tested on the host
-before full freestanding linking is available.
+The first foundation tranche is now implemented and pushed. The next tranche
+will turn the contracts into a linked freestanding kernel: pass `BootInfo` from
+the loader, consume the E820 map in PMM, attach the ATA device to the block
+layer, mount the generated FAT12 disk, and drive the console from IRQ-backed
+keyboard input. Hardware-dependent pieces remain isolated behind the same
+interfaces so they can be tested on the host before full linking.
