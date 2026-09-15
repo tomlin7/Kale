@@ -368,11 +368,11 @@ fn ast.ASTNode* parser_parse_struct(Parser* p) {
         tok.Token* f_name = parser_consume(p, tok.TOK_IDENT());
         parser_consume(p, tok.TOK_SEMICOLON());
 
-        string ft = ""; string fn = "";
+        string ft = ""; string fname = "";
         if (f_type != (tok.Token*)0) { ft = f_type->text; }
-        if (f_name != (tok.Token*)0) { fn = f_name->text; }
+        if (f_name != (tok.Token*)0) { fname = f_name->text; }
 
-        ast.ASTNode* field = ast.ast_field_decl(ft, fn);
+        ast.ASTNode* field = ast.ast_field_decl(ft, fname);
         if (first_field == (ast.ASTNode*)0) {
             first_field = field;
             last_field = field;

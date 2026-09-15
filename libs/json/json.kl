@@ -1,0 +1,158 @@
+// libs/json/json.kl
+// Lightweight JSON value builder for Kale
+// Supports: null, bool, int, string, flat object (up to 6 keys), flat array (up to 6 items)
+
+extern int strlen(string s);
+
+// kind: 0=null 1=bool 2=int 3=string
+
+struct JsonValue {
+    int kind;
+    bool bool_val;
+    int  int_val;
+    string str_val;
+}
+
+fn JsonValue* json_null() {
+    JsonValue* v = alloc(JsonValue);
+    v->kind = 0;
+    v->bool_val = false;
+    v->int_val = 0;
+    v->str_val = "null";
+    return v;
+}
+
+fn JsonValue* json_bool(bool b) {
+    JsonValue* v = alloc(JsonValue);
+    v->kind = 1;
+    v->bool_val = b;
+    v->int_val = 0;
+    if (b) {
+        v->str_val = "true";
+    } else {
+        v->str_val = "false";
+    }
+    return v;
+}
+
+fn JsonValue* json_int(int n) {
+    JsonValue* v = alloc(JsonValue);
+    v->kind = 2;
+    v->bool_val = false;
+    v->int_val = n;
+    v->str_val = "";
+    return v;
+}
+
+fn JsonValue* json_string(string s) {
+    JsonValue* v = alloc(JsonValue);
+    v->kind = 3;
+    v->bool_val = false;
+    v->int_val = 0;
+    v->str_val = s;
+    return v;
+}
+
+fn void json_free(JsonValue* v) {
+    if (v != (JsonValue*)0) {
+        free(v);
+    }
+}
+
+// Flat JSON object: 6 key-value slots using individual fields
+struct JsonObject {
+    string k0; JsonValue* v0;
+    string k1; JsonValue* v1;
+    string k2; JsonValue* v2;
+    string k3; JsonValue* v3;
+    string k4; JsonValue* v4;
+    string k5; JsonValue* v5;
+    int count;
+}
+
+fn JsonObject* json_object_new() {
+    JsonObject* obj = alloc(JsonObject);
+    obj->count = 0;
+    obj->k0 = ""; obj->v0 = (JsonValue*)0;
+    obj->k1 = ""; obj->v1 = (JsonValue*)0;
+    obj->k2 = ""; obj->v2 = (JsonValue*)0;
+    obj->k3 = ""; obj->v3 = (JsonValue*)0;
+    obj->k4 = ""; obj->v4 = (JsonValue*)0;
+    obj->k5 = ""; obj->v5 = (JsonValue*)0;
+    return obj;
+}
+
+fn void json_object_set(JsonObject* obj, string key, JsonValue* val) {
+    int n = obj->count;
+    if (n == 0) { obj->k0 = key; obj->v0 = val; obj->count = 1; return; }
+    if (n == 1) { obj->k1 = key; obj->v1 = val; obj->count = 2; return; }
+    if (n == 2) { obj->k2 = key; obj->v2 = val; obj->count = 3; return; }
+    if (n == 3) { obj->k3 = key; obj->v3 = val; obj->count = 4; return; }
+    if (n == 4) { obj->k4 = key; obj->v4 = val; obj->count = 5; return; }
+    if (n == 5) { obj->k5 = key; obj->v5 = val; obj->count = 6; return; }
+}
+
+fn JsonValue* json_object_get(JsonObject* obj, string key) {
+    if (obj->k0 == key) { return obj->v0; }
+    if (obj->k1 == key) { return obj->v1; }
+    if (obj->k2 == key) { return obj->v2; }
+    if (obj->k3 == key) { return obj->v3; }
+    if (obj->k4 == key) { return obj->v4; }
+    if (obj->k5 == key) { return obj->v5; }
+    return (JsonValue*)0;
+}
+
+fn void json_object_free(JsonObject* obj) {
+    if (obj != (JsonObject*)0) {
+        free(obj);
+    }
+}
+
+// Flat JSON array: 6 item slots
+struct JsonArray {
+    JsonValue* i0;
+    JsonValue* i1;
+    JsonValue* i2;
+    JsonValue* i3;
+    JsonValue* i4;
+    JsonValue* i5;
+    int count;
+}
+
+fn JsonArray* json_array_new() {
+    JsonArray* arr = alloc(JsonArray);
+    arr->count = 0;
+    arr->i0 = (JsonValue*)0;
+    arr->i1 = (JsonValue*)0;
+    arr->i2 = (JsonValue*)0;
+    arr->i3 = (JsonValue*)0;
+    arr->i4 = (JsonValue*)0;
+    arr->i5 = (JsonValue*)0;
+    return arr;
+}
+
+fn void json_array_push(JsonArray* arr, JsonValue* val) {
+    int n = arr->count;
+    if (n == 0) { arr->i0 = val; arr->count = 1; return; }
+    if (n == 1) { arr->i1 = val; arr->count = 2; return; }
+    if (n == 2) { arr->i2 = val; arr->count = 3; return; }
+    if (n == 3) { arr->i3 = val; arr->count = 4; return; }
+    if (n == 4) { arr->i4 = val; arr->count = 5; return; }
+    if (n == 5) { arr->i5 = val; arr->count = 6; return; }
+}
+
+fn JsonValue* json_array_get(JsonArray* arr, int idx) {
+    if (idx == 0) { return arr->i0; }
+    if (idx == 1) { return arr->i1; }
+    if (idx == 2) { return arr->i2; }
+    if (idx == 3) { return arr->i3; }
+    if (idx == 4) { return arr->i4; }
+    if (idx == 5) { return arr->i5; }
+    return (JsonValue*)0;
+}
+
+fn void json_array_free(JsonArray* arr) {
+    if (arr != (JsonArray*)0) {
+        free(arr);
+    }
+}

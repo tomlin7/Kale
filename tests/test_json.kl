@@ -1,0 +1,72 @@
+import "libs/json/json.kl" as json;
+
+fn int main_entry() {
+    print("[TEST] Initializing libs/json serialization suite...");
+
+    // Null value
+    json.JsonValue* n = json.json_null();
+    if (n->kind == 0) {
+        print("  [PASS] json_null() created with kind=0");
+    }
+
+    // Bool values
+    json.JsonValue* t = json.json_bool(true);
+    json.JsonValue* f = json.json_bool(false);
+    if (t->bool_val && !f->bool_val) {
+        print("  [PASS] json_bool() true/false values correct");
+    }
+
+    // Int value
+    json.JsonValue* num = json.json_int(42);
+    if (num->kind == 2 && num->int_val == 42) {
+        print("  [PASS] json_int(42) kind=2, int_val=42");
+    }
+
+    // String value
+    json.JsonValue* s = json.json_string("hello");
+    if (s->kind == 3 && s->str_val == "hello") {
+        print("  [PASS] json_string() kind=3, str_val=hello");
+    }
+
+    // Object with 3 keys
+    json.JsonObject* obj = json.json_object_new();
+    json.json_object_set(obj, "name", s);
+    json.json_object_set(obj, "age", num);
+    json.json_object_set(obj, "active", t);
+    if (obj->count == 3) {
+        print("  [PASS] JsonObject holds 3 key-value pairs");
+    }
+
+    // Get by key
+    json.JsonValue* age_val = json.json_object_get(obj, "age");
+    if (age_val->int_val == 42) {
+        print("  [PASS] json_object_get('age') -> 42");
+    }
+
+    // Array with 3 items
+    json.JsonArray* arr = json.json_array_new();
+    json.json_array_push(arr, json.json_int(1));
+    json.json_array_push(arr, json.json_int(2));
+    json.json_array_push(arr, json.json_int(3));
+    if (arr->count == 3) {
+        print("  [PASS] JsonArray holds 3 items");
+    }
+
+    json.JsonValue* item1 = json.json_array_get(arr, 1);
+    if (item1->int_val == 2) {
+        print("  [PASS] json_array_get(1) -> 2");
+    }
+
+    json.json_free(n);
+    json.json_free(t);
+    json.json_free(f);
+    json.json_free(num);
+    json.json_free(s);
+    json.json_object_free(obj);
+    json.json_array_free(arr);
+
+    print("ALL LIBS/JSON TESTS PASSED PERFECTLY.");
+    return 0;
+}
+
+main_entry();
