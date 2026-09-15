@@ -1,0 +1,235 @@
+// src/kale_self/main.kl
+// Standalone Self-Hosting Compiler CLI Driver for Kale
+// Pipeline: Source -> Lexer -> Parser -> Checker -> Codegen (C) -> Output
+
+import "src/kale_self/token.kl" as tok;
+import "src/kale_self/lexer.kl" as lx;
+import "src/kale_self/ast.kl" as ast;
+import "src/kale_self/parser.kl" as ps;
+import "src/kale_self/checker.kl" as chk;
+import "src/kale_self/codegen.kl" as cg;
+
+extern void* malloc(int size);
+extern int strlen(string s);
+extern int strcmp(string s1, string s2);
+extern int printf(string fmt, ...);
+extern void* fopen(string filename, string mode);
+extern int fclose(void* stream);
+extern int fseek(void* stream, int offset, int whence);
+extern int ftell(void* stream);
+extern void* fread(void* ptr, int size, int nmemb, void* stream);
+extern int fputs(string str, void* stream);
+
+fn string read_file_to_string(string path) {
+    void* handle = fopen(path, "rb");
+    if (handle == (void*)0) {
+        return "";
+    }
+    fseek(handle, 0, 2); // SEEK_END
+    int size = ftell(handle);
+    fseek(handle, 0, 0); // SEEK_SET
+    if (size <= 0) {
+        fclose(handle);
+        return "";
+    }
+    string buf = (string)malloc(size + 1);
+    char* b = (char*)buf;
+    fread((void*)buf, 1, size, handle);
+    b[size] = (char)0;
+    fclose(handle);
+    return buf;
+}
+
+fn bool write_string_to_file(string path, string content) {
+    void* handle = fopen(path, "wb");
+    if (handle == (void*)0) {
+        return false;
+    }
+    fputs(content, handle);
+    fclose(handle);
+    return true;
+}
+
+fn string compile_source(string src) {
+    if (strlen(src) == 0) {
+        return "";
+    }
+
+    lx.Lexer* l = lx.lexer_new(src);
+    ps.Parser* p = ps.parser_new(l);
+    ast.ASTNode* prog = ps.parser_parse_program(p);
+
+    if (p->error_count > 0 || prog == (ast.ASTNode*)0) {
+        if (prog != (ast.ASTNode*)0) {
+            ast.ast_free(prog);
+        }
+        ps.parser_free(p);
+        lx.lexer_free(l);
+        return "";
+    }
+
+    chk.Checker* c = chk.checker_new();
+    int chk_errors = chk.checker_check_program(c, prog);
+    if (chk_errors > 0) {
+        ast.ast_free(prog);
+        chk.checker_free(c);
+        ps.parser_free(p);
+        lx.lexer_free(l);
+        return "";
+    }
+
+    cg.CodeEmitter* emitter = cg.emitter_new();
+    cg.emitter_emit_program(emitter, prog);
+    string c_code = cg.emitter_to_string(emitter);
+
+    ast.ast_free(prog);
+    chk.checker_free(c);
+    ps.parser_free(p);
+    lx.lexer_free(l);
+    cg.emitter_free(emitter);
+
+    return c_code;
+}
+
+fn int compile_file(string input_path, string output_path) {
+    string src = read_file_to_string(input_path);
+    if (strlen(src) == 0) {
+        printf("[kalec] Error: failed to read input file or file is empty: %s\n", input_path);
+        return 1;
+    }
+
+    lx.Lexer* l = lx.lexer_new(src);
+    ps.Parser* p = ps.parser_new(l);
+    ast.ASTNode* prog = ps.parser_parse_program(p);
+
+    if (p->error_count > 0 || prog == (ast.ASTNode*)0) {
+        printf("[kalec] Error: syntax parsing failed with %d error(s).\n", p->error_count);
+        if (prog != (ast.ASTNode*)0) {
+            ast.ast_free(prog);
+        }
+        ps.parser_free(p);
+        lx.lexer_free(l);
+        return 2;
+    }
+
+    chk.Checker* c = chk.checker_new();
+    int chk_errors = chk.checker_check_program(c, prog);
+    if (chk_errors > 0) {
+        printf("[kalec] Error: semantic check failed with %d error(s).\n", chk_errors);
+        ast.ast_free(prog);
+        chk.checker_free(c);
+        ps.parser_free(p);
+        lx.lexer_free(l);
+        return 3;
+    }
+
+    cg.CodeEmitter* emitter = cg.emitter_new();
+    cg.emitter_emit_program(emitter, prog);
+    string c_code = cg.emitter_to_string(emitter);
+
+    ast.ast_free(prog);
+    chk.checker_free(c);
+    ps.parser_free(p);
+    lx.lexer_free(l);
+    cg.emitter_free(emitter);
+
+    if (strlen(output_path) > 0) {
+        bool ok = write_string_to_file(output_path, c_code);
+        if (!ok) {
+            printf("[kalec] Error: failed to write output file: %s\n", output_path);
+            return 4;
+        }
+        printf("[kalec] Successfully compiled '%s' -> '%s'\n", input_path, output_path);
+    } else {
+        printf("%s", c_code);
+    }
+    return 0;
+}
+
+fn void print_usage() {
+    printf("Kale Self-Hosting Compiler (kalec v0.1.0)\n");
+    printf("Usage: kalec <input.kl> [-o <output.c>] [--check] [--help]\n\n");
+    printf("Options:\n");
+    printf("  -o <path>       Specify target C output path\n");
+    printf("  --check         Perform lexical, parsing, and semantic checks only\n");
+    printf("  --help, -h      Display this information\n");
+}
+
+fn int main_driver(int argc, string* argv) {
+    if (argc < 2) {
+        print_usage();
+        return 1;
+    }
+
+    string input_path = "";
+    string output_path = "";
+    bool check_only = false;
+
+    int i = 1;
+    while (i < argc) {
+        string arg = argv[i];
+        if (strcmp(arg, "--help") == 0 || strcmp(arg, "-h") == 0) {
+            print_usage();
+            return 0;
+        }
+        if (strcmp(arg, "--check") == 0) {
+            check_only = true;
+            i = i + 1;
+        } else if (strcmp(arg, "-o") == 0) {
+            if (i + 1 < argc) {
+                output_path = argv[i + 1];
+                i = i + 2;
+            } else {
+                printf("[kalec] Error: missing path after -o\n");
+                return 1;
+            }
+        } else {
+            input_path = arg;
+            i = i + 1;
+        }
+    }
+
+    if (strlen(input_path) == 0) {
+        print_usage();
+        return 1;
+    }
+
+    if (check_only) {
+        string src = read_file_to_string(input_path);
+        if (strlen(src) == 0) {
+            printf("[kalec] Error: failed to read input file: %s\n", input_path);
+            return 1;
+        }
+        lx.Lexer* l = lx.lexer_new(src);
+        ps.Parser* p = ps.parser_new(l);
+        ast.ASTNode* prog = ps.parser_parse_program(p);
+        if (p->error_count > 0 || prog == (ast.ASTNode*)0) {
+            printf("[kalec] Check failed: syntax errors detected.\n");
+            if (prog != (ast.ASTNode*)0) { ast.ast_free(prog); }
+            ps.parser_free(p);
+            lx.lexer_free(l);
+            return 2;
+        }
+        chk.Checker* c = chk.checker_new();
+        int chk_errors = chk.checker_check_program(c, prog);
+        ast.ast_free(prog);
+        chk.checker_free(c);
+        ps.parser_free(p);
+        lx.lexer_free(l);
+        if (chk_errors > 0) {
+            printf("[kalec] Check failed: semantic errors detected.\n");
+            return 3;
+        }
+        printf("[kalec] Check passed: '%s' is valid.\n", input_path);
+        return 0;
+    }
+
+    return compile_file(input_path, output_path);
+}
+
+fn int main_entry() {
+    print_usage();
+    return 0;
+}
+
+main_entry();

@@ -1,0 +1,115 @@
+// tests/test_kale_self_driver.kl
+// Verification test for Kale self-hosting compiler CLI driver
+
+import "src/kale_self/main.kl" as km;
+
+extern int printf(string fmt, ...);
+extern int strcmp(string s1, string s2);
+extern void* strstr(string haystack, string needle);
+
+fn int main_entry() {
+    printf("[TEST] Initializing Kale self-hosting compiler driver (src/kale_self/main.kl)...\n");
+
+    // Test 1: compile_source on multi-function program
+    string multi_fn_code = "fn int add(int a, int b) { return a + b; }\nfn int factorial(int n) { if (n <= 1) { return 1; } return n * factorial(n - 1); }\nfn int main() { int res = add(10, 20); return res; }";
+
+    string c_out = km.compile_source(multi_fn_code);
+    if ((void*)c_out == (void*)0) {
+        printf("  [FAIL] compile_source returned null\n");
+        return 1;
+    }
+
+    if (strstr(c_out, "#include <stdint.h>") == (void*)0) {
+        printf("  [FAIL] Missing standard include\n");
+        return 2;
+    }
+    printf("  [PASS] Standard C headers included in generated code\n");
+
+    if (strstr(c_out, "int64_t add(int64_t a, int64_t b);") == (void*)0) {
+        printf("  [FAIL] Missing forward declaration for add\n");
+        return 3;
+    }
+    printf("  [PASS] Forward declaration for 'add' found\n");
+
+    if (strstr(c_out, "int64_t factorial(int64_t n);") == (void*)0) {
+        printf("  [FAIL] Missing forward declaration for factorial\n");
+        return 4;
+    }
+    printf("  [PASS] Forward declaration for 'factorial' found\n");
+
+    if (strstr(c_out, "int64_t main();") == (void*)0) {
+        printf("  [FAIL] Missing forward declaration for main\n");
+        return 5;
+    }
+    printf("  [PASS] Forward declaration for 'main' found\n");
+
+    if (strstr(c_out, "int64_t add(int64_t a, int64_t b) {") == (void*)0) {
+        printf("  [FAIL] Missing definition for add\n");
+        return 6;
+    }
+    printf("  [PASS] Function definition for 'add' found\n");
+
+    if (strstr(c_out, "int64_t factorial(int64_t n) {") == (void*)0) {
+        printf("  [FAIL] Missing definition for factorial\n");
+        return 7;
+    }
+    printf("  [PASS] Recursive function definition for 'factorial' found\n");
+
+    // Test 2: File reading and writing utilities
+    bool wrote = km.write_string_to_file("bin/driver_sample.kl", multi_fn_code);
+    if (!wrote) {
+        printf("  [FAIL] Failed to write sample file\n");
+        return 8;
+    }
+    printf("  [PASS] Sample Kale source file written successfully\n");
+
+    string read_back = km.read_file_to_string("bin/driver_sample.kl");
+    if (strcmp(read_back, multi_fn_code) != 0) {
+        printf("  [FAIL] Read content does not match written content\n");
+        return 9;
+    }
+    printf("  [PASS] Sample Kale source file read back accurately\n");
+
+    // Test 3: compile_file end-to-end
+    int comp_res = km.compile_file("bin/driver_sample.kl", "bin/driver_sample.c");
+    if (comp_res != 0) {
+        printf("  [FAIL] compile_file returned %d\n", comp_res);
+        return 10;
+    }
+    printf("  [PASS] compile_file successfully compiled driver_sample.kl to driver_sample.c\n");
+
+    string file_c_out = km.read_file_to_string("bin/driver_sample.c");
+    if (strstr(file_c_out, "factorial") == (void*)0) {
+        printf("  [FAIL] Output C file does not contain expected code\n");
+        return 11;
+    }
+    printf("  [PASS] Output C file verified containing compiled program\n");
+
+    // Test 4: CLI driver command dispatch (main_driver with --check)
+    int check_code = km.main_driver(3, ["kalec", "bin/driver_sample.kl", "--check"]);
+    if (check_code != 0) {
+        printf("  [FAIL] main_driver --check failed with code %d\n", check_code);
+        return 12;
+    }
+    printf("  [PASS] main_driver CLI dispatch with --check succeeded\n");
+
+    // Test 5: CLI driver command dispatch (main_driver with -o)
+    int cli_res = km.main_driver(4, ["kalec", "bin/driver_sample.kl", "-o", "bin/driver_cli_output.c"]);
+    if (cli_res != 0) {
+        printf("  [FAIL] main_driver -o failed with code %d\n", cli_res);
+        return 13;
+    }
+    printf("  [PASS] main_driver CLI dispatch with -o succeeded\n");
+
+    string cli_c_out = km.read_file_to_string("bin/driver_cli_output.c");
+    if (strstr(cli_c_out, "int64_t main()") == (void*)0) {
+        printf("  [FAIL] CLI generated C file missing main()\n");
+        return 14;
+    }
+    printf("  [PASS] CLI output C file verified\n");
+
+    printf("ALL SELF-HOSTING DRIVER TESTS PASSED PERFECTLY.\n");
+    return 0;
+}
+
+main_entry();
