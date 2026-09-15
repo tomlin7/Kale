@@ -315,6 +315,8 @@ pub const Codegen = struct {
                             const key = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ sname, fn_d.name });
                             try self.struct_methods.put(key, sname);
                             try self.all_method_names.put(fn_d.name, sname);
+                            try self.fn_return_types.put(key, fn_d.ret_type);
+                            try self.fn_return_types.put(fn_d.name, fn_d.ret_type);
                         } else {
                             try self.fn_return_types.put(fn_d.name, fn_d.ret_type);
                             const mod_key = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ m.name, fn_d.name });
@@ -606,10 +608,21 @@ pub const Codegen = struct {
                         dep_name = dep_name[dot + 1 ..];
                     }
                     if (std.mem.eql(u8, dep_name, "T")) {
-                        dep_name = self.generic_type orelse "Piece";
+                        if (self.generic_type) |gt| {
+                            dep_name = gt;
+                        }
                     }
                     if (struct_map.contains(dep_name) and !std.mem.eql(u8, dep_name, name)) {
                         try self.visitStruct(dep_name, struct_map, visited, ordered);
+                    }
+                }
+                if (f.type_ref.generic_arg) |garg| {
+                    var g_name = garg;
+                    if (std.mem.lastIndexOfScalar(u8, g_name, '.')) |dot| {
+                        g_name = g_name[dot + 1 ..];
+                    }
+                    if (struct_map.contains(g_name) and !std.mem.eql(u8, g_name, name)) {
+                        try self.visitStruct(g_name, struct_map, visited, ordered);
                     }
                 }
             }
@@ -680,6 +693,18 @@ pub const Codegen = struct {
                             }
                         }
                     }
+                    if (self.getExprStructType(m, c.callee.data.member.target.*)) |rt| {
+                        const method_key = std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ rt, fn_name }) catch null;
+                        if (method_key) |k| {
+                            if (self.fn_return_types.get(k)) |ret_t| {
+                                var name = ret_t.name;
+                                if (std.mem.lastIndexOfScalar(u8, name, '.')) |dot| {
+                                    name = name[dot + 1 ..];
+                                }
+                                return name;
+                            }
+                        }
+                    }
                     if (self.fn_return_types.get(fn_name)) |ret_t| {
                         var name = ret_t.name;
                         if (std.mem.lastIndexOfScalar(u8, name, '.')) |dot| {
@@ -725,6 +750,23 @@ pub const Codegen = struct {
                     }
                 } else if (c.callee.kind == .member) {
                     const fn_name = c.callee.data.member.member;
+                    if (c.callee.data.member.target.kind == .variable) {
+                        const mod_name = c.callee.data.member.target.data.variable;
+                        const mod_fn_key = std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ mod_name, fn_name }) catch null;
+                        if (mod_fn_key) |k| {
+                            if (self.fn_return_types.get(k)) |ret_t| {
+                                return ret_t.ptr_depth > 0;
+                            }
+                        }
+                    }
+                    if (self.getExprStructType(m, c.callee.data.member.target.*)) |rt| {
+                        const method_key = std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ rt, fn_name }) catch null;
+                        if (method_key) |k| {
+                            if (self.fn_return_types.get(k)) |ret_t| {
+                                return ret_t.ptr_depth > 0;
+                            }
+                        }
+                    }
                     if (self.fn_return_types.get(fn_name)) |ret_t| {
                         return ret_t.ptr_depth > 0;
                     }

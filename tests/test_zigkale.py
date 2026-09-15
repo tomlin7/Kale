@@ -440,3 +440,28 @@ def test_zigkale_cli_tooling(tmp_path):
     c_file = tmp_path / "hello_cli.c"
     assert c_file.is_file(), f"Expected {c_file} to exist"
 
+@pytest.mark.skipif(not HAS_ZIG, reason="zig not installed")
+def test_zigkale_chained_method_calls(tmp_path):
+    code = """
+    struct Builder {
+        int val;
+    };
+
+    fn Builder* Builder.add(int x) {
+        this->val += x;
+        return this;
+    }
+
+    fn int Builder.get() {
+        return this->val;
+    }
+
+    Builder b;
+    b.val = 10;
+    b.add(5).add(20);
+    print(b.get()); // 35
+    """
+    run_res = _run_zigkale_snippet(tmp_path, code)
+    assert run_res.returncode == 0
+    assert run_res.stdout.strip() == "35"
+
