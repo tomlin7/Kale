@@ -151,5 +151,9 @@ bin/
 
 
 
+# Zig
+.zig-cache/
+zig-out/
+
 # Jetbrains
 .idea/
