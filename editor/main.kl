@@ -86,6 +86,15 @@ fn void run_editor() {
         } else if (escape_pressed) {
             command_bar.visible = 0;
         }
+        if (command_bar.visible != 0) {
+            if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_UP()) == glc.GLFW_PRESS()) {
+                cb.command_bar_handle_navigation(&command_bar, glc.GLFW_KEY_UP());
+            } else if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_DOWN()) == glc.GLFW_PRESS()) {
+                cb.command_bar_handle_navigation(&command_bar, glc.GLFW_KEY_DOWN());
+            } else if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_ENTER()) == glc.GLFW_PRESS()) {
+                cb.command_bar_handle_navigation(&command_bar, glc.GLFW_KEY_ENTER());
+            }
+        }
         was_p_down = p_down;
         was_z_down = z_down;
         was_y_down = y_down;

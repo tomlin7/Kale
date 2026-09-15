@@ -10,6 +10,8 @@ def test_command_bar_filters_and_selects_commands():
     assert "command_bar_filter" in source
     assert "command_bar_move" in source
     assert "command_bar_accept" in source
+    assert "command_bar_handle_navigation" in source
+    assert "command_bar_reset" in source
     assert "Format document" in source
     assert "Open file" in source
 
@@ -21,4 +23,3 @@ def test_editor_state_exposes_history_and_multi_action_hooks():
     assert "record_action" in source
     assert "fn int EditorState.undo()" in source
     assert "fn int EditorState.redo()" in source
-

@@ -16,6 +16,7 @@ struct CommandBar {
     int item_count;
     char* input_buffer;
     CommandItem[16] items;
+    int input_length;
 }
 
 fn void command_bar_init(CommandBar* bar, char* input_buffer) {
@@ -24,10 +25,40 @@ fn void command_bar_init(CommandBar* bar, char* input_buffer) {
     bar->selected = 0;
     bar->item_count = 4;
     bar->input_buffer = input_buffer;
+    bar->input_length = 0;
     bar->items[0].name = "Format document"; bar->items[0].query = ">format";
     bar->items[1].name = "Save file"; bar->items[1].query = ">save";
     bar->items[2].name = "Open file"; bar->items[2].query = ">open";
     bar->items[3].name = "Find in files"; bar->items[3].query = ">find";
+}
+
+fn void command_bar_reset(CommandBar* bar) {
+    bar->input_length = 0;
+    if (bar->input_buffer != (char*)0) {
+        bar->input_buffer[0] = (char)0;
+    }
+    command_bar_filter(bar, "");
+}
+
+fn int command_bar_handle_navigation(CommandBar* bar, int key) {
+    if (bar->visible == 0) { return 0; }
+    if (key == 265) {
+        command_bar_move(bar, -1);
+        return 1;
+    }
+    if (key == 264) {
+        command_bar_move(bar, 1);
+        return 1;
+    }
+    if (key == 256) {
+        bar->visible = 0;
+        return 1;
+    }
+    if (key == 257) {
+        command_bar_accept(bar);
+        return 1;
+    }
+    return 0;
 }
 
 fn void command_bar_toggle(CommandBar* bar, int file_mode) {
@@ -78,6 +109,10 @@ fn void command_bar_render(CommandBar* bar, ui.UIContext* ctx, float x, float y,
     if (bar->visible == 0) { return; }
     rmath.Color overlay = rmath.color_rgba(0.08f, 0.09f, 0.12f, 0.98f);
     ctx->renderer.push_quad(ctx->gl_ctx, x, y, w, h, overlay);
+    ctx->renderer.push_quad(ctx->gl_ctx, x + 12.0f, y + 12.0f, w - 24.0f, 32.0f, ctx->theme.input_bg);
+    if (bar->input_buffer != (char*)0) {
+        ctx->font.draw_text(&ctx->renderer, ctx->gl_ctx, (string)bar->input_buffer, x + 22.0f, y + 18.0f, ctx->theme.input_text);
+    }
     int i = 0;
     float item_y = y + 58.0f;
     while (i < bar->item_count) {
