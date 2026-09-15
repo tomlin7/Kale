@@ -5,6 +5,7 @@ import "src/kale_self/main.kl" as km;
 
 extern int printf(string fmt, ...);
 extern int strcmp(string s1, string s2);
+extern int strlen(string s);
 extern void* strstr(string haystack, string needle);
 
 fn int main_entry() {
@@ -107,6 +108,76 @@ fn int main_entry() {
         return 14;
     }
     printf("  [PASS] CLI output C file verified\n");
+
+    // Test 6: compile_source error rejection
+    string err_syn = km.compile_source("fn int bad(");
+    if (strlen(err_syn) != 0) {
+        printf("  [FAIL] Expected empty string on syntax error\n");
+        return 15;
+    }
+    string err_sem = km.compile_source("fn int bad() { return undeclared_var; }");
+    if (strlen(err_sem) != 0) {
+        printf("  [FAIL] Expected empty string on semantic error\n");
+        return 16;
+    }
+    printf("  [PASS] compile_source error rejection verified\n");
+
+    // Test 7: compile_file on non-existent file
+    int non_exist = km.compile_file("bin/does_not_exist_12345.kl", "bin/out.c");
+    if (non_exist != 1) {
+        printf("  [FAIL] Expected 1 for non-existent file, got %d\n", non_exist);
+        return 17;
+    }
+    printf("  [PASS] compile_file non-existent file handling verified\n");
+
+    // Test 8: compile_file on syntax error file
+    km.write_string_to_file("bin/driver_err_syn.kl", "fn int bad(");
+    int syn_code = km.compile_file("bin/driver_err_syn.kl", "bin/out.c");
+    if (syn_code != 2) {
+        printf("  [FAIL] Expected 2 for syntax error file, got %d\n", syn_code);
+        return 18;
+    }
+    printf("  [PASS] compile_file syntax error exit code verified\n");
+
+    // Test 9: compile_file on semantic error file
+    km.write_string_to_file("bin/driver_err_sem.kl", "fn int bad() { return nonexistent_var; }");
+    int sem_code = km.compile_file("bin/driver_err_sem.kl", "bin/out.c");
+    if (sem_code != 3) {
+        printf("  [FAIL] Expected 3 for semantic error file, got %d\n", sem_code);
+        return 19;
+    }
+    printf("  [PASS] compile_file semantic error exit code verified\n");
+
+    // Test 10: main_driver CLI option validation
+    int help_code = km.main_driver(2, ["kalec", "--help"]);
+    if (help_code != 0) {
+        printf("  [FAIL] main_driver --help failed\n");
+        return 20;
+    }
+    int unrec_code = km.main_driver(2, ["kalec", "--unknown-flag"]);
+    if (unrec_code != 1) {
+        printf("  [FAIL] main_driver unrecognized flag did not exit 1\n");
+        return 21;
+    }
+    int miss_o = km.main_driver(3, ["kalec", "bin/driver_sample.kl", "-o"]);
+    if (miss_o != 1) {
+        printf("  [FAIL] main_driver missing -o path did not exit 1\n");
+        return 22;
+    }
+    printf("  [PASS] main_driver CLI option validation verified\n");
+
+    // Test 11: main_driver --check on syntax/semantic errors
+    int check_syn = km.main_driver(3, ["kalec", "bin/driver_err_syn.kl", "--check"]);
+    if (check_syn != 2) {
+        printf("  [FAIL] Expected 2 for check syntax error, got %d\n", check_syn);
+        return 23;
+    }
+    int check_sem = km.main_driver(3, ["kalec", "bin/driver_err_sem.kl", "--check"]);
+    if (check_sem != 3) {
+        printf("  [FAIL] Expected 3 for check semantic error, got %d\n", check_sem);
+        return 24;
+    }
+    printf("  [PASS] main_driver --check error codes verified\n");
 
     printf("ALL SELF-HOSTING DRIVER TESTS PASSED PERFECTLY.\n");
     return 0;
