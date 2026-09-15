@@ -1,0 +1,22 @@
+// Stable syscall numbers and a small dispatch surface for the first user ABI.
+
+struct SyscallContext {
+    uint64 number;
+    uint64 arg0;
+    uint64 arg1;
+    uint64 result;
+}
+
+fn uint64 syscall_dispatch(SyscallContext* context) {
+    if (context == (SyscallContext*)0) { return 0xFFFFFFFFFFFFFFFF; }
+    if (context->number == 0) {
+        context->result = context->arg0;
+        return context->result;
+    }
+    if (context->number == 1) {
+        context->result = 0;
+        return context->result;
+    }
+    context->result = 0xFFFFFFFFFFFFFFFF;
+    return context->result;
+}

@@ -1,0 +1,9 @@
+// Kernel assertions feed structured panic state without hidden recovery.
+
+import "os/kernel/panic.kl" as panic;
+
+fn int kernel_assert(int condition, panic.PanicState* state, string message) {
+    if (condition != 0) { return 1; }
+    panic.panic_begin(state, message, 0, 0);
+    return 0;
+}

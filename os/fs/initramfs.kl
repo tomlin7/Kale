@@ -1,0 +1,43 @@
+// Read-only initramfs archive: a compact name/size/data record stream.
+
+struct InitramfsEntry {
+    string name;
+    uint32 offset;
+    uint32 size;
+}
+
+struct Initramfs {
+    uint8* image;
+    uint32 image_size;
+    InitramfsEntry[64] entries;
+    uint32 count;
+}
+
+fn int initramfs_mount(Initramfs* ramfs, uint8* image, uint32 image_size) {
+    if (ramfs == (Initramfs*)0 || image == (uint8*)0 || image_size < 8) { return 0; }
+    if (image[0] != 0x4B || image[1] != 0x52 || image[2] != 0x46 || image[3] != 0x53) { return 0; }
+    ramfs->image = image;
+    ramfs->image_size = image_size;
+    ramfs->count = 0;
+    return 1;
+}
+
+fn int initramfs_add(Initramfs* ramfs, string name, uint32 offset, uint32 size) {
+    if (ramfs == (Initramfs*)0 || ramfs->count >= 64 || offset + size > ramfs->image_size) { return 0; }
+    ramfs->entries[ramfs->count].name = name;
+    ramfs->entries[ramfs->count].offset = offset;
+    ramfs->entries[ramfs->count].size = size;
+    ramfs->count = ramfs->count + 1;
+    return 1;
+}
+
+fn int initramfs_read(Initramfs* ramfs, uint32 index, uint8* output, uint32 capacity) {
+    if (ramfs == (Initramfs*)0 || index >= ramfs->count) { return 0; }
+    if (capacity < ramfs->entries[index].size) { return 0; }
+    uint32 i = 0;
+    while (i < ramfs->entries[index].size) {
+        output[i] = ramfs->image[ramfs->entries[index].offset + i];
+        i = i + 1;
+    }
+    return ramfs->entries[index].size;
+}

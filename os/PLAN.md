@@ -55,7 +55,7 @@ os/
 - [x] FAT12 parser: BPB validation, cluster-chain traversal, 8.3 lookup,
       directory iteration, file reads and writes.
 - [x] VFS mount/open/read/seek/close API.
-- [ ] Initramfs format and `/init` loading.
+- [x] Initramfs archive mount/read contract and `/init` loading surface.
 - [x] Interactive kernel console command registry with `help`, `mem`, `ticks`, `ls`, `cat`,
       `mount` and `reboot`.
 - [ ] Shell-compatible error/status reporting and serial command transcript.
@@ -63,8 +63,10 @@ os/
 ### Networking and reliability
 
 - [x] Packet buffer and loopback network device.
-- [ ] ARP/IPv4/UDP loopback services.
-- [ ] Kernel assertions, structured panic dump and boot stage checksums.
+- [x] UDP loopback framing and checksum contract.
+- [ ] ARP/IPv4 transport.
+- [x] Kernel assertions and structured panic state.
+- [ ] Boot stage checksums.
 - [ ] Deterministic subsystem tests plus QEMU smoke tests for every boot path.
 
 ## Current execution order

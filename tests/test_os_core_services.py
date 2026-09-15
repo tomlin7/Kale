@@ -64,3 +64,8 @@ def test_kernel_scaling_services_have_heap_scheduler_and_loopback():
     assert "scheduler_next" in read("os/kernel/scheduler.kl")
     assert "loopback_send" in read("os/net/loopback.kl")
     assert "loopback_receive" in read("os/net/loopback.kl")
+    assert "initramfs_mount" in read("os/fs/initramfs.kl")
+    assert "initramfs_read" in read("os/fs/initramfs.kl")
+    assert "kernel_assert" in read("os/kernel/assert.kl")
+    assert "syscall_dispatch" in read("os/kernel/syscall.kl")
+    assert "udp_checksum" in read("os/net/udp.kl")

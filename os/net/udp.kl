@@ -1,0 +1,25 @@
+// UDP loopback framing, intentionally independent of an Ethernet driver.
+
+struct UdpPacket {
+    uint16 source_port;
+    uint16 destination_port;
+    uint16 length;
+    uint16 checksum;
+    uint8* payload;
+}
+
+fn uint16 udp_checksum(UdpPacket* packet) {
+    uint32 sum = packet->source_port + packet->destination_port + packet->length;
+    uint32 i = 0;
+    while (i < packet->length && i < 1400) {
+        sum = sum + packet->payload[i];
+        i = i + 1;
+    }
+    while ((sum >> 16) != 0) { sum = (sum & 0xFFFF) + (sum >> 16); }
+    return (~sum) as uint16;
+}
+
+fn int udp_validate(UdpPacket* packet) {
+    if (packet == (UdpPacket*)0 || packet->payload == (uint8*)0) { return 0; }
+    return udp_checksum(packet) == packet->checksum;
+}
