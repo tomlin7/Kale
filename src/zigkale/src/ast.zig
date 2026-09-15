@@ -8,6 +8,7 @@ pub const TypeRef = struct {
     array_size: ?usize = null,
     func_params: ?[]TypeRef = null,
     func_ret: ?*TypeRef = null,
+    generic_arg: ?[]const u8 = null,
 
     pub fn format(self: TypeRef, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
         _ = fmt;
@@ -111,6 +112,12 @@ pub const Field = struct {
     type_ref: TypeRef,
 };
 
+pub const StructDecl = struct {
+    name: []const u8,
+    type_param: ?[]const u8 = null,
+    fields: []Field,
+};
+
 pub const EnumMember = struct {
     name: []const u8,
     value: ?i64 = null,
@@ -193,10 +200,7 @@ pub const Stmt = struct {
             is_varargs: bool,
             struct_name: ?[]const u8,
         },
-        struct_decl: struct {
-            name: []const u8,
-            fields: []Field,
-        },
+        struct_decl: StructDecl,
         enum_decl: struct {
             name: []const u8,
             members: []EnumMember,

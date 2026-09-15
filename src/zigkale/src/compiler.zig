@@ -69,6 +69,12 @@ pub const Compiler = struct {
         try argv.append(self.allocator, "-o");
         try argv.append(self.allocator, output_exe);
         try argv.append(self.allocator, "-lm");
+        if (@import("builtin").os.tag == .windows) {
+            try argv.append(self.allocator, "-lws2_32");
+            try argv.append(self.allocator, "-luser32");
+            try argv.append(self.allocator, "-lgdi32");
+        }
+        try argv.append(self.allocator, "-Wno-parentheses-equality");
 
         for (options.lib_dirs) |dir| {
             try argv.append(self.allocator, try std.fmt.allocPrint(self.allocator, "-L{s}", .{dir}));

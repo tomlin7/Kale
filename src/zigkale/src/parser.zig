@@ -96,6 +96,23 @@ pub const Parser = struct {
             return error.ExpectedType;
         }
 
+        var generic_arg: ?[]const u8 = null;
+        if (self.match(.lt)) {
+            if (self.check(.identifier)) {
+                generic_arg = self.advance().text;
+            }
+            var depth: usize = 1;
+            while (depth > 0 and !self.check(.eof)) {
+                if (self.match(.lt)) {
+                    depth += 1;
+                } else if (self.match(.gt)) {
+                    depth -= 1;
+                } else {
+                    _ = self.advance();
+                }
+            }
+        }
+
         var ptr_depth: usize = 0;
         while (self.match(.star)) {
             ptr_depth += 1;
@@ -117,6 +134,7 @@ pub const Parser = struct {
             .ptr_depth = ptr_depth,
             .is_array = is_array,
             .array_size = array_size,
+            .generic_arg = generic_arg,
         };
     }
 
@@ -253,6 +271,15 @@ pub const Parser = struct {
         if (self.peek(idx).kind == .dot and self.peek(idx + 1).kind == .identifier) {
             idx += 2;
         }
+        if (self.peek(idx).kind == .lt) {
+            var depth: usize = 1;
+            idx += 1;
+            while (depth > 0 and self.peek(idx).kind != .eof) {
+                if (self.peek(idx).kind == .lt) depth += 1;
+                if (self.peek(idx).kind == .gt) depth -= 1;
+                idx += 1;
+            }
+        }
 
         // Skip pointer stars and array brackets
         while (self.peek(idx).kind == .star) {
@@ -267,13 +294,21 @@ pub const Parser = struct {
             idx += 1;
         }
 
-        // Next must be function name
-        if (self.peek(idx).kind != .identifier) return false;
+        // Next must be function name or operator
+        if (self.peek(idx).kind != .identifier and self.peek(idx).kind != .kw_operator) return false;
         idx += 1;
 
         // Method qualifier Struct.method?
-        if (self.peek(idx).kind == .dot and self.peek(idx + 1).kind == .identifier) {
-            idx += 2;
+        if (self.peek(idx).kind == .dot) {
+            idx += 1;
+            if (self.peek(idx).kind == .kw_operator) {
+                idx += 1;
+                if (self.peek(idx).kind == .lbracket and self.peek(idx + 1).kind == .rbracket) {
+                    idx += 2;
+                }
+            } else if (self.peek(idx).kind == .identifier) {
+                idx += 1;
+            }
         }
 
         // Must be '('
@@ -303,6 +338,15 @@ pub const Parser = struct {
             var idx: usize = 1;
             if (self.peek(idx).kind == .dot and self.peek(idx + 1).kind == .identifier) {
                 idx += 2;
+            }
+            if (self.peek(idx).kind == .lt) {
+                var depth: usize = 1;
+                idx += 1;
+                while (depth > 0 and self.peek(idx).kind != .eof) {
+                    if (self.peek(idx).kind == .lt) depth += 1;
+                    if (self.peek(idx).kind == .gt) depth -= 1;
+                    idx += 1;
+                }
             }
             while (self.peek(idx).kind == .star) idx += 1;
             while (self.peek(idx).kind == .lbracket) {
@@ -375,6 +419,22 @@ pub const Parser = struct {
     fn parseStructDeclaration(self: *Parser) !ast.Stmt {
         _ = try self.expect(.kw_struct);
         const name_tok = try self.expect(.identifier);
+        var type_param: ?[]const u8 = null;
+        if (self.match(.lt)) {
+            if (self.check(.identifier)) {
+                type_param = self.advance().text;
+            }
+            var depth: usize = 1;
+            while (depth > 0 and !self.check(.eof)) {
+                if (self.match(.lt)) {
+                    depth += 1;
+                } else if (self.match(.gt)) {
+                    depth -= 1;
+                } else {
+                    _ = self.advance();
+                }
+            }
+        }
         _ = try self.expect(.lbrace);
 
         var fields: std.ArrayList(ast.Field) = .{};
@@ -392,6 +452,7 @@ pub const Parser = struct {
             .data = .{
                 .struct_decl = .{
                     .name = name_tok.text,
+                    .type_param = type_param,
                     .fields = try fields.toOwnedSlice(self.allocator),
                 },
             },
@@ -499,7 +560,17 @@ pub const Parser = struct {
 
         if (self.match(.dot)) {
             struct_name = fn_name;
-            fn_name = (try self.expect(.identifier)).text;
+            if (self.match(.kw_operator)) {
+                if (self.match(.lbracket) and self.match(.rbracket)) {
+                    fn_name = "operator_index";
+                } else if (self.check(.identifier)) {
+                    fn_name = self.advance().text;
+                } else {
+                    fn_name = "operator";
+                }
+            } else {
+                fn_name = (try self.expect(.identifier)).text;
+            }
         }
 
         _ = try self.expect(.lparen);

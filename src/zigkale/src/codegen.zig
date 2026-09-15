@@ -21,6 +21,9 @@ pub const Codegen = struct {
     struct_methods: std.StringHashMap([]const u8),
     all_method_names: std.StringHashMap([]const u8),
     var_types: std.StringHashMap(ast.TypeRef),
+    struct_fields: std.StringHashMap([]ast.Field),
+    fn_return_types: std.StringHashMap(ast.TypeRef),
+    generic_type: ?[]const u8 = null,
 
     pub fn init(allocator: std.mem.Allocator, checker: *Checker, root_module: *Module) Codegen {
         return .{
@@ -36,6 +39,9 @@ pub const Codegen = struct {
             .struct_methods = std.StringHashMap([]const u8).init(allocator),
             .all_method_names = std.StringHashMap([]const u8).init(allocator),
             .var_types = std.StringHashMap(ast.TypeRef).init(allocator),
+            .struct_fields = std.StringHashMap([]ast.Field).init(allocator),
+            .fn_return_types = std.StringHashMap(ast.TypeRef).init(allocator),
+            .generic_type = null,
         };
     }
 
@@ -161,6 +167,22 @@ pub const Codegen = struct {
             base = "char";
         } else if (std.mem.eql(u8, tr.name, "void")) {
             base = "void";
+        } else if (std.mem.eql(u8, tr.name, "T")) {
+            if (self.generic_type) |gent| {
+                if (std.mem.eql(u8, gent, "int")) {
+                    base = "int64_t";
+                } else if (std.mem.eql(u8, gent, "string")) {
+                    base = "const char*";
+                } else if (std.mem.eql(u8, gent, "bool")) {
+                    base = "bool";
+                } else if (std.mem.eql(u8, gent, "char")) {
+                    base = "char";
+                } else {
+                    base = try std.fmt.allocPrint(self.allocator, "struct {s}", .{gent});
+                }
+            } else {
+                base = "void*";
+            }
         } else if (std.mem.indexOfScalar(u8, tr.name, '.')) |dot_idx| {
             const item_name = tr.name[dot_idx + 1 ..];
             if (self.enum_names.contains(item_name)) {
@@ -195,6 +217,7 @@ pub const Codegen = struct {
             "fread", "fwrite", "fputs", "fgets", "exit", "memcpy", "memmove", "memset", "memcmp",
             "pow", "sqrt", "sin", "cos", "tan", "floor", "ceil", "abs", "fabs",
             "system", "getenv", "atoi", "atof", "clock", "time",
+            "remove", "rename", "feof", "fflush", "fgetc", "fputc", "getchar", "putchar", "perror",
         };
         for (std_funcs) |sf| {
             if (std.mem.eql(u8, name, sf)) return true;
@@ -271,7 +294,11 @@ pub const Codegen = struct {
                     .struct_decl => {
                         const s = stmt.data.struct_decl;
                         try self.struct_names.put(s.name, {});
+                        try self.struct_fields.put(s.name, s.fields);
                         for (s.fields) |f| {
+                            if (f.type_ref.generic_arg) |garg| {
+                                self.generic_type = garg;
+                            }
                             _ = try self.mapTypeRef(f.type_ref);
                         }
                     },
@@ -279,16 +306,26 @@ pub const Codegen = struct {
                         const fn_d = stmt.data.fn_decl;
                         _ = try self.mapTypeRef(fn_d.ret_type);
                         for (fn_d.params) |p| {
+                            if (p.type_ref.generic_arg) |garg| {
+                                self.generic_type = garg;
+                            }
                             _ = try self.mapTypeRef(p.type_ref);
                         }
                         if (fn_d.struct_name) |sname| {
                             const key = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ sname, fn_d.name });
                             try self.struct_methods.put(key, sname);
                             try self.all_method_names.put(fn_d.name, sname);
+                        } else {
+                            try self.fn_return_types.put(fn_d.name, fn_d.ret_type);
+                            const mod_key = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ m.name, fn_d.name });
+                            try self.fn_return_types.put(mod_key, fn_d.ret_type);
                         }
                     },
                     .var_decl => {
                         if (stmt.data.var_decl.type_ref) |tr| {
+                            if (tr.generic_arg) |garg| {
+                                self.generic_type = garg;
+                            }
                             _ = try self.mapTypeRef(tr);
                         }
                     },
@@ -339,23 +376,42 @@ pub const Codegen = struct {
             }
         }
 
-        // Emit all struct definitions
-        try self.writeLine("// --- Struct Definitions ---");
+        // Collect unique structs for dependency ordering
+        var all_structs: std.ArrayList(StructEntry) = .{};
+        var struct_map = std.StringHashMap(StructEntry).init(self.allocator);
         for (all_modules.items) |m| {
             for (m.program.statements) |stmt| {
                 if (stmt.kind == .struct_decl) {
                     const s = stmt.data.struct_decl;
-                    try self.writeLineFmt("struct {s} {{", .{s.name});
-                    self.indent += 1;
-                    for (s.fields) |f| {
-                        const ft_str = try self.mapTypeRef(f.type_ref);
-                        try self.writeLineFmt("{s} {s};", .{ ft_str, f.name });
+                    if (!struct_map.contains(s.name)) {
+                        const entry = StructEntry{ .decl = s };
+                        try all_structs.append(self.allocator, entry);
+                        try struct_map.put(s.name, entry);
                     }
-                    self.indent -= 1;
-                    try self.writeLine("};");
-                    try self.writeLine("");
                 }
             }
+        }
+
+        var visited = std.StringHashMap(u8).init(self.allocator);
+        var ordered_structs: std.ArrayList(StructEntry) = .{};
+
+        for (all_structs.items) |entry| {
+            try self.visitStruct(entry.decl.name, &struct_map, &visited, &ordered_structs);
+        }
+
+        // Emit all struct definitions in topological dependency order
+        try self.writeLine("// --- Struct Definitions ---");
+        for (ordered_structs.items) |entry| {
+            const s = entry.decl;
+            try self.writeLineFmt("struct {s} {{", .{s.name});
+            self.indent += 1;
+            for (s.fields) |f| {
+                const ft_str = try self.mapTypeRef(f.type_ref);
+                try self.writeLineFmt("{s} {s};", .{ ft_str, f.name });
+            }
+            self.indent -= 1;
+            try self.writeLine("};");
+            try self.writeLine("");
         }
 
         // Global variables
@@ -523,6 +579,160 @@ pub const Codegen = struct {
         try self.writeLine("}");
 
         return self.out.toOwnedSlice(self.allocator);
+    }
+
+    const StructEntry = struct {
+        decl: ast.StructDecl,
+    };
+
+    fn visitStruct(
+        self: *Codegen,
+        name: []const u8,
+        struct_map: *const std.StringHashMap(StructEntry),
+        visited: *std.StringHashMap(u8),
+        ordered: *std.ArrayList(StructEntry),
+    ) anyerror!void {
+        const state = visited.get(name) orelse 0;
+        if (state == 2) return; // already emitted
+        if (state == 1) return; // cycle detected
+
+        try visited.put(name, 1); // visiting
+
+        if (struct_map.get(name)) |entry| {
+            for (entry.decl.fields) |f| {
+                if (f.type_ref.ptr_depth == 0) {
+                    var dep_name = f.type_ref.name;
+                    if (std.mem.lastIndexOfScalar(u8, dep_name, '.')) |dot| {
+                        dep_name = dep_name[dot + 1 ..];
+                    }
+                    if (std.mem.eql(u8, dep_name, "T")) {
+                        dep_name = self.generic_type orelse "Piece";
+                    }
+                    if (struct_map.contains(dep_name) and !std.mem.eql(u8, dep_name, name)) {
+                        try self.visitStruct(dep_name, struct_map, visited, ordered);
+                    }
+                }
+            }
+            try visited.put(name, 2); // visited
+            try ordered.append(self.allocator, entry);
+        }
+    }
+
+    fn getExprStructType(self: *Codegen, m: *Module, expr: ast.Expr) ?[]const u8 {
+        switch (expr.data) {
+            .variable => |vname| {
+                if (std.mem.eql(u8, vname, "this")) {
+                    if (self.var_types.get("this")) |vtr| {
+                        var name = vtr.name;
+                        if (std.mem.lastIndexOfScalar(u8, name, '.')) |dot| {
+                            name = name[dot + 1 ..];
+                        }
+                        return name;
+                    }
+                }
+                if (self.var_types.get(vname)) |vtr| {
+                    var name = vtr.name;
+                    if (std.mem.lastIndexOfScalar(u8, name, '.')) |dot| {
+                        name = name[dot + 1 ..];
+                    }
+                    return name;
+                }
+                return null;
+            },
+            .member => |mem| {
+                const parent_type = self.getExprStructType(m, mem.target.*) orelse return null;
+                if (self.struct_fields.get(parent_type)) |fields| {
+                    for (fields) |f| {
+                        if (std.mem.eql(u8, f.name, mem.member)) {
+                            var fname = f.type_ref.name;
+                            if (std.mem.lastIndexOfScalar(u8, fname, '.')) |dot| {
+                                fname = fname[dot + 1 ..];
+                            }
+                            return fname;
+                        }
+                    }
+                }
+                return null;
+            },
+            .grouping => |inner| return self.getExprStructType(m, inner.*),
+            .call => |c| {
+                if (c.callee.kind == .variable) {
+                    const fn_name = c.callee.data.variable;
+                    if (self.fn_return_types.get(fn_name)) |ret_t| {
+                        var name = ret_t.name;
+                        if (std.mem.lastIndexOfScalar(u8, name, '.')) |dot| {
+                            name = name[dot + 1 ..];
+                        }
+                        return name;
+                    }
+                } else if (c.callee.kind == .member) {
+                    const fn_name = c.callee.data.member.member;
+                    if (c.callee.data.member.target.kind == .variable) {
+                        const mod_name = c.callee.data.member.target.data.variable;
+                        const mod_fn_key = std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ mod_name, fn_name }) catch null;
+                        if (mod_fn_key) |k| {
+                            if (self.fn_return_types.get(k)) |ret_t| {
+                                var name = ret_t.name;
+                                if (std.mem.lastIndexOfScalar(u8, name, '.')) |dot| {
+                                    name = name[dot + 1 ..];
+                                }
+                                return name;
+                            }
+                        }
+                    }
+                    if (self.fn_return_types.get(fn_name)) |ret_t| {
+                        var name = ret_t.name;
+                        if (std.mem.lastIndexOfScalar(u8, name, '.')) |dot| {
+                            name = name[dot + 1 ..];
+                        }
+                        return name;
+                    }
+                }
+                return null;
+            },
+            else => return null,
+        }
+    }
+
+    fn isExprPointer(self: *Codegen, m: *Module, expr: ast.Expr) bool {
+        switch (expr.data) {
+            .variable => |vname| {
+                if (std.mem.eql(u8, vname, "this")) return true;
+                if (self.var_types.get(vname)) |vtr| {
+                    return vtr.ptr_depth > 0;
+                }
+                return false;
+            },
+            .member => |mem| {
+                const parent_type = self.getExprStructType(m, mem.target.*);
+                if (parent_type) |pt| {
+                    if (self.struct_fields.get(pt)) |fields| {
+                        for (fields) |f| {
+                            if (std.mem.eql(u8, f.name, mem.member)) {
+                                return f.type_ref.ptr_depth > 0;
+                            }
+                        }
+                    }
+                }
+                return mem.is_arrow;
+            },
+            .grouping => |inner| return self.isExprPointer(m, inner.*),
+            .call => |c| {
+                if (c.callee.kind == .variable) {
+                    const fn_name = c.callee.data.variable;
+                    if (self.fn_return_types.get(fn_name)) |ret_t| {
+                        return ret_t.ptr_depth > 0;
+                    }
+                } else if (c.callee.kind == .member) {
+                    const fn_name = c.callee.data.member.member;
+                    if (self.fn_return_types.get(fn_name)) |ret_t| {
+                        return ret_t.ptr_depth > 0;
+                    }
+                }
+                return false;
+            },
+            else => return false,
+        }
     }
 
     fn getMangledFnName(self: *Codegen, m: *Module, name: []const u8) ![]const u8 {
@@ -759,16 +969,20 @@ pub const Codegen = struct {
 
                 if (c.callee.kind == .member) {
                     const mem = c.callee.data.member;
-                    var target_struct: ?[]const u8 = null;
-                    var receiver_is_pointer = mem.is_arrow;
+                    var target_struct: ?[]const u8 = self.getExprStructType(m, mem.target.*);
+                    var receiver_is_pointer = self.isExprPointer(m, mem.target.*);
 
-                    if (mem.target.kind == .variable) {
+                    if (target_struct == null and mem.target.kind == .variable) {
                         const target_vname = mem.target.data.variable;
                         if (std.mem.eql(u8, target_vname, "this")) {
                             receiver_is_pointer = true;
                         }
                         if (self.var_types.get(target_vname)) |vtr| {
-                            target_struct = vtr.name;
+                            var vname = vtr.name;
+                            if (std.mem.lastIndexOfScalar(u8, vname, '.')) |dot| {
+                                vname = vname[dot + 1 ..];
+                            }
+                            target_struct = vname;
                             if (vtr.ptr_depth > 0) {
                                 receiver_is_pointer = true;
                             }
@@ -782,10 +996,14 @@ pub const Codegen = struct {
                     }
 
                     if (target_struct) |sname| {
-                        const qname = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ sname, mem.member });
+                        var clean_sname = sname;
+                        if (std.mem.lastIndexOfScalar(u8, clean_sname, '.')) |dot| {
+                            clean_sname = clean_sname[dot + 1 ..];
+                        }
+                        const qname = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ clean_sname, mem.member });
                         if (self.struct_methods.contains(qname)) {
                             is_method_call = true;
-                            callee_str = try std.fmt.allocPrint(self.allocator, "kale_{s}_{s}", .{ sname, mem.member });
+                            callee_str = try std.fmt.allocPrint(self.allocator, "kale_{s}_{s}", .{ clean_sname, mem.member });
                             const t_str = try self.emitExpr(m, mem.target.*);
                             if (receiver_is_pointer) {
                                 receiver_arg = t_str;
@@ -800,7 +1018,15 @@ pub const Codegen = struct {
                         if (m.scope.lookup(mod_alias)) |mod_sym| {
                             if (mod_sym.kind == .module_alias) {
                                 if (mod_sym.module) |target_mod| {
-                                    callee_str = try self.getMangledFnName(target_mod, mem.member);
+                                    if (target_mod.scope.lookup(mem.member)) |sub_sym| {
+                                        if (sub_sym.is_extern) {
+                                            callee_str = mem.member;
+                                        } else {
+                                            callee_str = try self.getMangledFnName(target_mod, mem.member);
+                                        }
+                                    } else {
+                                        callee_str = try self.getMangledFnName(target_mod, mem.member);
+                                    }
                                 } else {
                                     callee_str = try std.fmt.allocPrint(self.allocator, "kale_{s}_{s}", .{ mod_alias, mem.member });
                                 }
@@ -862,6 +1088,9 @@ pub const Codegen = struct {
                         if (sym.kind == .module_alias) {
                             if (sym.module) |target_mod| {
                                 if (target_mod.scope.lookup(mem.member)) |sub_sym| {
+                                    if (sub_sym.is_extern) {
+                                        return mem.member;
+                                    }
                                     if (sub_sym.kind == .function) {
                                         return try self.getMangledFnName(target_mod, mem.member);
                                     }
