@@ -7,7 +7,7 @@
 Bare-metal x86_64 operating system, bootloader, and microkernel written in Kale and assembly, demonstrating freestanding language execution.
 
 ## Status
-Current status: 🔴 Not Started
+Current status: 🟡 Bootable long-mode milestone complete; kernel integration in progress
 
 ## Dependencies
 - Kale compiler (with freestanding / `-ffreestanding` bare-metal target)
@@ -17,7 +17,9 @@ Current status: 🔴 Not Started
 ## Build Instructions
 ```powershell
 pwsh os/boot/build.ps1
-qemu-system-x86_64 -drive format=raw,file=bin/kale-os.img -display gtk
+pwsh os/boot/run-qemu.ps1
+# Headless smoke test:
+pwsh os/boot/run-qemu.ps1 -Display none
 ```
 
 The current bootable artifact is intentionally self-contained: it enters protected

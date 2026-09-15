@@ -47,5 +47,6 @@ os/
 
 - [x] Assemble a fixed 512-byte BIOS boot sector.
 - [x] Boot the sector in QEMU and enter x86_64 long mode.
+- [x] Provide a direct QEMU runner that avoids shell/file-association launchers.
 - [ ] Add a disk-loading second stage and transfer control to a linked kernel image.
 - [ ] Add a freestanding Kale linker/runtime profile.
