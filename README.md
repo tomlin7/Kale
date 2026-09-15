@@ -1,51 +1,31 @@
+
+<table>
+<tr>
+<td width="70%" valign="top">
+
 <div align="center">
 
 # K A L E
 
-A statically-typed compiled language with direct **LLVM 18 IR** emission,<br>
-stack-allocated data structures, zero garbage collection, and sub-millisecond graphics.<br>
+A statically-typed compiled language with direct **LLVM 18 IR** emission,
+stack-allocated data structures, zero garbage collection, and sub-millisecond graphics.
 Built entirely in Kale.
 
-`pip install kale-lang` &nbsp;&nbsp;·&nbsp;&nbsp; [Website](https://tomlin7.github.io/Kale) &nbsp;&nbsp;·&nbsp;&nbsp; [PyPI](https://pypi.org/project/kale-lang/) &nbsp;&nbsp;·&nbsp;&nbsp; [Actions](https://github.com/tomlin7/Kale/actions)
+
+```
+  pip install kale-lang
+```
+
+[Website](https://tomlin7.github.io/Kale) &nbsp;&nbsp;·&nbsp;&nbsp; [PyPI](https://pypi.org/project/kale-lang/) &nbsp;&nbsp;·&nbsp;&nbsp; [Actions](https://github.com/tomlin7/Kale/actions)
+
+```
+  MIT License
+```
 
 </div>
 
-<br>
-
-<table>
-<tr>
-<td width="50%" valign="top">
-
-```
-┌─────────────────────────────────────────┐
-│  COMPILATION PIPELINE                   │
-├─────────────────────────────────────────┤
-│                                         │
-│  Source .kl                             │
-│      │                                  │
-│      ▼                                  │
-│  [ Lexer ]──────────► DiagnosticBag     │
-│      │                                  │
-│      ▼                                  │
-│  [ Pratt Parser ]                       │
-│      │                                  │
-│      ▼                                  │
-│  [ AST Binder ]──────► Lexical Scopes   │
-│      │                                  │
-│      ▼                                  │
-│  [ LLVM 18 IR Emitter ]                 │
-│      │                    │             │
-│      ▼                    ▼             │
-│  [ LLD Native ]     [ ORC JIT ]         │
-│      │                    │             │
-│      ▼                    ▼             │
-│  x86_64 binary      In-memory exec      │
-│                                         │
-└─────────────────────────────────────────┘
-```
-
 </td>
-<td width="50%" valign="top">
+<td width="30%" valign="top">
 <img src="website/public/assets/kale_hero_classical.jpg" width="100%" />
 </td>
 </tr>
@@ -54,9 +34,7 @@ Built entirely in Kale.
 <br>
 
 ```
-░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-  CORE TOOLCHAIN
-░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+  toolchain
 ```
 
 <table>
@@ -80,9 +58,7 @@ Standard library — collections, strings, I/O, memory, generics, text.</sub>
 <br>
 
 ```
-░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-  FLAGSHIP APPS
-░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+  apps
 ```
 
 <table>
@@ -111,9 +87,7 @@ High-performance key-value daemon.</sub>
 <br>
 
 ```
-░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-  FOUNDATION LIBRARIES
-░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+  libs/
 ```
 
 <table>
@@ -151,9 +125,7 @@ App harness — GLFW3 window, OpenGL 3.3 context,<br>frame pacing, unified input
 <br>
 
 ```
-░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-  LOW-LEVEL & OS
-░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+  sys/
 ```
 
 <table>
@@ -172,9 +144,7 @@ Real-time system monitor &amp; diagnostics dashboard.</sub>
 <br>
 
 ```
-╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱
   QUICK START
-╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱
 ```
 
 ```bash
@@ -194,10 +164,8 @@ uv sync && uv run pytest                  # install deps + run ~60 tests
 <br>
 
 ```
-╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱
   packages/vscode-kale  ·  Syntax highlighting & snippets for VS Code
   website/              ·  Next.js project showcase  →  tomlin7.github.io/Kale
-╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱
 ```
 
-<sub>MIT License · Python ≥ 3.10 · llvmlite · Clang/LLD</sub>
+<sub>MIT License</sub>
