@@ -47,3 +47,39 @@ def test_os_boot_sector_has_bios_signature():
     data = boot.read_bytes()
     assert len(data) == 512
     assert data[510:512] == b"\x55\xaa"
+
+
+def test_os_qemu_reaches_stage2_serial_banner(tmp_path):
+    output = tmp_path / "os-bin"
+    script = ROOT / "os" / "boot" / "build.ps1"
+    subprocess.run(
+        ["pwsh", "-NoProfile", "-File", str(script), "-OutputDirectory", str(output)],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    image = output / "kale-os.img"
+    qemu = os.environ.get("KALE_QEMU", "qemu-system-x86_64")
+    process = subprocess.Popen(
+        [
+            qemu,
+            "-drive",
+            f"format=raw,file={image}",
+            "-display",
+            "none",
+            "-serial",
+            "stdio",
+            "-no-reboot",
+        ],
+        cwd=ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    try:
+        stdout, _ = process.communicate(timeout=3)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        stdout, _ = process.communicate()
+    assert b"KALE OS stage2: serial, IDT, PIC, keyboard queue online" in stdout
