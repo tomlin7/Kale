@@ -14,13 +14,13 @@ struct Keyboard {
     int extended;
 }
 
-fn kbd_init(Keyboard* keyboard) -> void {
+fn void kbd_init(Keyboard* keyboard) {
     keyboard->read_index = 0;
     keyboard->write_index = 0;
     keyboard->extended = 0;
 }
 
-fn kbd_scancode_to_ascii(code: uint8, shift: int) -> uint8 {
+fn uint8 kbd_scancode_to_ascii(uint8 code, int shift) {
     if (code == 0x1E) {
         if (shift != 0) { return 'A' as uint8; }
         return 'a' as uint8;
@@ -47,21 +47,21 @@ fn kbd_scancode_to_ascii(code: uint8, shift: int) -> uint8 {
     return 0 as uint8;
 }
 
-fn kbd_push(Keyboard* keyboard, KeyEvent event) -> void {
-    int next = (keyboard->write_index + 1) % 64;
+fn void kbd_push(Keyboard* keyboard, KeyEvent event) {
+    let next: int = (keyboard->write_index + 1) % 64;
     if (next == keyboard->read_index) { return; }
     keyboard->queue[keyboard->write_index] = event;
     keyboard->write_index = next;
 }
 
-fn kbd_poll(Keyboard* keyboard, KeyEvent* event) -> int {
+fn int kbd_poll(Keyboard* keyboard, KeyEvent* event) {
     if (keyboard->read_index == keyboard->write_index) { return 0; }
     *event = keyboard->queue[keyboard->read_index];
     keyboard->read_index = (keyboard->read_index + 1) % 64;
     return 1;
 }
 
-fn kbd_handle_scancode(Keyboard* keyboard, uint8 scancode, int shift) -> void {
+fn void kbd_handle_scancode(Keyboard* keyboard, uint8 scancode, int shift) {
     if (scancode == 0xE0) {
         keyboard->extended = 1;
         return;

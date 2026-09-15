@@ -7,25 +7,25 @@ struct Framebuffer {
     uint32 pitch;
 }
 
-fn fb_init(Framebuffer* fb, uint64 address, uint32 width, uint32 height, uint32 pitch) -> void {
-    fb->address = address as uint32*;
+fn void fb_init(Framebuffer* fb, uint64 address, uint32 width, uint32 height, uint32 pitch) {
+    fb->address = address as *uint32;
     fb->width = width;
     fb->height = height;
     fb->pitch = pitch;
 }
 
-fn fb_put_pixel(Framebuffer* fb, int x, int y, uint32 color) -> void {
+fn void fb_put_pixel(Framebuffer* fb, int x, int y, uint32 color) {
     if (x < 0 || y < 0 || x >= fb->width as int || y >= fb->height as int) { return; }
     uint32 stride = fb->pitch / 4;
     uint32 index = (y as uint32) * stride + (x as uint32);
     fb->address[index] = color;
 }
 
-fn fb_clear(Framebuffer* fb, uint32 color) -> void {
+fn void fb_clear(Framebuffer* fb, uint32 color) {
     int y = 0;
-    while (y < fb->height as int) {
+    while y < fb->height as int {
         int x = 0;
-        while (x < fb->width as int) {
+        while x < fb->width as int {
             fb_put_pixel(fb, x, y, color);
             x = x + 1;
         }
@@ -33,11 +33,11 @@ fn fb_clear(Framebuffer* fb, uint32 color) -> void {
     }
 }
 
-fn fb_fill_rect(Framebuffer* fb, int x, int y, int width, int height, uint32 color) -> void {
+fn void fb_fill_rect(Framebuffer* fb, int x, int y, int width, int height, uint32 color) {
     int row = 0;
-    while (row < height) {
+    while row < height {
         int col = 0;
-        while (col < width) {
+        while col < width {
             fb_put_pixel(fb, x + col, y + row, color);
             col = col + 1;
         }

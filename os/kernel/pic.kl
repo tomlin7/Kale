@@ -49,13 +49,13 @@ fn pic_clear_mask(PICState* state, int irq) -> void {
     }
 }
 
-fn pic_irq_vector(PICState* state, int irq) -> uint8 {
+fn uint8 pic_irq_vector(PICState* state, int irq) {
     if (irq < 0 || irq > 15) { return 0 as uint8; }
     if (irq < 8) { return state->master_offset + irq as uint8; }
     return state->slave_offset + (irq - 8) as uint8;
 }
 
-fn pic_send_eoi(irq: int) -> void {
+fn void pic_send_eoi(int irq) {
     if (irq >= 8) { outb(0xA0 as uint16, 0x20 as uint8); }
     outb(0x20 as uint16, 0x20 as uint8);
 }

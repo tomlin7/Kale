@@ -42,3 +42,10 @@ os/
    - Initializes physical page frame allocator from BIOS memory map.
    - Clears VGA screen / initializes GOP framebuffer.
    - Enables interrupts (`sti`) and enters idle loop.
+
+## 4. Runnable milestones
+
+- [x] Assemble a fixed 512-byte BIOS boot sector.
+- [x] Boot the sector in QEMU and enter x86_64 long mode.
+- [ ] Add a disk-loading second stage and transfer control to a linked kernel image.
+- [ ] Add a freestanding Kale linker/runtime profile.

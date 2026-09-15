@@ -15,11 +15,15 @@ Current status: 🔴 Not Started
 - QEMU / Bochs for emulation and testing
 
 ## Build Instructions
-```bash
-nasm -f bin os/boot/boot.asm -o bin/boot.bin
-kale build os/kernel/main.kl --freestanding -o bin/kernel.bin
-qemu-system-x86_64 -drive format=raw,file=bin/os.img
+```powershell
+pwsh os/boot/build.ps1
+qemu-system-x86_64 -drive format=raw,file=bin/kale-os.img -display gtk
 ```
+
+The current bootable artifact is intentionally self-contained: it enters protected
+mode and long mode, establishes identity paging, and prints a VGA banner. The Kale
+kernel sources are the next freestanding integration target; the host compiler does
+not yet expose a `--freestanding` linker mode.
 
 ## Coding Conventions
 - No standard library (`no_std` / freestanding mode).

@@ -1,44 +1,44 @@
 // Long-mode Global Descriptor Table and Task State Segment.
 
 struct GDTEntry {
-    uint16 limit_low;
-    uint16 base_low;
-    uint8 base_middle;
-    uint8 access;
-    uint8 granularity;
-    uint8 base_high;
+    limit_low: uint16,
+    base_low: uint16,
+    base_middle: uint8,
+    access: uint8,
+    granularity: uint8,
+    base_high: uint8,
 }
 
 struct GDTPointer {
-    uint16 limit;
-    uint64 base;
+    limit: uint16,
+    base: uint64,
 }
 
 struct TSS {
-    uint32 reserved0;
-    uint64 rsp0;
-    uint64 rsp1;
-    uint64 rsp2;
-    uint64 reserved1;
-    uint64 ist1;
-    uint64 ist2;
-    uint64 ist3;
-    uint64 ist4;
-    uint64 ist5;
-    uint64 ist6;
-    uint64 ist7;
-    uint64 reserved2;
-    uint64 reserved3;
-    uint16 io_map_base;
+    reserved0: uint32,
+    rsp0: uint64,
+    rsp1: uint64,
+    rsp2: uint64,
+    reserved1: uint64,
+    ist1: uint64,
+    ist2: uint64,
+    ist3: uint64,
+    ist4: uint64,
+    ist5: uint64,
+    ist6: uint64,
+    ist7: uint64,
+    reserved2: uint64,
+    reserved3: uint64,
+    io_map_base: uint16,
 }
 
 struct GDTState {
-    GDTEntry[5] entries;
-    TSS tss;
-    GDTPointer pointer;
+    entries: [GDTEntry; 5],
+    tss: TSS,
+    pointer: GDTPointer,
 }
 
-fn gdt_set_entry(GDTEntry* entry, uint32 base, uint32 limit, uint8 access, uint8 granularity) -> void {
+fn gdt_set_entry(entry: *GDTEntry, base: uint32, limit: uint32, access: uint8, granularity: uint8) -> void {
     entry->limit_low = (limit & 0xFFFF) as uint16;
     entry->base_low = (base & 0xFFFF) as uint16;
     entry->base_middle = ((base >> 16) & 0xFF) as uint8;
@@ -47,7 +47,7 @@ fn gdt_set_entry(GDTEntry* entry, uint32 base, uint32 limit, uint8 access, uint8
     entry->base_high = ((base >> 24) & 0xFF) as uint8;
 }
 
-fn gdt_init(GDTState* state, uint64 kernel_stack) -> void {
+fn gdt_init(state: *GDTState, kernel_stack: uint64) -> void {
     gdt_set_entry(&state->entries[0], 0, 0, 0, 0);
     gdt_set_entry(&state->entries[1], 0, 0xFFFFF, 0x9A, 0x20);
     gdt_set_entry(&state->entries[2], 0, 0xFFFFF, 0x92, 0x00);
