@@ -1,140 +1,108 @@
 <table>
   <td>
-    <img src="./logo.svg" height=100 />
+    <img src="./logo.svg" height=80 />
   </td>
 </table>
 
-# Kale
-> A modern, statically-typed compiled programming language and LLVM-backed compiler pipeline written in Python, powered by `uv`.
+# Kale &nbsp;·&nbsp; Autonomous Monorepo Ecosystem
 
-Kale compiles source code (`.kl`) directly into **LLVM Intermediate Representation (IR)** with in-memory **JIT execution** and native standalone binary compilation via **Clang / LLD**.
+> Architectural Precision. Deterministic Systems.
+>
+> A statically-typed compiled language with direct **LLVM 18 IR** emission, stack-allocated data structures, zero GC, and sub-millisecond graphics — built entirely in Kale.
+
+```
+pip install kale-lang        # compiler & CLI
+```
+
+→ **[Website](https://tomlin7.github.io/Kale)** &nbsp;·&nbsp; **[PyPI](https://pypi.org/project/kale-lang/)** &nbsp;·&nbsp; **[Actions](https://github.com/tomlin7/Kale/actions)**
 
 ---
 
-## Architecture Overview
+## Monorepo Map
 
-Kale is built upon a clean, decoupled multi-stage compiler pipeline:
+### ⚙ Core Toolchain
 
-```
-Source Code (.kl)
-       │
-       ▼
-   [ Lexer ]  ──────────────► [ DiagnosticBag ]
-       │                      (Errors & Warnings with line:column carets)
-       ▼
- [ Syntax Tokens ]
-       │
-       ▼
- [ Pratt Parser ]
-       │
-       ▼
- [ Abstract Syntax Tree (AST) ]
-       │
-       ▼
- [ Semantic Analyzer / Binder ] ──► [ Lexical Scopes & Type Checking ]
-       │
-       ▼
- [ Bound AST / Program ]
-       │
-       ▼
- [ LLVM IR Emitter ] ──────────► [ In-Memory LLVM JIT Engine ] (Instant execution)
-       │
-       ▼
- [ Clang / LLD Native Driver ] ─► Native Executable (.exe / binary)
-```
+| Project | Path | Description |
+|---------|------|-------------|
+| **Kale Compiler** | [`src/kale/`](src/kale/) | LLVM 18 IR emitter, Pratt parser, binder, JIT & AOT via Clang/LLD |
+| **packages/std** | [`packages/std/`](packages/std/) | Standard library — collections, strings, I/O, memory, generics |
+| **tools/pkg** | [`tools/pkg/`](tools/pkg/) | `kale-pm` package manager & manifest resolver |
 
-### Compiler Subsystems
+### 🖥 Flagship Apps
 
-- **`kale.diagnostics`**: Source position tracking (`TextSpan`, `TextLocation`), line mapping, and compiler diagnostics with color-coded snippets and carets.
-- **`kale.syntax`**: Non-colliding `SyntaxKind` tokens, robust scanner supporting multi-character operators, numbers (integer, float, exponent), strings with full escape handling, and block/line comments.
-- **`kale.ast`**: Strongly-typed AST nodes for expressions, declarations, loops, conditionals, and statements. Includes an `AstPrinter` for tree visualization.
-- **`kale.parser`**: Recursive descent for statements combined with Pratt parsing (operator precedence climbing) for expressions, complete with error synchronization/recovery.
-- **`kale.binding`**: Semantic analysis pass implementing hierarchical lexical scopes, variable shadowing, constant immutability, numeric promotion, and type validation.
-- **`kale.codegen`**: 
-  - **LLVM Emitter & JIT**: Generates typed LLVM IR and executes in-memory via LLVM ORC/MCJIT.
-  - **LLVM Driver**: Invokes Clang to compile `.ll` into native standalone executables.
-  - **C Emitter**: Optional fallback backend targeting standard C99.
+| Project | Path | Description |
+|---------|------|-------------|
+| **Kale Editor** | [`editor/`](editor/) | 144 Hz GPU-accelerated code editor, piece table buffer, font atlas |
+| **Kale VCS** | [`vcs/`](vcs/) | Distributed VCS — pure-Kale SHA-1, DAG object store, porcelain CLI |
+| **apps/lsp** | [`apps/lsp/`](apps/lsp/) | Language Server Protocol server for IDE integration |
+| **apps/kv** | [`apps/kv/`](apps/kv/) | High-performance key-value daemon |
+
+### 📦 Foundation Libraries
+
+| Project | Path | Description |
+|---------|------|-------------|
+| **libs/render** | [`libs/render/`](libs/render/) | 2D GPU batch renderer, SDF rects, dynamic font atlas (stb_truetype) |
+| **libs/ui** | [`libs/ui/`](libs/ui/) | Immediate-mode widget toolkit — buttons, sliders, scrollers, layout stacks |
+| **libs/framework** | [`libs/framework/`](libs/framework/) | App harness — GLFW3 window, OpenGL context, frame pacing, input dispatch |
+| **libs/net** | [`libs/net/`](libs/net/) | Raw sockets & HTTP/1.1 engine |
+| **libs/web** | [`libs/web/`](libs/web/) | Lightweight HTTP router & JSON responder |
+| **libs/sql** | [`libs/sql/`](libs/sql/) | SQLite3 FFI bindings & query builder |
+| **libs/tls** | [`libs/tls/`](libs/tls/) | TLS 1.3 client over raw sockets |
+| **libs/audio** | [`libs/audio/`](libs/audio/) | PCM audio playback & mixer |
+| **libs/physics** | [`libs/physics/`](libs/physics/) | 2D rigid body physics engine |
+| **libs/term** | [`libs/term/`](libs/term/) | ANSI terminal engine & TUI widgets |
+| **libs/fs_watch** | [`libs/fs_watch/`](libs/fs_watch/) | Cross-platform filesystem watcher |
+
+### 🔩 Low-Level & OS
+
+| Project | Path | Description |
+|---------|------|-------------|
+| **sys/ (Kale OS)** | [`sys/`](sys/) | Bare-metal x86_64 kernel — Multiboot, IDT, paging, direct framebuffer |
+| **sys/sysmon** | [`sys/`](sys/) | Real-time system monitor & diagnostics dashboard |
+
+### 🔌 Tooling & Packages
+
+| Project | Path | Description |
+|---------|------|-------------|
+| **packages/bindings** | [`packages/bindings/`](packages/bindings/) | Win32, GLFW3, OpenGL FFI binding headers |
+| **packages/vscode-kale** | [`packages/vscode-kale/`](packages/vscode-kale/) | VS Code extension — syntax highlighting & snippets |
+| **website** | [`website/`](website/) | Next.js project showcase site |
 
 ---
 
-## Quick Start with `uv`
-
-### Installation & Environment Setup
-
-Kale uses [`uv`](https://github.com/astral-sh/uv) for lightning-fast environment and dependency management:
+## Quick Start
 
 ```bash
-# Sync dependencies and create virtual environment instantly
-uv sync
+# Install
+pip install kale-lang
+
+# Run a program (LLVM JIT)
+kale run examples/fibonacci.kl
+
+# Compile to native binary
+kale build examples/fibonacci.kl -o fib.exe
+
+# Typecheck only
+kale check examples/fibonacci.kl
+
+# Dump LLVM IR
+kale dump-llvm examples/fibonacci.kl
 ```
 
-### Running Programs
+## Compiler Pipeline
+
+```
+Source .kl  →  Lexer  →  Pratt Parser  →  AST Binder  →  LLVM 18 IR  →  LLD  →  x86_64
+```
+
+## Development
 
 ```bash
-# Execute instantly in-memory via the LLVM JIT engine
-uv run kale run examples/fibonacci.kl
-
-# Build a native standalone executable (.exe) via Clang
-uv run kale build examples/fibonacci.kl -o fib.exe
-./fib.exe
-
-# Dump generated LLVM Intermediate Representation (IR)
-uv run kale dump-llvm examples/fibonacci.kl
-
-# Typecheck and validate without compiling
-uv run kale check examples/fibonacci.kl
-
-# Inspect parsed AST tree
-uv run kale dump-ast examples/fibonacci.kl
-
-# Inspect scanned token stream
-uv run kale dump-tokens examples/hello.kl
+uv sync          # install deps
+uv run pytest    # run test suite (~60 tests)
+uv build         # build wheel + sdist
 ```
 
 ---
 
-## Language Features
-
-### Variables & Types
-
-```kale
-int a = 10;
-double pi = 3.14159;
-bool flag = true;
-string greeting = "Hello, Kale!";
-let deduced = 42;          // Type deduced as int
-const max_users = 100;     // Read-only constant
-```
-
-### Control Flow
-
-```kale
-// If - Else
-if (a > 5) {
-    print("Greater than 5");
-} else {
-    print("5 or less");
-}
-
-// While Loops
-int i = 0;
-while (i < 5) {
-    print(i);
-    i++;
-}
-
-// For Loops
-for (int j = 0; j < 5; j++) {
-    print(j);
-}
-```
-
----
-
-## Running Tests
-
-Run the full test suite (30 unit & integration tests across diagnostics, lexer, parser, binder, LLVM emitter, JIT, and Clang driver) using `uv`:
-
-```bash
-uv run pytest
-```
+<sub>MIT License · Built with Python & llvmlite · Requires Python ≥ 3.10</sub>
