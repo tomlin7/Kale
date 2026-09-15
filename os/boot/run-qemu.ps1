@@ -41,7 +41,7 @@ Write-Output "Boot image: $Image"
 $serialMode = "none"
 if (-not [string]::IsNullOrWhiteSpace($SerialLog)) {
     $SerialLog = [System.IO.Path]::GetFullPath($SerialLog)
-    $serialMode = "file=$SerialLog"
+    $serialMode = "file:$SerialLog"
     Write-Output "Serial log: $SerialLog"
 }
 & $qemu `
