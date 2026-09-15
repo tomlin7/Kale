@@ -146,6 +146,7 @@ cython_debug/
 *.o
 *.obj
 *.bin
+*.pdb
 bin/
 
 

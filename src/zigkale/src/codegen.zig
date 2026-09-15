@@ -148,7 +148,29 @@ pub const Codegen = struct {
         try self.writeLine("static inline void _kale_print_double(double x) { printf(\"%g\", x); }");
         try self.writeLine("static inline void _kale_print_bool(bool x) { printf(\"%s\", x ? \"true\" : \"false\"); }");
         try self.writeLine("static inline void _kale_print_str(const char* x) { if (x) printf(\"%s\", x); }");
+        try self.writeLine("static inline void _kale_print_char(char x) { printf(\"%c\", x); }");
+        try self.writeLine("static inline void _kale_print_ptr(const void* x) { printf(\"%p\", x); }");
         try self.writeLine("static inline void _kale_println(void) { printf(\"\\n\"); }");
+        try self.writeLine("");
+        try self.writeLine("#define _kale_print(X) _Generic((X), \\");
+        try self.writeLine("    _Bool: _kale_print_bool, \\");
+        try self.writeLine("    char: _kale_print_char, \\");
+        try self.writeLine("    signed char: _kale_print_int, \\");
+        try self.writeLine("    unsigned char: _kale_print_int, \\");
+        try self.writeLine("    short: _kale_print_int, \\");
+        try self.writeLine("    unsigned short: _kale_print_int, \\");
+        try self.writeLine("    int: _kale_print_int, \\");
+        try self.writeLine("    unsigned int: _kale_print_int, \\");
+        try self.writeLine("    long: _kale_print_int, \\");
+        try self.writeLine("    unsigned long: _kale_print_int, \\");
+        try self.writeLine("    long long: _kale_print_int, \\");
+        try self.writeLine("    unsigned long long: _kale_print_int, \\");
+        try self.writeLine("    float: _kale_print_double, \\");
+        try self.writeLine("    double: _kale_print_double, \\");
+        try self.writeLine("    char*: _kale_print_str, \\");
+        try self.writeLine("    const char*: _kale_print_str, \\");
+        try self.writeLine("    default: _kale_print_ptr \\");
+        try self.writeLine(")(X)");
         try self.writeLine("");
 
         // Collect all modules to emit (imported first, then root module)
@@ -434,12 +456,7 @@ pub const Codegen = struct {
                 const args = stmt.data.print_stmt;
                 for (args, 0..) |arg, a_idx| {
                     const arg_str = try self.emitExpr(m, arg);
-                    // Determine print format based on arg
-                    if (arg.kind == .literal and arg.data.literal == .str_val) {
-                        try self.writeLineFmt("_kale_print_str({s});", .{arg_str});
-                    } else {
-                        try self.writeLineFmt("_kale_print_int({s});", .{arg_str});
-                    }
+                    try self.writeLineFmt("_kale_print({s});", .{arg_str});
                     if (a_idx < args.len - 1) {
                         try self.writeLine("_kale_print_str(\" \");");
                     }

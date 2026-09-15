@@ -250,7 +250,15 @@ pub const Parser = struct {
             idx += 2;
         }
 
-        // Skip pointer stars
+        // Skip pointer stars and array brackets
+        while (self.peek(idx).kind == .star) {
+            idx += 1;
+        }
+        while (self.peek(idx).kind == .lbracket) {
+            idx += 1;
+            if (self.peek(idx).kind == .number_int) idx += 1;
+            if (self.peek(idx).kind == .rbracket) idx += 1;
+        }
         while (self.peek(idx).kind == .star) {
             idx += 1;
         }
@@ -273,8 +281,14 @@ pub const Parser = struct {
         if (k0 == .kw_let or k0 == .kw_var or k0 == .kw_const) return true;
 
         if (self.cur().isTypeKeyword()) {
-            // Type name followed by identifier or *
+            // Type name followed by identifier or * or [ ]
             var idx: usize = 1;
+            while (self.peek(idx).kind == .star) idx += 1;
+            while (self.peek(idx).kind == .lbracket) {
+                idx += 1;
+                if (self.peek(idx).kind == .number_int) idx += 1;
+                if (self.peek(idx).kind == .rbracket) idx += 1;
+            }
             while (self.peek(idx).kind == .star) idx += 1;
             return self.peek(idx).kind == .identifier;
         }
@@ -284,6 +298,12 @@ pub const Parser = struct {
             var idx: usize = 1;
             if (self.peek(idx).kind == .dot and self.peek(idx + 1).kind == .identifier) {
                 idx += 2;
+            }
+            while (self.peek(idx).kind == .star) idx += 1;
+            while (self.peek(idx).kind == .lbracket) {
+                idx += 1;
+                if (self.peek(idx).kind == .number_int) idx += 1;
+                if (self.peek(idx).kind == .rbracket) idx += 1;
             }
             while (self.peek(idx).kind == .star) idx += 1;
             if (self.peek(idx).kind == .identifier) {
@@ -744,7 +764,7 @@ pub const Parser = struct {
             if (!self.match(.comma)) break;
         }
         _ = try self.expect(.rparen);
-        _ = try self.expect(.semicolon);
+        _ = self.match(.semicolon);
 
         return ast.Stmt{
             .kind = .print_stmt,
