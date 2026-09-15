@@ -21,8 +21,8 @@ if ($size -ne 512) {
     throw "The BIOS boot sector must be exactly 512 bytes; got $size bytes."
 }
 $stage2Size = (Get-Item $stage2).Length
-if ($stage2Size -ne 2048) {
-    throw "The second stage must be exactly 2048 bytes; got $stage2Size bytes."
+if ($stage2Size -ne 4096) {
+    throw "The second stage must be exactly 4096 bytes; got $stage2Size bytes."
 }
 
 $image = Join-Path $output "kale-os.img"

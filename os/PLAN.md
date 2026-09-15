@@ -28,7 +28,7 @@ os/
 - [x] Protected mode, long mode, identity paging and stage-two handoff.
 - [x] GDT/IDT setup, PIC remap, keyboard IRQ queue and COM1 diagnostics.
 - [x] E820 memory-map discovery and reserved-region reporting contract.
-- [ ] Expand the stage-two loader to a sector-counted payload with checksum.
+- [x] Expand the stage-two loader capacity and collect the BIOS E820 map.
 - [ ] Link a freestanding kernel entry and pass a boot information structure.
 - [x] Exception classification and structured panic reporting contracts.
 

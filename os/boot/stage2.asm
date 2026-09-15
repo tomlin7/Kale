@@ -139,4 +139,4 @@ idt_pointer:
 idt_table:
     times 34 * 16 db 0
 
-times 2048 - ($ - $$) db 0
+times 4096 - ($ - $$) db 0

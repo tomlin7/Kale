@@ -29,7 +29,7 @@ def test_os_boot_script_builds_a_bios_disk_image(tmp_path):
     cluster2 = data[33 * 512:34 * 512]
     assert b"Kale OS FAT12 filesystem online" in cluster2
     assert stage2.exists()
-    assert stage2.stat().st_size == 2048
+    assert stage2.stat().st_size == 4096
     assert b"STAGE2 LOADED" in stage2.read_bytes()
     stage2_source = (ROOT / "os" / "boot" / "stage2.asm").read_text()
     assert "pic_init:" in stage2_source
@@ -37,7 +37,7 @@ def test_os_boot_script_builds_a_bios_disk_image(tmp_path):
     assert "kbd_queue:" in stage2_source
     assert "kbd_head" in stage2_source
     image_data = image.read_bytes()
-    assert image_data[512:512 + 2048] == stage2.read_bytes()
+    assert image_data[512:512 + 4096] == stage2.read_bytes()
     assert image.stat().st_size == 1474560
 
 

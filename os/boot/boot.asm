@@ -23,7 +23,7 @@ start:
     mov si, 3
 .read_stage2:
     mov ah, 0x02
-    mov al, 4
+    mov al, 8
     mov ch, 0
     mov cl, 2
     mov dh, 0
@@ -43,6 +43,9 @@ stage2_loaded:
     in al, 0x92
     or al, 2
     out 0x92, al
+
+    ; Collect the BIOS E820 memory map at 0x500 before changing modes.
+    call collect_e820
 
     ; Load GDT for 32-bit protected mode
     lgdt [gdt32_descriptor]
@@ -69,6 +72,26 @@ disk_error:
     cli
     hlt
     jmp .halt_real
+
+collect_e820:
+    xor ebx, ebx
+    mov di, 0x0500
+    xor bp, bp
+.next:
+    mov eax, 0xE820
+    mov edx, 0x534D4150
+    mov ecx, 24
+    int 0x15
+    jc .done
+    cmp eax, 0x534D4150
+    jne .done
+    add di, 24
+    inc bp
+    test ebx, ebx
+    jnz .next
+.done:
+    mov [0x04F0], bp
+    ret
 
 ; ==============================================================================
 ; 32-Bit Protected Mode
