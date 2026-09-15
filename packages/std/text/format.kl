@@ -1,0 +1,116 @@
+// packages/std/text/format.kl
+// Standard string formatting and numerical formatting utilities for Kale
+
+import "packages/std/text/string_builder.kl" as sb;
+
+extern int strlen(string s);
+extern void* malloc(int size);
+
+fn string format_bool(bool val) {
+    if (val) {
+        return "true";
+    }
+    return "false";
+}
+
+fn string format_int(int val) {
+    sb.StringBuilder b;
+    b.init(16);
+    b.append_int(val);
+    string s = b.to_string();
+    b.destroy();
+    return s;
+}
+
+fn string repeat_char(char c, int count) {
+    if (count <= 0) {
+        char* buf0 = (char*)malloc(1);
+        buf0[0] = (char)0;
+        return (string)buf0;
+    }
+    char* buf = (char*)malloc(count + 1);
+    int i = 0;
+    while (i < count) {
+        buf[i] = c;
+        i = i + 1;
+    }
+    buf[count] = (char)0;
+    return (string)buf;
+}
+
+fn string pad_left(string s, int total_len, char pad_char) {
+    int s_len = strlen(s);
+    if (s_len >= total_len) {
+        return s;
+    }
+    int pad_count = total_len - s_len;
+    char* buf = (char*)malloc(total_len + 1);
+    int i = 0;
+    while (i < pad_count) {
+        buf[i] = pad_char;
+        i = i + 1;
+    }
+    int j = 0;
+    while (j < s_len) {
+        buf[i + j] = s[j];
+        j = j + 1;
+    }
+    buf[total_len] = (char)0;
+    return (string)buf;
+}
+
+fn string pad_right(string s, int total_len, char pad_char) {
+    int s_len = strlen(s);
+    if (s_len >= total_len) {
+        return s;
+    }
+    char* buf = (char*)malloc(total_len + 1);
+    int i = 0;
+    while (i < s_len) {
+        buf[i] = s[i];
+        i = i + 1;
+    }
+    while (i < total_len) {
+        buf[i] = pad_char;
+        i = i + 1;
+    }
+    buf[total_len] = (char)0;
+    return (string)buf;
+}
+
+fn char hex_digit(int v) {
+    if (v >= 0 && v <= 9) {
+        return (char)(48 + v);
+    }
+    if (v >= 10 && v <= 15) {
+        return (char)(65 + (v - 10)); // 'A'..'F'
+    }
+    return (char)48;
+}
+
+fn string format_hex(int val) {
+    if (val == 0) {
+        return "0x0";
+    }
+    int v = val;
+    char* digits = alloc(char, 20);
+    int count = 0;
+    while (v > 0) {
+        int rem = v % 16;
+        digits[count] = hex_digit(rem);
+        count = count + 1;
+        v = v / 16;
+    }
+
+    char* buf = (char*)malloc(count + 3);
+    buf[0] = (char)48; // '0'
+    buf[1] = (char)120; // 'x'
+    int k = 0;
+    while (k < count) {
+        buf[2 + k] = digits[count - 1 - k];
+        k = k + 1;
+    }
+    buf[count + 2] = (char)0;
+    free(digits);
+    return (string)buf;
+}
