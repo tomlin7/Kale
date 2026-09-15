@@ -41,6 +41,8 @@ pub const TokenKind = enum {
     kw_return,
     kw_break,
     kw_continue,
+    kw_goto,
+    kw_label,
 
     // Keywords - Built-in functions
     kw_print,

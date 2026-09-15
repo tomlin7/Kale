@@ -109,6 +109,25 @@ pub const Checker = struct {
             base_type = self.type_ctx.type_char;
         } else if (std.mem.eql(u8, type_ref.name, "void")) {
             base_type = self.type_ctx.type_void;
+        } else if (std.mem.eql(u8, type_ref.name, "fn")) {
+            var param_types: std.ArrayList(*Type) = .{};
+            if (type_ref.func_params) |fparams| {
+                for (fparams) |p| {
+                    try param_types.append(self.allocator, try self.resolveType(p));
+                }
+            }
+            const ret_t = if (type_ref.func_ret) |rt| try self.resolveType(rt.*) else self.type_ctx.type_void;
+            const fn_t = try self.allocator.create(Type);
+            fn_t.* = Type{
+                .kind = .function,
+                .data = .{
+                    .function = .{
+                        .param_types = try param_types.toOwnedSlice(self.allocator),
+                        .ret_type = ret_t,
+                    },
+                },
+            };
+            base_type = fn_t;
         } else if (std.mem.indexOfScalar(u8, type_ref.name, '.')) |dot_idx| {
             // Qualified type: mod.StructName
             const mod_alias = type_ref.name[0..dot_idx];
@@ -335,7 +354,24 @@ pub const Checker = struct {
             }
         }
 
-        // Pass 3: Register function signatures (including externs)
+        // Pass 2.5: Register global/file-scope variables
+        for (mod.program.statements) |stmt| {
+            if (stmt.kind == .var_decl) {
+                const vd = stmt.data.var_decl;
+                const vt = if (vd.type_ref) |tr| try self.resolveType(tr) else self.type_ctx.type_int;
+                const sym = try self.allocator.create(Symbol);
+                sym.* = Symbol{
+                    .kind = .variable,
+                    .name = vd.name,
+                    .type = vt,
+                    .mangled_name = vd.name,
+                    .module = mod,
+                };
+                try mod.scope.define(vd.name, sym);
+            }
+        }
+
+        // Pass 3: Register function signatures (including externs and struct methods)
         for (mod.program.statements) |stmt| {
             if (stmt.kind == .fn_decl) {
                 const fn_d = stmt.data.fn_decl;
@@ -357,7 +393,9 @@ pub const Checker = struct {
                 };
 
                 var mangled: []const u8 = fn_d.name;
-                if (!fn_d.is_extern and !std.mem.eql(u8, fn_d.name, "main")) {
+                if (fn_d.struct_name) |sname| {
+                    mangled = try std.fmt.allocPrint(self.allocator, "kale_{s}_{s}", .{ sname, fn_d.name });
+                } else if (!fn_d.is_extern and !std.mem.eql(u8, fn_d.name, "main")) {
                     mangled = try std.fmt.allocPrint(self.allocator, "kale_{s}_{s}", .{ mod.name, fn_d.name });
                 }
 
@@ -371,7 +409,12 @@ pub const Checker = struct {
                     .is_varargs = fn_d.is_varargs,
                     .module = mod,
                 };
-                try mod.scope.define(fn_d.name, sym);
+                if (fn_d.struct_name) |sname| {
+                    const qname = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ sname, fn_d.name });
+                    try mod.scope.define(qname, sym);
+                } else {
+                    try mod.scope.define(fn_d.name, sym);
+                }
             }
         }
     }

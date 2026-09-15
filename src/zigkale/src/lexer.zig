@@ -203,7 +203,19 @@ pub const Lexer = struct {
                         'r' => try str_buf.append(self.allocator, '\r'),
                         '0' => try str_buf.append(self.allocator, 0),
                         '"' => try str_buf.append(self.allocator, '"'),
+                        '\'' => try str_buf.append(self.allocator, '\''),
                         '\\' => try str_buf.append(self.allocator, '\\'),
+                        'e' => try str_buf.append(self.allocator, 0x1b),
+                        'x' => {
+                            var hex_val: u8 = 0;
+                            var count: usize = 0;
+                            while (count < 2 and isHexDigit(self.peek())) : (count += 1) {
+                                const hc = self.advance();
+                                const d: u8 = if (hc >= '0' and hc <= '9') hc - '0' else if (hc >= 'a' and hc <= 'f') hc - 'a' + 10 else hc - 'A' + 10;
+                                hex_val = (hex_val << 4) | d;
+                            }
+                            try str_buf.append(self.allocator, hex_val);
+                        },
                         else => {
                             try str_buf.append(self.allocator, '\\');
                             try str_buf.append(self.allocator, esc);
@@ -238,7 +250,19 @@ pub const Lexer = struct {
                     'r' => '\r',
                     '0' => 0,
                     '\'' => '\'',
+                    '\"' => '\"',
                     '\\' => '\\',
+                    'e' => 0x1b,
+                    'x' => blk: {
+                        var hex_val: u8 = 0;
+                        var count: usize = 0;
+                        while (count < 2 and isHexDigit(self.peek())) : (count += 1) {
+                            const hc = self.advance();
+                            const d: u8 = if (hc >= '0' and hc <= '9') hc - '0' else if (hc >= 'a' and hc <= 'f') hc - 'a' + 10 else hc - 'A' + 10;
+                            hex_val = (hex_val << 4) | d;
+                        }
+                        break :blk hex_val;
+                    },
                     else => esc,
                 };
             } else {
@@ -400,6 +424,8 @@ fn checkKeyword(text: []const u8) TokenKind {
     if (std.mem.eql(u8, text, "return")) return .kw_return;
     if (std.mem.eql(u8, text, "break")) return .kw_break;
     if (std.mem.eql(u8, text, "continue")) return .kw_continue;
+    if (std.mem.eql(u8, text, "goto")) return .kw_goto;
+    if (std.mem.eql(u8, text, "label")) return .kw_label;
     if (std.mem.eql(u8, text, "print")) return .kw_print;
     if (std.mem.eql(u8, text, "input")) return .kw_input;
     if (std.mem.eql(u8, text, "alloc")) return .kw_alloc;

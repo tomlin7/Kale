@@ -14,6 +14,13 @@ pub const Codegen = struct {
     root_module: *Module,
     out: std.ArrayList(u8),
     indent: usize = 0,
+    fp_types: std.StringHashMap([]const u8),
+    fp_list: std.ArrayList([]const u8),
+    enum_names: std.StringHashMap(void),
+    struct_names: std.StringHashMap(void),
+    struct_methods: std.StringHashMap([]const u8),
+    all_method_names: std.StringHashMap([]const u8),
+    var_types: std.StringHashMap(ast.TypeRef),
 
     pub fn init(allocator: std.mem.Allocator, checker: *Checker, root_module: *Module) Codegen {
         return .{
@@ -22,6 +29,13 @@ pub const Codegen = struct {
             .root_module = root_module,
             .out = .{},
             .indent = 0,
+            .fp_types = std.StringHashMap([]const u8).init(allocator),
+            .fp_list = .{},
+            .enum_names = std.StringHashMap(void).init(allocator),
+            .struct_names = std.StringHashMap(void).init(allocator),
+            .struct_methods = std.StringHashMap([]const u8).init(allocator),
+            .all_method_names = std.StringHashMap([]const u8).init(allocator),
+            .var_types = std.StringHashMap(ast.TypeRef).init(allocator),
         };
     }
 
@@ -84,9 +98,54 @@ pub const Codegen = struct {
         }
     }
 
+    fn getFuncPointerTypeName(self: *Codegen, tr: ast.TypeRef) anyerror![]const u8 {
+        const ret_str = if (tr.func_ret) |rt| try self.mapTypeRef(rt.*) else "void";
+        var param_buf: std.ArrayList(u8) = .{};
+        var sig_name_buf: std.ArrayList(u8) = .{};
+        try sig_name_buf.appendSlice(self.allocator, "_kale_fp_");
+
+        for (ret_str) |ch| {
+            if (std.ascii.isAlphanumeric(ch)) {
+                try sig_name_buf.append(self.allocator, ch);
+            } else {
+                try sig_name_buf.append(self.allocator, '_');
+            }
+        }
+
+        if (tr.func_params) |fps| {
+            for (fps, 0..) |p, idx| {
+                const pt_str = try self.mapTypeRef(p);
+                if (idx > 0) try param_buf.appendSlice(self.allocator, ", ");
+                try param_buf.appendSlice(self.allocator, pt_str);
+
+                try sig_name_buf.append(self.allocator, '_');
+                for (pt_str) |ch| {
+                    if (std.ascii.isAlphanumeric(ch)) {
+                        try sig_name_buf.append(self.allocator, ch);
+                    } else {
+                        try sig_name_buf.append(self.allocator, '_');
+                    }
+                }
+            }
+        }
+
+        const type_name = try sig_name_buf.toOwnedSlice(self.allocator);
+        const p_str = if (param_buf.items.len > 0) param_buf.items else "void";
+
+        if (!self.fp_types.contains(type_name)) {
+            const def = try std.fmt.allocPrint(self.allocator, "typedef {s} (*{s})({s});", .{ ret_str, type_name, p_str });
+            try self.fp_types.put(type_name, def);
+            try self.fp_list.append(self.allocator, def);
+        }
+
+        return type_name;
+    }
+
     fn mapTypeRef(self: *Codegen, tr: ast.TypeRef) anyerror![]const u8 {
         var base: []const u8 = "";
-        if (std.mem.eql(u8, tr.name, "int")) {
+        if (std.mem.eql(u8, tr.name, "fn") or tr.func_params != null) {
+            base = try self.getFuncPointerTypeName(tr);
+        } else if (std.mem.eql(u8, tr.name, "int")) {
             base = "int64_t";
         } else if (std.mem.eql(u8, tr.name, "int32") or std.mem.eql(u8, tr.name, "i32")) {
             base = "int32_t";
@@ -103,10 +162,19 @@ pub const Codegen = struct {
         } else if (std.mem.eql(u8, tr.name, "void")) {
             base = "void";
         } else if (std.mem.indexOfScalar(u8, tr.name, '.')) |dot_idx| {
-            base = try std.fmt.allocPrint(self.allocator, "struct {s}", .{tr.name[dot_idx + 1 ..]});
+            const item_name = tr.name[dot_idx + 1 ..];
+            if (self.enum_names.contains(item_name)) {
+                base = item_name;
+            } else {
+                base = try std.fmt.allocPrint(self.allocator, "struct {s}", .{item_name});
+            }
         } else {
             // Check if struct or enum
-            base = try std.fmt.allocPrint(self.allocator, "struct {s}", .{tr.name});
+            if (self.enum_names.contains(tr.name)) {
+                base = tr.name;
+            } else {
+                base = try std.fmt.allocPrint(self.allocator, "struct {s}", .{tr.name});
+            }
         }
 
         var res = base;
@@ -193,6 +261,51 @@ pub const Codegen = struct {
         }
         try all_modules.append(self.allocator, self.root_module);
 
+        // Pre-pass: register all enum names, struct names, struct methods, and collect function pointer types
+        for (all_modules.items) |m| {
+            for (m.program.statements) |stmt| {
+                switch (stmt.kind) {
+                    .enum_decl => {
+                        try self.enum_names.put(stmt.data.enum_decl.name, {});
+                    },
+                    .struct_decl => {
+                        const s = stmt.data.struct_decl;
+                        try self.struct_names.put(s.name, {});
+                        for (s.fields) |f| {
+                            _ = try self.mapTypeRef(f.type_ref);
+                        }
+                    },
+                    .fn_decl => {
+                        const fn_d = stmt.data.fn_decl;
+                        _ = try self.mapTypeRef(fn_d.ret_type);
+                        for (fn_d.params) |p| {
+                            _ = try self.mapTypeRef(p.type_ref);
+                        }
+                        if (fn_d.struct_name) |sname| {
+                            const key = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ sname, fn_d.name });
+                            try self.struct_methods.put(key, sname);
+                            try self.all_method_names.put(fn_d.name, sname);
+                        }
+                    },
+                    .var_decl => {
+                        if (stmt.data.var_decl.type_ref) |tr| {
+                            _ = try self.mapTypeRef(tr);
+                        }
+                    },
+                    else => {},
+                }
+            }
+        }
+
+        // Emit function pointer typedefs
+        if (self.fp_list.items.len > 0) {
+            try self.writeLine("// --- Function Pointer Types ---");
+            for (self.fp_list.items) |fp_def| {
+                try self.writeLine(fp_def);
+            }
+            try self.writeLine("");
+        }
+
         // Forward declare all structs
         try self.writeLine("// --- Forward Struct Declarations ---");
         for (all_modules.items) |m| {
@@ -245,6 +358,29 @@ pub const Codegen = struct {
             }
         }
 
+        // Global variables
+        try self.writeLine("// --- Global Variables ---");
+        for (all_modules.items) |m| {
+            for (m.program.statements) |stmt| {
+                if (stmt.kind == .var_decl) {
+                    const vd = stmt.data.var_decl;
+                    const t_str = if (vd.type_ref) |tr| try self.mapTypeRef(tr) else "int64_t";
+                    const mangled_var = if (m == self.root_module) vd.name else try std.fmt.allocPrint(self.allocator, "kale_{s}_{s}", .{ m.name, vd.name });
+                    if (vd.init) |init_e| {
+                        if (init_e.kind == .literal) {
+                            const init_str = try self.emitExpr(m, init_e.*);
+                            try self.writeLineFmt("static {s} {s} = {s};", .{ t_str, mangled_var, init_str });
+                        } else {
+                            try self.writeLineFmt("static {s} {s};", .{ t_str, mangled_var });
+                        }
+                    } else {
+                        try self.writeLineFmt("static {s} {s};", .{ t_str, mangled_var });
+                    }
+                }
+            }
+        }
+        try self.writeLine("");
+
         // Function prototypes
         try self.writeLine("// --- Function Prototypes ---");
         for (all_modules.items) |m| {
@@ -271,6 +407,19 @@ pub const Codegen = struct {
                             const p_str = if (param_buf.items.len > 0) param_buf.items else "void";
                             try self.writeLineFmt("extern {s} {s}({s});", .{ ret_str, fn_d.name, p_str });
                         }
+                    } else if (fn_d.struct_name) |sname| {
+                        const mangled = try std.fmt.allocPrint(self.allocator, "kale_{s}_{s}", .{ sname, fn_d.name });
+                        const ret_str = try self.mapTypeRef(fn_d.ret_type);
+                        var param_buf: std.ArrayList(u8) = .{};
+                        try param_buf.appendSlice(self.allocator, try std.fmt.allocPrint(self.allocator, "struct {s}* this", .{sname}));
+                        for (fn_d.params) |p| {
+                            try param_buf.appendSlice(self.allocator, ", ");
+                            const pt_str = try self.mapTypeRef(p.type_ref);
+                            try param_buf.appendSlice(self.allocator, pt_str);
+                            try param_buf.append(self.allocator, ' ');
+                            try param_buf.appendSlice(self.allocator, p.name);
+                        }
+                        try self.writeLineFmt("{s} {s}({s});", .{ ret_str, mangled, param_buf.items });
                     } else {
                         const mangled = try self.getMangledFnName(m, fn_d.name);
                         const ret_str = try self.mapTypeRef(fn_d.ret_type);
@@ -296,17 +445,36 @@ pub const Codegen = struct {
             for (m.program.statements) |stmt| {
                 if (stmt.kind == .fn_decl and !stmt.data.fn_decl.is_extern) {
                     const fn_d = stmt.data.fn_decl;
-                    const mangled = try self.getMangledFnName(m, fn_d.name);
-                    const ret_str = try self.mapTypeRef(fn_d.ret_type);
+                    self.var_types.clearRetainingCapacity();
 
+                    var mangled: []const u8 = "";
                     var param_buf: std.ArrayList(u8) = .{};
-                    for (fn_d.params, 0..) |p, p_idx| {
-                        const pt_str = try self.mapTypeRef(p.type_ref);
-                        if (p_idx > 0) try param_buf.appendSlice(self.allocator, ", ");
-                        try param_buf.appendSlice(self.allocator, pt_str);
-                        try param_buf.append(self.allocator, ' ');
-                        try param_buf.appendSlice(self.allocator, p.name);
+
+                    if (fn_d.struct_name) |sname| {
+                        mangled = try std.fmt.allocPrint(self.allocator, "kale_{s}_{s}", .{ sname, fn_d.name });
+                        try self.var_types.put("this", ast.TypeRef{ .name = sname, .ptr_depth = 1 });
+                        try param_buf.appendSlice(self.allocator, try std.fmt.allocPrint(self.allocator, "struct {s}* this", .{sname}));
+                        for (fn_d.params) |p| {
+                            try self.var_types.put(p.name, p.type_ref);
+                            try param_buf.appendSlice(self.allocator, ", ");
+                            const pt_str = try self.mapTypeRef(p.type_ref);
+                            try param_buf.appendSlice(self.allocator, pt_str);
+                            try param_buf.append(self.allocator, ' ');
+                            try param_buf.appendSlice(self.allocator, p.name);
+                        }
+                    } else {
+                        mangled = try self.getMangledFnName(m, fn_d.name);
+                        for (fn_d.params, 0..) |p, p_idx| {
+                            try self.var_types.put(p.name, p.type_ref);
+                            const pt_str = try self.mapTypeRef(p.type_ref);
+                            if (p_idx > 0) try param_buf.appendSlice(self.allocator, ", ");
+                            try param_buf.appendSlice(self.allocator, pt_str);
+                            try param_buf.append(self.allocator, ' ');
+                            try param_buf.appendSlice(self.allocator, p.name);
+                        }
                     }
+
+                    const ret_str = try self.mapTypeRef(fn_d.ret_type);
                     const p_str = if (param_buf.items.len > 0) param_buf.items else "void";
 
                     try self.writeLineFmt("{s} {s}({s}) {{", .{ ret_str, mangled, p_str });
@@ -325,10 +493,27 @@ pub const Codegen = struct {
         try self.writeLine("int main(int argc, char** argv) {");
         self.indent += 1;
 
+        self.var_types.clearRetainingCapacity();
+        for (self.root_module.program.statements) |stmt| {
+            if (stmt.kind == .var_decl) {
+                const vd = stmt.data.var_decl;
+                try self.var_types.put(vd.name, vd.type_ref orelse ast.TypeRef{ .name = "int" });
+            }
+        }
+
         // Emit top-level statements from root module
         for (self.root_module.program.statements) |stmt| {
             switch (stmt.kind) {
                 .fn_decl, .struct_decl, .enum_decl, .import_stmt, .from_import_stmt => {},
+                .var_decl => {
+                    const vd = stmt.data.var_decl;
+                    if (vd.init) |init_e| {
+                        if (init_e.kind != .literal) {
+                            const init_str = try self.emitExpr(self.root_module, init_e.*);
+                            try self.writeLineFmt("{s} = {s};", .{ vd.name, init_str });
+                        }
+                    }
+                },
                 else => try self.emitStatement(self.root_module, stmt),
             }
         }
@@ -358,6 +543,7 @@ pub const Codegen = struct {
             },
             .var_decl => {
                 const vd = stmt.data.var_decl;
+                try self.var_types.put(vd.name, vd.type_ref orelse ast.TypeRef{ .name = "int" });
                 var t_str: []const u8 = "int64_t";
                 if (vd.type_ref) |tr| {
                     t_str = try self.mapTypeRef(tr);
@@ -568,37 +754,92 @@ pub const Codegen = struct {
             },
             .call => |c| {
                 var callee_str: []const u8 = "";
+                var is_method_call = false;
+                var receiver_arg: ?[]const u8 = null;
 
-                // Check if call is module-qualified: alias.func(args)
-                if (c.callee.kind == .member and !c.callee.data.member.is_arrow and c.callee.data.member.target.kind == .variable) {
-                    const mod_alias = c.callee.data.member.target.data.variable;
-                    const fn_name = c.callee.data.member.member;
+                if (c.callee.kind == .member) {
+                    const mem = c.callee.data.member;
+                    var target_struct: ?[]const u8 = null;
+                    var receiver_is_pointer = mem.is_arrow;
 
-                    if (m.scope.lookup(mod_alias)) |mod_sym| {
-                        if (mod_sym.module) |target_mod| {
-                            callee_str = try self.getMangledFnName(target_mod, fn_name);
-                        } else {
-                            callee_str = try std.fmt.allocPrint(self.allocator, "kale_{s}_{s}", .{ mod_alias, fn_name });
+                    if (mem.target.kind == .variable) {
+                        const target_vname = mem.target.data.variable;
+                        if (std.mem.eql(u8, target_vname, "this")) {
+                            receiver_is_pointer = true;
                         }
-                    } else {
-                        callee_str = try std.fmt.allocPrint(self.allocator, "kale_{s}_{s}", .{ mod_alias, fn_name });
+                        if (self.var_types.get(target_vname)) |vtr| {
+                            target_struct = vtr.name;
+                            if (vtr.ptr_depth > 0) {
+                                receiver_is_pointer = true;
+                            }
+                        }
+                    }
+
+                    if (target_struct == null) {
+                        if (self.all_method_names.get(mem.member)) |sname| {
+                            target_struct = sname;
+                        }
+                    }
+
+                    if (target_struct) |sname| {
+                        const qname = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ sname, mem.member });
+                        if (self.struct_methods.contains(qname)) {
+                            is_method_call = true;
+                            callee_str = try std.fmt.allocPrint(self.allocator, "kale_{s}_{s}", .{ sname, mem.member });
+                            const t_str = try self.emitExpr(m, mem.target.*);
+                            if (receiver_is_pointer) {
+                                receiver_arg = t_str;
+                            } else {
+                                receiver_arg = try std.fmt.allocPrint(self.allocator, "&({s})", .{t_str});
+                            }
+                        }
+                    }
+
+                    if (!is_method_call and !mem.is_arrow and mem.target.kind == .variable) {
+                        const mod_alias = mem.target.data.variable;
+                        if (m.scope.lookup(mod_alias)) |mod_sym| {
+                            if (mod_sym.kind == .module_alias) {
+                                if (mod_sym.module) |target_mod| {
+                                    callee_str = try self.getMangledFnName(target_mod, mem.member);
+                                } else {
+                                    callee_str = try std.fmt.allocPrint(self.allocator, "kale_{s}_{s}", .{ mod_alias, mem.member });
+                                }
+                            }
+                        }
+                    }
+
+                    if (!is_method_call and callee_str.len == 0) {
+                        callee_str = try self.emitExpr(m, c.callee.*);
                     }
                 } else if (c.callee.kind == .variable) {
                     const fn_name = c.callee.data.variable;
-                    if (m.scope.lookup(fn_name)) |sym| {
-                        callee_str = sym.mangled_name;
-                    } else {
-                        callee_str = try self.getMangledFnName(m, fn_name);
+                    if (self.var_types.get(fn_name)) |vtr| {
+                        if (std.mem.eql(u8, vtr.name, "fn") or vtr.func_params != null) {
+                            callee_str = fn_name;
+                        }
+                    }
+                    if (callee_str.len == 0) {
+                        if (m.scope.lookup(fn_name)) |sym| {
+                            callee_str = sym.mangled_name;
+                        } else {
+                            callee_str = try self.getMangledFnName(m, fn_name);
+                        }
                     }
                 } else {
                     callee_str = try self.emitExpr(m, c.callee.*);
                 }
 
                 var args_buf: std.ArrayList(u8) = .{};
-                for (c.args, 0..) |arg, idx| {
+                var arg_count: usize = 0;
+                if (receiver_arg) |r_arg| {
+                    try args_buf.appendSlice(self.allocator, r_arg);
+                    arg_count += 1;
+                }
+                for (c.args) |arg| {
                     const a_str = try self.emitExpr(m, arg);
-                    if (idx > 0) try args_buf.appendSlice(self.allocator, ", ");
+                    if (arg_count > 0) try args_buf.appendSlice(self.allocator, ", ");
                     try args_buf.appendSlice(self.allocator, a_str);
+                    arg_count += 1;
                 }
 
                 return try std.fmt.allocPrint(self.allocator, "{s}({s})", .{ callee_str, args_buf.items });
@@ -609,21 +850,41 @@ pub const Codegen = struct {
                 return try std.fmt.allocPrint(self.allocator, "{s}[{s}]", .{ t_str, i_str });
             },
             .member => |mem| {
-                // If member access on a module alias (e.g. tok.TOK_INT()), not an instance member
                 if (!mem.is_arrow and mem.target.kind == .variable) {
                     const v_name = mem.target.data.variable;
+                    if (self.enum_names.contains(v_name)) {
+                        return try std.fmt.allocPrint(self.allocator, "{s}_{s}", .{ v_name, mem.member });
+                    }
                     if (m.scope.lookup(v_name)) |sym| {
+                        if (sym.kind == .enum_sym) {
+                            return try std.fmt.allocPrint(self.allocator, "{s}_{s}", .{ v_name, mem.member });
+                        }
                         if (sym.kind == .module_alias) {
                             if (sym.module) |target_mod| {
-                                return try self.getMangledFnName(target_mod, mem.member);
+                                if (target_mod.scope.lookup(mem.member)) |sub_sym| {
+                                    if (sub_sym.kind == .function) {
+                                        return try self.getMangledFnName(target_mod, mem.member);
+                                    }
+                                }
+                                return try std.fmt.allocPrint(self.allocator, "kale_{s}_{s}", .{ target_mod.name, mem.member });
                             }
                             return try std.fmt.allocPrint(self.allocator, "kale_{s}_{s}", .{ v_name, mem.member });
+                        }
+                    }
+                } else if (!mem.is_arrow and mem.target.kind == .member) {
+                    const sub = mem.target.data.member;
+                    if (!sub.is_arrow and sub.target.kind == .variable) {
+                        if (self.enum_names.contains(sub.member)) {
+                            return try std.fmt.allocPrint(self.allocator, "{s}_{s}", .{ sub.member, mem.member });
                         }
                     }
                 }
 
                 const t_str = try self.emitExpr(m, mem.target.*);
-                const op = if (mem.is_arrow) "->" else ".";
+                var op: []const u8 = if (mem.is_arrow) "->" else ".";
+                if (mem.target.kind == .variable and std.mem.eql(u8, mem.target.data.variable, "this")) {
+                    op = "->";
+                }
                 return try std.fmt.allocPrint(self.allocator, "{s}{s}{s}", .{ t_str, op, mem.member });
             },
             .assign => |asgn| {

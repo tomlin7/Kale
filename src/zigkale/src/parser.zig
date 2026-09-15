@@ -237,6 +237,10 @@ pub const Parser = struct {
     fn isFunctionDeclarationStart(self: *const Parser) bool {
         var idx: usize = 0;
         if (self.peek(idx).kind == .kw_fn) {
+            if (self.peek(idx + 1).kind == .lparen) {
+                // fn(...) is a function pointer type, not a function declaration
+                return false;
+            }
             return true;
         }
 
@@ -279,6 +283,7 @@ pub const Parser = struct {
     fn isVarDeclStart(self: *const Parser) bool {
         const k0 = self.cur().kind;
         if (k0 == .kw_let or k0 == .kw_var or k0 == .kw_const) return true;
+        if (k0 == .kw_fn and self.peek(1).kind == .lparen) return true;
 
         if (self.cur().isTypeKeyword()) {
             // Type name followed by identifier or * or [ ]
@@ -545,6 +550,29 @@ pub const Parser = struct {
         } else {
             // Type first: e.g. int x = 10; or Point* p = alloc(Point);
             type_ref = try self.parseTypeRef();
+        }
+
+        // If 'const' or 'let' or 'var' was matched, an explicit type may still follow
+        // e.g. `const int MULT = 5;` or `var float f = 1.0;` or `const Point p = ...;`
+        if (type_ref == null) {
+            if (self.cur().isTypeKeyword() or (self.cur().kind == .kw_fn and self.peek(1).kind == .lparen)) {
+                type_ref = try self.parseTypeRef();
+            } else if (self.cur().kind == .identifier) {
+                var idx: usize = 1;
+                if (self.peek(idx).kind == .dot and self.peek(idx + 1).kind == .identifier) {
+                    idx += 2;
+                }
+                while (self.peek(idx).kind == .star) idx += 1;
+                while (self.peek(idx).kind == .lbracket) {
+                    idx += 1;
+                    if (self.peek(idx).kind == .number_int) idx += 1;
+                    if (self.peek(idx).kind == .rbracket) idx += 1;
+                }
+                while (self.peek(idx).kind == .star) idx += 1;
+                if (self.peek(idx).kind == .identifier) {
+                    type_ref = try self.parseTypeRef();
+                }
+            }
         }
 
         const name_tok = try self.expect(.identifier);
@@ -1113,7 +1141,19 @@ pub const Parser = struct {
                         },
                     },
                 };
-            } else if (self.match(.caret)) {
+            } else if (self.cur().kind == .caret) {
+                // If followed by an expression-starting token, break to let binary XOR handle it!
+                const next_k = self.peek(1).kind;
+                const can_start_expr = switch (next_k) {
+                    .number_int, .number_float, .string_lit, .char_lit, .identifier,
+                    .kw_true, .kw_false, .kw_null, .lparen, .lbracket, .kw_alloc,
+                    .minus, .bang, .tilde, .amp, .star, .plus_plus, .minus_minus => true,
+                    else => false,
+                };
+                if (can_start_expr) {
+                    break;
+                }
+                _ = self.advance();
                 // Postfix dereference ^
                 const target = try self.allocator.create(ast.Expr);
                 target.* = expr;

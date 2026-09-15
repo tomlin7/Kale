@@ -4,6 +4,13 @@ const Checker = checker_mod.Checker;
 const codegen_mod = @import("codegen.zig");
 const Codegen = codegen_mod.Codegen;
 
+pub const BuildOptions = struct {
+    emit_c: bool = false,
+    libs: []const []const u8 = &.{},
+    lib_dirs: []const []const u8 = &.{},
+    includes: []const []const u8 = &.{},
+};
+
 pub const Compiler = struct {
     allocator: std.mem.Allocator,
 
@@ -11,7 +18,7 @@ pub const Compiler = struct {
         return .{ .allocator = allocator };
     }
 
-    pub fn compileToC(self: *Compiler, input_path: []const u8) ![]const u8 {
+    pub fn compileToC(self: *Compiler, input_path: []const u8, includes: []const []const u8) ![]const u8 {
         var checker = try Checker.init(self.allocator);
 
         // Add directory of input file to search paths
@@ -19,16 +26,21 @@ pub const Compiler = struct {
             try checker.addSearchPath(dir);
         }
 
+        // Add extra include search paths
+        for (includes) |inc| {
+            try checker.addSearchPath(inc);
+        }
+
         const root_mod = try checker.loadModule(input_path);
         var codegen = Codegen.init(self.allocator, &checker, root_mod);
         return try codegen.generate();
     }
 
-    pub fn buildExecutable(self: *Compiler, input_path: []const u8, output_exe: []const u8, emit_c: bool) !void {
-        const c_code = try self.compileToC(input_path);
+    pub fn buildExecutable(self: *Compiler, input_path: []const u8, output_exe: []const u8, options: BuildOptions) !void {
+        const c_code = try self.compileToC(input_path, options.includes);
 
         var c_path: []const u8 = "";
-        if (emit_c) {
+        if (options.emit_c) {
             var base_name = input_path;
             if (std.mem.endsWith(u8, base_name, ".kl")) {
                 base_name = base_name[0 .. base_name.len - 3];
@@ -49,19 +61,28 @@ pub const Compiler = struct {
         file.close();
 
         // Compile C file using `zig cc -O2`
-        const argv = [_][]const u8{
-            "zig",
-            "cc",
-            "-O2",
-            c_path,
-            "-o",
-            output_exe,
-            "-lm",
-        };
+        var argv: std.ArrayList([]const u8) = .{};
+        try argv.append(self.allocator, "zig");
+        try argv.append(self.allocator, "cc");
+        try argv.append(self.allocator, "-O2");
+        try argv.append(self.allocator, c_path);
+        try argv.append(self.allocator, "-o");
+        try argv.append(self.allocator, output_exe);
+        try argv.append(self.allocator, "-lm");
+
+        for (options.lib_dirs) |dir| {
+            try argv.append(self.allocator, try std.fmt.allocPrint(self.allocator, "-L{s}", .{dir}));
+        }
+        for (options.libs) |lib| {
+            try argv.append(self.allocator, try std.fmt.allocPrint(self.allocator, "-l{s}", .{lib}));
+        }
+        for (options.includes) |inc| {
+            try argv.append(self.allocator, try std.fmt.allocPrint(self.allocator, "-I{s}", .{inc}));
+        }
 
         const result = try std.process.Child.run(.{
             .allocator = self.allocator,
-            .argv = &argv,
+            .argv = argv.items,
             .max_output_bytes = 10 * 1024 * 1024,
         });
 
@@ -75,7 +96,7 @@ pub const Compiler = struct {
         }
 
         // Clean up temporary C file if emit_c was not requested
-        if (!emit_c and !std.mem.eql(u8, c_path, input_path)) {
+        if (!options.emit_c and !std.mem.eql(u8, c_path, input_path)) {
             std.fs.cwd().deleteFile(c_path) catch {};
         }
     }

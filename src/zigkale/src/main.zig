@@ -21,6 +21,9 @@ pub fn printUsage() void {
         \\Options:
         \\  -o <path>                             Specify output executable path
         \\  --emit-c                              Keep generated C source code
+        \\  -l <lib>                              Link external library
+        \\  -L <dir>                              Add library search directory
+        \\  -I <dir>                              Add header/module search directory
         \\  --help, -h                            Show this help message
         \\  --version, -v                         Show version information
         \\
@@ -66,6 +69,9 @@ pub fn main() !void {
     var input_file: ?[]const u8 = null;
     var output_file: ?[]const u8 = null;
     var emit_c: bool = false;
+    var libs: std.ArrayList([]const u8) = .{};
+    var lib_dirs: std.ArrayList([]const u8) = .{};
+    var includes: std.ArrayList([]const u8) = .{};
 
     var i: usize = arg_start;
     while (i < args.len) : (i += 1) {
@@ -78,6 +84,36 @@ pub fn main() !void {
                 std.debug.print("Error: missing argument after -o\n", .{});
                 return;
             }
+        } else if (std.mem.eql(u8, arg, "-l")) {
+            if (i + 1 < args.len) {
+                try libs.append(allocator, args[i + 1]);
+                i += 1;
+            } else {
+                std.debug.print("Error: missing argument after -l\n", .{});
+                return;
+            }
+        } else if (std.mem.startsWith(u8, arg, "-l")) {
+            try libs.append(allocator, arg[2..]);
+        } else if (std.mem.eql(u8, arg, "-L")) {
+            if (i + 1 < args.len) {
+                try lib_dirs.append(allocator, args[i + 1]);
+                i += 1;
+            } else {
+                std.debug.print("Error: missing argument after -L\n", .{});
+                return;
+            }
+        } else if (std.mem.startsWith(u8, arg, "-L")) {
+            try lib_dirs.append(allocator, arg[2..]);
+        } else if (std.mem.eql(u8, arg, "-I")) {
+            if (i + 1 < args.len) {
+                try includes.append(allocator, args[i + 1]);
+                i += 1;
+            } else {
+                std.debug.print("Error: missing argument after -I\n", .{});
+                return;
+            }
+        } else if (std.mem.startsWith(u8, arg, "-I")) {
+            try includes.append(allocator, arg[2..]);
         } else if (std.mem.eql(u8, arg, "--emit-c")) {
             emit_c = true;
         } else if (std.mem.eql(u8, arg, "--")) {
@@ -126,14 +162,14 @@ pub fn main() !void {
 
     if (std.mem.eql(u8, command, "dump-c")) {
         var compiler = compiler_mod.Compiler.init(allocator);
-        const c_code = try compiler.compileToC(input_path);
+        const c_code = try compiler.compileToC(input_path, includes.items);
         std.debug.print("{s}", .{c_code});
         return;
     }
 
     if (std.mem.eql(u8, command, "check")) {
         var compiler = compiler_mod.Compiler.init(allocator);
-        _ = try compiler.compileToC(input_path);
+        _ = try compiler.compileToC(input_path, includes.items);
         std.debug.print("Check passed: '{s}' is valid.\n", .{input_path});
         return;
     }
@@ -149,7 +185,12 @@ pub fn main() !void {
         }
 
         var compiler = compiler_mod.Compiler.init(allocator);
-        try compiler.buildExecutable(input_path, out_exe.?, emit_c);
+        try compiler.buildExecutable(input_path, out_exe.?, .{
+            .emit_c = emit_c,
+            .libs = libs.items,
+            .lib_dirs = lib_dirs.items,
+            .includes = includes.items,
+        });
         std.debug.print("Compiled executable (ZigKale): {s}\n", .{out_exe.?});
 
         if (std.mem.eql(u8, command, "run")) {
