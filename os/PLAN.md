@@ -66,7 +66,7 @@ os/
 - [x] UDP loopback framing and checksum contract.
 - [ ] ARP/IPv4 transport.
 - [x] Kernel assertions and structured panic state.
-- [ ] Boot stage checksums.
+- [x] Boot stage additive checksums and generated manifests.
 - [ ] Deterministic subsystem tests plus QEMU smoke tests for every boot path.
 
 ## Current execution order

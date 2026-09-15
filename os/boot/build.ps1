@@ -24,6 +24,19 @@ $stage2Size = (Get-Item $stage2).Length
 if ($stage2Size -ne 4096) {
     throw "The second stage must be exactly 4096 bytes; got $stage2Size bytes."
 }
+$stage2Bytes = [System.IO.File]::ReadAllBytes($stage2)
+$checksum = [uint64]0
+foreach ($byte in $stage2Bytes) {
+    $checksum = ($checksum + $byte) -band 0xFFFFFFFF
+}
+$manifest = [ordered]@{
+    format = 1
+    stage2_bytes = $stage2Size
+    stage2_sectors = [int]($stage2Size / 512)
+    stage2_checksum = [uint64]$checksum
+}
+$manifestPath = Join-Path $output "kale-os-stage2.json"
+$manifest | ConvertTo-Json | Set-Content -LiteralPath $manifestPath -Encoding ascii
 
 $image = Join-Path $output "kale-os.img"
 $stream = [System.IO.File]::Create($image)
@@ -39,6 +52,7 @@ finally {
 }
 
 Write-Output "Built $image (1.44 MiB)"
+Write-Output "Stage2 checksum: $checksum"
 
 $dataImage = Join-Path $output "kale-os-data.img"
 & (Join-Path $root "os\fs\make-fat12.ps1") -OutputPath $dataImage

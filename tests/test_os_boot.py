@@ -1,4 +1,5 @@
 import os
+import json
 import subprocess
 from pathlib import Path
 
@@ -20,6 +21,7 @@ def test_os_boot_script_builds_a_bios_disk_image(tmp_path):
     image = output / "kale-os.img"
     data_image = output / "kale-os-data.img"
     stage2 = output / "kale-os-stage2.bin"
+    manifest = output / "kale-os-stage2.json"
     assert image.exists()
     assert data_image.exists()
     assert data_image.stat().st_size == 1474560
@@ -29,6 +31,10 @@ def test_os_boot_script_builds_a_bios_disk_image(tmp_path):
     cluster2 = data[33 * 512:34 * 512]
     assert b"Kale OS FAT12 filesystem online" in cluster2
     assert stage2.exists()
+    metadata = json.loads(manifest.read_text())
+    assert metadata["stage2_bytes"] == 4096
+    assert metadata["stage2_sectors"] == 8
+    assert metadata["stage2_checksum"] == sum(stage2.read_bytes()) & 0xFFFFFFFF
     assert stage2.stat().st_size == 4096
     assert b"STAGE2 LOADED" in stage2.read_bytes()
     stage2_source = (ROOT / "os" / "boot" / "stage2.asm").read_text()

@@ -1,0 +1,11 @@
+// Additive 32-bit checksum shared by boot artifacts and kernel diagnostics.
+
+fn uint32 checksum_bytes(uint8* data, uint32 length) {
+    uint32 sum = 0;
+    uint32 i = 0;
+    while (i < length) {
+        sum = sum + data[i];
+        i = i + 1;
+    }
+    return sum;
+}

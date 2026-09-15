@@ -69,3 +69,4 @@ def test_kernel_scaling_services_have_heap_scheduler_and_loopback():
     assert "kernel_assert" in read("os/kernel/assert.kl")
     assert "syscall_dispatch" in read("os/kernel/syscall.kl")
     assert "udp_checksum" in read("os/net/udp.kl")
+    assert "checksum_bytes" in read("os/kernel/checksum.kl")
