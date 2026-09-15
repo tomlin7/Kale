@@ -2,6 +2,7 @@
 // State Management for Kale Code Editor
 
 import "packages/std/text/piece_table.kl" as pt;
+import "packages/std/fs/file_util.kl" as fs;
 
 extern int strlen(string s);
 extern int strcmp(string a, string b);
@@ -100,7 +101,7 @@ fn int EditorState.switch_buffer(int tab_index) {
 fn int EditorState.execute_command(string command) {
     if (strcmp(command, ">save") == 0) {
         this->save_requested = 1;
-        return 1;
+        return this->save_active_buffer();
     }
     if (strcmp(command, ">format") == 0) {
         this->format_requested = 1;
@@ -113,6 +114,18 @@ fn int EditorState.execute_command(string command) {
     if (strcmp(command, ">find") == 0) {
         this->find_requested = 1;
         return 4;
+    }
+    return 0;
+}
+
+fn int EditorState.save_active_buffer() {
+    string text = this->buffer.get_text();
+    bool saved = fs.write_string(this->file_path, text);
+    if (saved) {
+        this->is_dirty = false;
+        this->tabs[this->active_tab].is_dirty = false;
+        this->save_requested = 0;
+        return 1;
     }
     return 0;
 }
