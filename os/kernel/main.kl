@@ -1,5 +1,7 @@
 // Kale Microkernel Entry Point
-import "sys/drivers/vga.kl" as vga;
+import "os/drivers/vga.kl" as vga;
+import "os/kernel/gdt.kl" as gdt;
+import "os/kernel/pic.kl" as pic;
 
 struct KernelInfo {
     magic: uint32,
@@ -8,6 +10,10 @@ struct KernelInfo {
 }
 
 fn kmain(info: *KernelInfo) -> int32 {
+    gdt.GDTState descriptors;
+    gdt.gdt_init(&descriptors, 0x200000);
+    pic.PICState controller;
+    pic.pic_remap(&controller, 0x20, 0x28);
     let display: vga.VGADriver = vga.vga_init();
     vga.vga_clear(&display);
     

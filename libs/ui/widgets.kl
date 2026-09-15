@@ -103,3 +103,89 @@ fn float ui_slider(ui.UIContext* ctx, int id, float value, float min_val, float 
 
     return cur_val;
 }
+
+fn int ui_text_input(ui.UIContext* ctx, int id, char* buffer, int max_len, float x, float y, float w, float h) {
+    int hovered = ctx->is_hovered(x, y, w, h);
+    if (hovered != 0 && ctx->mouse_pressed != 0) {
+        ctx->focused_id = id;
+    }
+    bool focused = ctx->focused_id == id;
+    rmath.Color border = ctx->theme.input_border;
+    if (focused) { border = ctx->theme.accent; }
+    ctx->renderer.push_quad(ctx->gl_ctx, x, y, w, h, ctx->theme.input_bg);
+    ctx->renderer.push_quad(ctx->gl_ctx, x, y, w, 2.0f, border);
+    if (buffer != (char*)0) {
+        ctx->font.draw_text(&ctx->renderer, ctx->gl_ctx, (string)buffer, x + 8.0f, y + 5.0f, ctx->theme.input_text);
+        if (focused) {
+            float cursor_x = x + 8.0f + (float)strlen((string)buffer) * 10.0f;
+            ctx->renderer.push_quad(ctx->gl_ctx, cursor_x, y + 4.0f, 2.0f, h - 8.0f, ctx->theme.cursor);
+        }
+    }
+    return focused as int;
+}
+
+fn int ui_text_input_append(char* buffer, int max_len, char value) {
+    int length = strlen((string)buffer);
+    if (length >= max_len - 1) { return 0; }
+    buffer[length] = value;
+    buffer[length + 1] = (char)0;
+    return 1;
+}
+
+fn int ui_text_input_backspace(char* buffer) {
+    int length = strlen((string)buffer);
+    if (length <= 0) { return 0; }
+    buffer[length - 1] = (char)0;
+    return 1;
+}
+
+fn int ui_checkbox(ui.UIContext* ctx, int id, string caption, int checked, float x, float y) {
+    float size = 18.0f;
+    int hovered = ctx->is_hovered(x, y, size + 8.0f + (float)strlen(caption) * 10.0f, size);
+    if (hovered != 0) {
+        ctx->hot_id = id;
+        if (ctx->mouse_pressed != 0) {
+            ctx->focused_id = id;
+            if (checked == 0) { checked = 1; } else { checked = 0; }
+            ctx->last_clicked_id = id;
+        }
+    }
+    rmath.Color box = ctx->theme.input_border;
+    if (checked != 0) { box = ctx->theme.accent; }
+    ctx->renderer.push_quad(ctx->gl_ctx, x, y, size, size, box);
+    if (checked != 0) {
+        ctx->font.draw_text(&ctx->renderer, ctx->gl_ctx, "x", x + 4.0f, y + 1.0f, ctx->theme.button_text);
+    }
+    ctx->font.draw_text(&ctx->renderer, ctx->gl_ctx, caption, x + size + 8.0f, y, ctx->theme.text);
+    return checked;
+}
+
+fn float ui_scrollbar(ui.UIContext* ctx, int id, float scroll_offset, float content_size, float view_size, float x, float y, float w, float h) {
+    float max_scroll = content_size - view_size;
+    if (max_scroll < 0.0f) { max_scroll = 0.0f; }
+    if (scroll_offset < 0.0f) { scroll_offset = 0.0f; }
+    if (scroll_offset > max_scroll) { scroll_offset = max_scroll; }
+    float ratio = 1.0f;
+    if (content_size > 0.0f) {
+        ratio = view_size / content_size;
+        if (ratio > 1.0f) { ratio = 1.0f; }
+    }
+    float thumb_h = h * ratio;
+    if (thumb_h < 16.0f) { thumb_h = 16.0f; }
+    float travel = h - thumb_h;
+    float thumb_y = y;
+    if (max_scroll > 0.0f) { thumb_y = y + scroll_offset / max_scroll * travel; }
+    int hovered = ctx->is_hovered(x, thumb_y, w, thumb_h);
+    if (hovered != 0 && ctx->mouse_pressed != 0) { ctx->active_id = id; }
+    if (ctx->active_id == id) {
+        float rel = ctx->mouse_y - y - thumb_h * 0.5f;
+        if (rel < 0.0f) { rel = 0.0f; }
+        if (rel > travel) { rel = travel; }
+        if (travel > 0.0f) { scroll_offset = rel / travel * max_scroll; }
+        else { scroll_offset = 0.0f; }
+        if (ctx->mouse_released != 0) { ctx->active_id = 0; }
+    }
+    ctx->renderer.push_quad(ctx->gl_ctx, x, y, w, h, ctx->theme.input_bg);
+    ctx->renderer.push_quad(ctx->gl_ctx, x, thumb_y, w, thumb_h, ctx->theme.button_hover);
+    return scroll_offset;
+}

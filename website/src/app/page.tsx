@@ -374,7 +374,7 @@ export default function HomePage() {
             </div>
             <div className="p-6 sm:p-8 space-y-4 flex-1 flex flex-col justify-between">
               <div className="space-y-3">
-                <div className="text-xs font-mono text-white/70">OPERATING SYSTEM / sys/</div>
+                <div className="text-xs font-mono text-white/70">OPERATING SYSTEM / os/</div>
                 <h3 className="text-xl font-renaissance font-normal text-white">
                   x86_64 Long Mode Microkernel
                 </h3>
@@ -384,7 +384,7 @@ export default function HomePage() {
               </div>
               <div className="pt-4 border-t border-[#243b82]">
                 <Link
-                  href="/projects/sys"
+                  href="/projects/os"
                   className="inline-flex items-center gap-2 text-xs font-medium text-white hover:underline"
                 >
                   <span>Explore Kernel Architecture</span>

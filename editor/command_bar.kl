@@ -1,0 +1,93 @@
+// Modal command palette and fuzzy file opener used by the editor.
+
+import "libs/render/math.kl" as rmath;
+import "libs/ui/ui.kl" as ui;
+
+struct CommandItem {
+    string name;
+    string query;
+    int visible;
+}
+
+struct CommandBar {
+    int visible;
+    int file_mode;
+    int selected;
+    int item_count;
+    char* input_buffer;
+    CommandItem[16] items;
+}
+
+fn void command_bar_init(CommandBar* bar, char* input_buffer) {
+    bar->visible = 0;
+    bar->file_mode = 0;
+    bar->selected = 0;
+    bar->item_count = 4;
+    bar->input_buffer = input_buffer;
+    bar->items[0].name = "Format document"; bar->items[0].query = ">format";
+    bar->items[1].name = "Save file"; bar->items[1].query = ">save";
+    bar->items[2].name = "Open file"; bar->items[2].query = ">open";
+    bar->items[3].name = "Find in files"; bar->items[3].query = ">find";
+}
+
+fn void command_bar_toggle(CommandBar* bar, int file_mode) {
+    if (bar->visible == 0) { bar->visible = 1; }
+    else { bar->visible = 0; }
+    bar->file_mode = file_mode;
+    bar->selected = 0;
+}
+
+fn int command_bar_matches(string query, string candidate) {
+    int q = 0;
+    int c = 0;
+    while (candidate[c] != (char)0) {
+        if (query[q] == (char)0) { return 1; }
+        if (query[q] == candidate[c]) { q = q + 1; }
+        c = c + 1;
+    }
+    if (query[q] == (char)0) { return 1; }
+    return 0;
+}
+
+fn int command_bar_filter(CommandBar* bar, string query) {
+    int matches = 0;
+    int i = 0;
+    while (i < bar->item_count) {
+        bar->items[i].visible = command_bar_matches(query, bar->items[i].query);
+        if (bar->items[i].visible != 0) { matches = matches + 1; }
+        i = i + 1;
+    }
+    bar->selected = 0;
+    return matches;
+}
+
+fn void command_bar_move(CommandBar* bar, int delta) {
+    if (bar->item_count == 0) { return; }
+    bar->selected = bar->selected + delta;
+    if (bar->selected < 0) { bar->selected = bar->item_count - 1; }
+    if (bar->selected >= bar->item_count) { bar->selected = 0; }
+}
+
+fn string command_bar_accept(CommandBar* bar) {
+    if (bar->visible == 0 || bar->item_count == 0) { return ""; }
+    bar->visible = 0;
+    return bar->items[bar->selected].query;
+}
+
+fn void command_bar_render(CommandBar* bar, ui.UIContext* ctx, float x, float y, float w, float h) {
+    if (bar->visible == 0) { return; }
+    rmath.Color overlay = rmath.color_rgba(0.08f, 0.09f, 0.12f, 0.98f);
+    ctx->renderer.push_quad(ctx->gl_ctx, x, y, w, h, overlay);
+    int i = 0;
+    float item_y = y + 58.0f;
+    while (i < bar->item_count) {
+        if (bar->items[i].visible != 0) {
+            if (i == bar->selected) {
+                ctx->renderer.push_quad(ctx->gl_ctx, x + 12.0f, item_y - 4.0f, w - 24.0f, 24.0f, ctx->theme.button_hover);
+            }
+            ctx->font.draw_text(&ctx->renderer, ctx->gl_ctx, bar->items[i].name, x + 22.0f, item_y, ctx->theme.text);
+            item_y = item_y + 28.0f;
+        }
+        i = i + 1;
+    }
+}

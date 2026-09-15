@@ -1,0 +1,57 @@
+// Small immediate-mode flow layout helper for rows and columns.
+
+enum UILayoutDirection {
+    ROW,
+    COLUMN,
+}
+
+struct UILayout {
+    UILayoutDirection direction;
+    float x;
+    float y;
+    float width;
+    float height;
+    float cursor_x;
+    float cursor_y;
+    float padding;
+    float spacing;
+    float item_width;
+    float item_height;
+}
+
+fn void layout_begin_row(UILayout* layout, float x, float y, float width, float height, float padding, float spacing) {
+    layout->direction = UILayoutDirection.ROW;
+    layout->x = x; layout->y = y; layout->width = width; layout->height = height;
+    layout->cursor_x = x + padding; layout->cursor_y = y + padding;
+    layout->padding = padding; layout->spacing = spacing;
+    layout->item_width = 0.0f; layout->item_height = height - padding * 2.0f;
+}
+
+fn void layout_begin_column(UILayout* layout, float x, float y, float width, float height, float padding, float spacing) {
+    layout->direction = UILayoutDirection.COLUMN;
+    layout->x = x; layout->y = y; layout->width = width; layout->height = height;
+    layout->cursor_x = x + padding; layout->cursor_y = y + padding;
+    layout->padding = padding; layout->spacing = spacing;
+    layout->item_width = width - padding * 2.0f; layout->item_height = 0.0f;
+}
+
+fn int layout_next_rect(UILayout* layout, float requested_width, float requested_height, float* x, float* y, float* width, float* height) {
+    if (layout->direction == UILayoutDirection.ROW) {
+        *x = layout->cursor_x; *y = layout->cursor_y;
+        *width = requested_width; *height = requested_height;
+        layout->cursor_x = layout->cursor_x + requested_width + layout->spacing;
+    } else {
+        *x = layout->cursor_x; *y = layout->cursor_y;
+        *width = requested_width; *height = requested_height;
+        layout->cursor_y = layout->cursor_y + requested_height + layout->spacing;
+    }
+    return (*x >= layout->x + layout->padding &&
+            *y >= layout->y + layout->padding &&
+            *x + *width <= layout->x + layout->width - layout->padding &&
+            *y + *height <= layout->y + layout->height - layout->padding) as int;
+}
+
+fn void layout_end(UILayout* layout) {
+    layout->cursor_x = layout->x;
+    layout->cursor_y = layout->y;
+}

@@ -36,7 +36,7 @@ kale/
 │   └── lsp/                      # Language Server Protocol (LSP) Server
 ├── tools/
 │   └── pkg/                      # Package manager & build tool (kale-pm)
-├── sys/                          # Tier 4: Low-Level OS & Bare-Metal Kernel
+├── os/                           # Tier 4: Low-Level OS & Bare-Metal Kernel
 │   ├── boot/                     # Multiboot / UEFI Bootloader
 │   ├── kernel/                   # Microkernel in Kale + ASM
 │   ├── drivers/                  # Hardware Abstraction Drivers

@@ -1,0 +1,61 @@
+// 8259A Programmable Interrupt Controller support.
+
+extern void outb(uint16 port, uint8 value);
+extern uint8 inb(uint16 port);
+
+struct PICState {
+    uint8 master_offset;
+    uint8 slave_offset;
+    uint8 master_mask;
+    uint8 slave_mask;
+}
+
+fn pic_remap(PICState* state, uint8 master_offset, uint8 slave_offset) -> void {
+    state->master_offset = master_offset;
+    state->slave_offset = slave_offset;
+    state->master_mask = inb(0x21 as uint16);
+    state->slave_mask = inb(0xA1 as uint16);
+    outb(0x20 as uint16, 0x11 as uint8);
+    outb(0xA0 as uint16, 0x11 as uint8);
+    outb(0x21 as uint16, master_offset);
+    outb(0xA1 as uint16, slave_offset);
+    outb(0x21 as uint16, 4 as uint8);
+    outb(0xA1 as uint16, 2 as uint8);
+    outb(0x21 as uint16, 1 as uint8);
+    outb(0xA1 as uint16, 1 as uint8);
+    outb(0x21 as uint16, state->master_mask);
+    outb(0xA1 as uint16, state->slave_mask);
+}
+
+fn pic_set_mask(PICState* state, int irq) -> void {
+    if (irq < 0 || irq > 15) { return; }
+    if (irq < 8) {
+        state->master_mask = state->master_mask | (1 << irq) as uint8;
+        outb(0x21 as uint16, state->master_mask);
+    } else {
+        state->slave_mask = state->slave_mask | (1 << (irq - 8)) as uint8;
+        outb(0xA1 as uint16, state->slave_mask);
+    }
+}
+
+fn pic_clear_mask(PICState* state, int irq) -> void {
+    if (irq < 0 || irq > 15) { return; }
+    if (irq < 8) {
+        state->master_mask = state->master_mask & ((~(1 << irq)) as uint8);
+        outb(0x21 as uint16, state->master_mask);
+    } else {
+        state->slave_mask = state->slave_mask & ((~(1 << (irq - 8))) as uint8);
+        outb(0xA1 as uint16, state->slave_mask);
+    }
+}
+
+fn pic_irq_vector(PICState* state, int irq) -> uint8 {
+    if (irq < 0 || irq > 15) { return 0 as uint8; }
+    if (irq < 8) { return state->master_offset + irq as uint8; }
+    return state->slave_offset + (irq - 8) as uint8;
+}
+
+fn pic_send_eoi(irq: int) -> void {
+    if (irq >= 8) { outb(0xA0 as uint16, 0x20 as uint8); }
+    outb(0x20 as uint16, 0x20 as uint8);
+}

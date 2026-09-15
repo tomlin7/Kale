@@ -8,6 +8,27 @@ import "libs/gl/constants.kl" as kgl;
 import "libs/gl/loader.kl" as glloader;
 import "libs/ui/ui.kl" as ui;
 
+enum EventType {
+    EVENT_NONE,
+    KEY_DOWN,
+    KEY_UP,
+    MOUSE_MOVE,
+    MOUSE_DOWN,
+    MOUSE_UP,
+    WINDOW_RESIZE,
+}
+
+struct Event {
+    EventType type;
+    int key;
+    int scancode;
+    int mods;
+    float mouse_x;
+    float mouse_y;
+    int width;
+    int height;
+}
+
 struct AppConfig {
     string title;
     int width;
@@ -35,6 +56,7 @@ struct App {
     int is_running;
     double last_time;
     double delta_time;
+    Event pending_event;
 }
 
 fn int App.init(AppConfig config) {
@@ -102,6 +124,34 @@ fn int App.begin_frame() {
 
     this->ui_ctx.begin(fb_w, fb_h);
     return 1;
+}
+
+fn int App.poll_event(Event* event) {
+    if (this->is_running == 0) {
+        return 0;
+    }
+    event->mouse_x = this->ui_ctx.mouse_x;
+    event->mouse_y = this->ui_ctx.mouse_y;
+    event->width = this->width;
+    event->height = this->height;
+    if (this->ui_ctx.mouse_pressed != 0) {
+        event->type = EventType.MOUSE_DOWN;
+        return 1;
+    }
+    if (this->ui_ctx.mouse_released != 0) {
+        event->type = EventType.MOUSE_UP;
+        return 1;
+    }
+    if (this->ui_ctx.mouse_down != 0) {
+        event->type = EventType.MOUSE_MOVE;
+        return 1;
+    }
+    event->type = EventType.WINDOW_RESIZE;
+    return 1;
+}
+
+fn void App.dispatch_event(Event event) {
+    this->pending_event = event;
 }
 
 fn void App.end_frame() {

@@ -4,6 +4,20 @@
 import "packages/std/text/piece_table.kl" as pt;
 
 extern int strlen(string s);
+extern void* malloc(int size);
+
+struct EditAction {
+    int offset;
+    int length;
+    int kind;
+    string text;
+}
+
+struct BufferTab {
+    pt.PieceTable buffer;
+    string file_path;
+    bool is_dirty;
+}
 
 struct EditorState {
     pt.PieceTable buffer;
@@ -13,6 +27,15 @@ struct EditorState {
     int scroll_col;
     string file_path;
     bool is_dirty;
+    EditAction* undo_stack;
+    int undo_count;
+    EditAction* redo_stack;
+    int redo_count;
+    int command_bar_visible;
+    int active_command;
+    BufferTab[8] tabs;
+    int tab_count;
+    int active_tab;
 }
 
 fn void EditorState.init(string initial_code, string file_path) {
@@ -23,6 +46,48 @@ fn void EditorState.init(string initial_code, string file_path) {
     this->scroll_col = 0;
     this->file_path = file_path;
     this->is_dirty = false;
+    this->undo_stack = (EditAction*)0;
+    this->undo_count = 0;
+    this->redo_stack = (EditAction*)0;
+    this->redo_count = 0;
+    this->command_bar_visible = 0;
+    this->active_command = 0;
+    this->tab_count = 1;
+    this->active_tab = 0;
+    this->tabs[0].file_path = file_path;
+    this->tabs[0].is_dirty = false;
+}
+
+fn int EditorState.open_buffer(string initial_code, string file_path) {
+    if (this->tab_count >= 8) { return 0; }
+    this->tabs[this->tab_count].buffer.init(initial_code);
+    this->tabs[this->tab_count].file_path = file_path;
+    this->tabs[this->tab_count].is_dirty = false;
+    this->active_tab = this->tab_count;
+    this->tab_count = this->tab_count + 1;
+    return 1;
+}
+
+fn int EditorState.switch_buffer(int tab_index) {
+    if (tab_index < 0 || tab_index >= this->tab_count) { return 0; }
+    this->active_tab = tab_index;
+    return 1;
+}
+
+fn int EditorState.cursor_offset() {
+    return this->buffer.line_to_offset(this->cursor_row) + this->cursor_col;
+}
+
+fn void EditorState.record_action(int offset, int length, int kind, string text) {
+    if (this->undo_stack == (EditAction*)0) {
+        this->undo_stack = (EditAction*)malloc(4096);
+    }
+    this->undo_stack[this->undo_count].offset = offset;
+    this->undo_stack[this->undo_count].length = length;
+    this->undo_stack[this->undo_count].kind = kind;
+    this->undo_stack[this->undo_count].text = text;
+    if (this->undo_count < 127) { this->undo_count = this->undo_count + 1; }
+    this->redo_count = 0;
 }
 
 fn void EditorState.move_cursor(int d_row, int d_col, int visible_rows) {
@@ -56,16 +121,9 @@ fn void EditorState.move_cursor(int d_row, int d_col, int visible_rows) {
 }
 
 fn void EditorState.insert_char(string ch) {
-    int lines = this->buffer.line_count();
-    int byte_offset = 0;
-    int row = 0;
-    while (row < this->cursor_row && row < lines) {
-        string l = this->buffer.get_line(row);
-        byte_offset = byte_offset + strlen(l) + 1; // +1 for \n
-        row = row + 1;
-    }
-    byte_offset = byte_offset + this->cursor_col;
+    int byte_offset = this->cursor_offset();
     this->buffer.insert(byte_offset, ch);
+    this->record_action(byte_offset, strlen(ch), 1, ch);
     this->cursor_col = this->cursor_col + strlen(ch);
     this->is_dirty = true;
 }
@@ -78,16 +136,10 @@ fn void EditorState.insert_newline() {
 
 fn void EditorState.backspace() {
     if (this->cursor_col > 0) {
-        int lines = this->buffer.line_count();
-        int byte_offset = 0;
-        int row = 0;
-        while (row < this->cursor_row && row < lines) {
-            string l = this->buffer.get_line(row);
-            byte_offset = byte_offset + strlen(l) + 1;
-            row = row + 1;
-        }
-        byte_offset = byte_offset + this->cursor_col - 1;
+        int byte_offset = this->cursor_offset() - 1;
+        string deleted = this->buffer.get_line(this->cursor_row);
         this->buffer.delete(byte_offset, 1);
+        this->record_action(byte_offset, 1, 2, deleted);
         this->cursor_col = this->cursor_col - 1;
         this->is_dirty = true;
     } else {
@@ -105,6 +157,7 @@ fn void EditorState.backspace() {
                 byte_offset = byte_offset + strlen(l) + 1;
                 row = row + 1;
             }
+
             byte_offset = byte_offset + prev_len; // Point to newline
             this->buffer.delete(byte_offset, 1); // Delete newline
             this->cursor_row = prev_row;
@@ -114,6 +167,31 @@ fn void EditorState.backspace() {
     }
 }
 
+fn int EditorState.undo() {
+    if (this->undo_count <= 0) { return 0; }
+    this->undo_count = this->undo_count - 1;
+    EditAction action = this->undo_stack[this->undo_count];
+    if (this->redo_stack == (EditAction*)0) { this->redo_stack = (EditAction*)malloc(4096); }
+    this->redo_stack[this->redo_count] = action;
+    if (action.kind == 1) { this->buffer.delete(action.offset, action.length); }
+    else { this->buffer.insert(action.offset, action.text); }
+    this->redo_count = this->redo_count + 1;
+    this->is_dirty = true;
+    return 1;
+}
+
+fn int EditorState.redo() {
+    if (this->redo_count <= 0) { return 0; }
+    this->redo_count = this->redo_count - 1;
+    EditAction action = this->redo_stack[this->redo_count];
+    if (action.kind == 1) { this->buffer.insert(action.offset, action.text); }
+    else { this->buffer.delete(action.offset, action.length); }
+    this->is_dirty = true;
+    return 1;
+}
+
 fn void EditorState.destroy() {
     this->buffer.destroy();
+    if (this->undo_stack != (EditAction*)0) { free(this->undo_stack); }
+    if (this->redo_stack != (EditAction*)0) { free(this->redo_stack); }
 }

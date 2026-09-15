@@ -125,17 +125,17 @@ App harness — GLFW3 window, OpenGL 3.3 context,<br>frame pacing, unified input
 <br>
 
 ```
-  sys/
+  os/
 ```
 
 <table>
 <tr>
 <td width="50%">
-<sub><b>sys/ (Kale OS)</b> · <a href="sys/">sys/</a><br>
+<sub><b>os/ (Kale OS)</b> · <a href="os/">os/</a><br>
 Bare-metal x86_64 kernel. Multiboot loader, IDT dispatcher, 4KB paging,<br>direct linear framebuffer — no host OS dependencies.</sub>
 </td>
 <td width="50%">
-<sub><b>sys/sysmon</b> · <a href="sys/">sys/</a><br>
+<sub><b>sys/sysmon</b> · <a href="sys/sysmon/">sys/sysmon/</a><br>
 Real-time system monitor &amp; diagnostics dashboard.</sub>
 </td>
 </tr>

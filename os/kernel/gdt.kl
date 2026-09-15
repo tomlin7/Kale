@@ -1,0 +1,60 @@
+// Long-mode Global Descriptor Table and Task State Segment.
+
+struct GDTEntry {
+    uint16 limit_low;
+    uint16 base_low;
+    uint8 base_middle;
+    uint8 access;
+    uint8 granularity;
+    uint8 base_high;
+}
+
+struct GDTPointer {
+    uint16 limit;
+    uint64 base;
+}
+
+struct TSS {
+    uint32 reserved0;
+    uint64 rsp0;
+    uint64 rsp1;
+    uint64 rsp2;
+    uint64 reserved1;
+    uint64 ist1;
+    uint64 ist2;
+    uint64 ist3;
+    uint64 ist4;
+    uint64 ist5;
+    uint64 ist6;
+    uint64 ist7;
+    uint64 reserved2;
+    uint64 reserved3;
+    uint16 io_map_base;
+}
+
+struct GDTState {
+    GDTEntry[5] entries;
+    TSS tss;
+    GDTPointer pointer;
+}
+
+fn gdt_set_entry(GDTEntry* entry, uint32 base, uint32 limit, uint8 access, uint8 granularity) -> void {
+    entry->limit_low = (limit & 0xFFFF) as uint16;
+    entry->base_low = (base & 0xFFFF) as uint16;
+    entry->base_middle = ((base >> 16) & 0xFF) as uint8;
+    entry->access = access;
+    entry->granularity = (((limit >> 16) & 0x0F) as uint8) | (granularity & 0xF0);
+    entry->base_high = ((base >> 24) & 0xFF) as uint8;
+}
+
+fn gdt_init(GDTState* state, uint64 kernel_stack) -> void {
+    gdt_set_entry(&state->entries[0], 0, 0, 0, 0);
+    gdt_set_entry(&state->entries[1], 0, 0xFFFFF, 0x9A, 0x20);
+    gdt_set_entry(&state->entries[2], 0, 0xFFFFF, 0x92, 0x00);
+    gdt_set_entry(&state->entries[3], 0, 0xFFFFF, 0xFA, 0x20);
+    gdt_set_entry(&state->entries[4], 0, 0xFFFFF, 0xF2, 0x00);
+    state->tss.rsp0 = kernel_stack;
+    state->tss.io_map_base = 104;
+    state->pointer.limit = (5 * 8 + 104 - 1) as uint16;
+    state->pointer.base = (&state->entries[0]) as uint64;
+}

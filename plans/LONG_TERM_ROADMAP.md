@@ -29,10 +29,10 @@ The mission is to establish Kale as a premier, high-performance systems language
 |  - packages/compiler: Self-hosted Kale compiler (Kale written in Kale)        |
 |  - LLVM IR generation, native AOT compilation, and JIT execution              |
 +-------------------------------------------------------------------------------+
-|  Tier 0: Operating System & Hardware Abstraction (sys/*)                     |
-|  - sys/boot: Multiboot / UEFI x86_64 bootloader                               |
-|  - sys/kernel: Microkernel in Kale + ASM                                      |
-|  - sys/drivers: Device drivers (VGA, Framebuffer, VirtIO, Serial)             |
+|  Tier 0: Operating System & Hardware Abstraction (os/*)                      |
+|  - os/boot: Multiboot / UEFI x86_64 bootloader                                |
+|  - os/kernel: Microkernel in Kale + ASM                                       |
+|  - os/drivers: Device drivers (VGA, Framebuffer, VirtIO, Serial)              |
 +-------------------------------------------------------------------------------+
 ```
 
@@ -70,15 +70,15 @@ Transitioning from PythonKale to a fully self-hosting compiler:
 
 ---
 
-## 💻 Pillar 4: Bare-Metal Systems & Kale OS (`sys/*`)
+## 💻 Pillar 4: Bare-Metal Systems & Kale OS (`os/*`)
 Taking Kale directly to bare-metal x86_64 hardware:
-1. **Bootloader (`sys/boot`)**: Stage 1 MBR & Stage 2 protected mode loader transition to 64-bit long mode.
-2. **Kernel (`sys/kernel`)**:
+1. **Bootloader (`os/boot`)**: Stage 1 MBR & Stage 2 protected mode loader transition to 64-bit long mode.
+2. **Kernel (`os/kernel`)**:
    - Memory management: Physical page frame allocator, virtual paging table setup.
    - Interrupt handling: IDT, PIC/APIC controllers, timer interrupts.
    - Process scheduler: Preemptive multitasking, context switching in ASM.
-3. **Framebuffer Display (`sys/drivers`)**: Linear framebuffer driver rendering Kale UI directly onto bare hardware without an underlying OS.
-4. **Terminal & Process Monitor (`sys/sysmon`)**: Bare-metal & native real-time CPU, memory, thread, and process inspection TUI tool.
+3. **Framebuffer Display (`os/drivers`)**: Linear framebuffer driver rendering Kale UI directly onto bare hardware without an underlying OS.
+4. **Terminal & Process Monitor (`sys/sysmon`)**: Native real-time CPU, memory, thread, and process inspection TUI tool.
 5. **DNS Resolver & Diagnostic CLI (`sys/dig`)**: Low-level packet-crafted DNS query tool and resolver for systems networking.
 
 ---
@@ -101,4 +101,3 @@ Taking Kale directly to bare-metal x86_64 hardware:
 4. **Web & Community**:
    - High-throughput CMS & web publishing platform (`apps/blog` - *⏸️ Postponed until explicit command*).
    - Kale Official Showcase Website (`website/`): Next.js Renaissance-themed portal highlighting all monorepo projects, architecture blueprints, interactive API specs, and benchmarks.
-

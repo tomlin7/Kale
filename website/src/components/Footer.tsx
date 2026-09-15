@@ -194,7 +194,7 @@ export function Footer() {
             </div>
             <ul className="space-y-2 text-xs">
               <li>
-                <Link href="/projects/sys" className="text-white/80 hover:text-white transition-colors">
+                <Link href="/projects/os" className="text-white/80 hover:text-white transition-colors">
                   x86_64 Long Mode
                 </Link>
               </li>

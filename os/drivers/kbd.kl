@@ -1,0 +1,78 @@
+// PS/2 set-1 keyboard decoder with a bounded circular event queue.
+// KBD_QUEUE_CAPACITY is 64; one slot is reserved to distinguish full from empty.
+
+struct KeyEvent {
+    uint8 keycode;
+    uint8 pressed;
+    uint8 ascii;
+}
+
+struct Keyboard {
+    KeyEvent[64] queue;
+    int read_index;
+    int write_index;
+    int extended;
+}
+
+fn kbd_init(Keyboard* keyboard) -> void {
+    keyboard->read_index = 0;
+    keyboard->write_index = 0;
+    keyboard->extended = 0;
+}
+
+fn kbd_scancode_to_ascii(code: uint8, shift: int) -> uint8 {
+    if (code == 0x1E) {
+        if (shift != 0) { return 'A' as uint8; }
+        return 'a' as uint8;
+    }
+    if (code == 0x30) {
+        if (shift != 0) { return 'B' as uint8; }
+        return 'b' as uint8;
+    }
+    if (code == 0x2E) {
+        if (shift != 0) { return 'C' as uint8; }
+        return 'c' as uint8;
+    }
+    if (code == 0x20) {
+        if (shift != 0) { return 'D' as uint8; }
+        return 'd' as uint8;
+    }
+    if (code == 0x12) {
+        if (shift != 0) { return 'E' as uint8; }
+        return 'e' as uint8;
+    }
+    if (code == 0x39) { return ' ' as uint8; }
+    if (code == 0x1C) { return '\n' as uint8; }
+    if (code == 0x0E) { return 8 as uint8; }
+    return 0 as uint8;
+}
+
+fn kbd_push(Keyboard* keyboard, KeyEvent event) -> void {
+    int next = (keyboard->write_index + 1) % 64;
+    if (next == keyboard->read_index) { return; }
+    keyboard->queue[keyboard->write_index] = event;
+    keyboard->write_index = next;
+}
+
+fn kbd_poll(Keyboard* keyboard, KeyEvent* event) -> int {
+    if (keyboard->read_index == keyboard->write_index) { return 0; }
+    *event = keyboard->queue[keyboard->read_index];
+    keyboard->read_index = (keyboard->read_index + 1) % 64;
+    return 1;
+}
+
+fn kbd_handle_scancode(Keyboard* keyboard, uint8 scancode, int shift) -> void {
+    if (scancode == 0xE0) {
+        keyboard->extended = 1;
+        return;
+    }
+    int pressed = (scancode & 0x80) == 0;
+    uint8 code = scancode & 0x7F;
+    KeyEvent event;
+    event.keycode = code;
+    event.pressed = pressed as uint8;
+    event.ascii = 0 as uint8;
+    if (pressed != 0) { event.ascii = kbd_scancode_to_ascii(code, shift); }
+    kbd_push(keyboard, event);
+    keyboard->extended = 0;
+}
