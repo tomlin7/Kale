@@ -50,5 +50,6 @@ os/
 - [x] Provide a direct QEMU runner that avoids shell/file-association launchers.
 - [x] Add a disk-loading second stage and transfer control to a long-mode payload.
 - [x] Install a minimal IDT and remap/unmask the PIC for keyboard IRQ1.
+- [x] Buffer keyboard IRQ1 scancodes in a bounded circular queue.
 - [ ] Replace the fixed payload with a linked Kale kernel image.
 - [ ] Add a freestanding Kale linker/runtime profile.

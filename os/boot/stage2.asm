@@ -64,15 +64,30 @@ pic_init:
 
 kbd_isr:
     push rax
+    push rcx
+    push rdx
     in al, 0x60
-    mov [last_scancode], al
+    mov dl, al
+    movzx ecx, byte [kbd_head]
+    mov eax, ecx
+    inc eax
+    and eax, 31
+    cmp al, [kbd_tail]
+    je .ack
+    mov [kbd_queue + rcx], dl
+    mov [kbd_head], al
+.ack:
     mov al, 0x20
     out 0x20, al
+    pop rdx
+    pop rcx
     pop rax
     iretq
 
 msg_stage2: db " [KALE OS] STAGE2 LOADED - LONG MODE KERNEL HANDOFF READY ", 0
-last_scancode: db 0
+kbd_head: db 0
+kbd_tail: db 0
+kbd_queue: times 32 db 0
 align 8
 idt_pointer:
     dw (34 * 16) - 1
