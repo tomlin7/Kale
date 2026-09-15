@@ -1,12 +1,6 @@
 <div align="center">
 
-<img src="logo.svg" height="72" />
-
-```
-╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱
-  K A L E   ·   Autonomous Monorepo Ecosystem   ·   v0.2.0
-╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱ ╱
-```
+# K A L E
 
 A statically-typed compiled language with direct **LLVM 18 IR** emission,<br>
 stack-allocated data structures, zero garbage collection, and sub-millisecond graphics.<br>
@@ -68,18 +62,15 @@ Built entirely in Kale.
 <table>
 <tr>
 <td width="34%">
-<img src="website/public/assets/kaleimages/HQ35R2NaIAAZecs.jpg" width="100%" />
 <sub><b>Kale Compiler</b> · <a href="src/kale/">src/kale/</a><br>
 LLVM 18 IR emitter, Pratt parser, binder, JIT &amp; AOT via Clang/LLD.<br>
 <code>pip install kale-lang</code></sub>
 </td>
 <td width="34%">
-<img src="website/public/assets/kaleimages/HQNfWuaaAAAE3LA.jpg" width="100%" />
 <sub><b>packages/std</b> · <a href="packages/std/">packages/std/</a><br>
 Standard library — collections, strings, I/O, memory, generics, text.</sub>
 </td>
 <td width="34%">
-<img src="website/public/assets/kaleimages/HQQA_vJa0AAgpAa.jpg" width="100%" />
 <sub><b>tools/pkg</b> · <a href="tools/pkg/">tools/pkg/</a><br>
 <code>kale-pm</code> package manager &amp; manifest resolver.</sub>
 </td>
@@ -97,24 +88,20 @@ Standard library — collections, strings, I/O, memory, generics, text.</sub>
 <table>
 <tr>
 <td width="50%">
-<img src="website/public/assets/kaleimages/HQ35R2VakAAcg4J.jpg" width="100%" />
 <sub><b>Kale Editor</b> · <a href="editor/">editor/</a><br>
 144 Hz GPU-accelerated code editor. Piece table buffer, dynamic font atlas,<br>sub-pixel glyph rendering, multi-cursor, lexical syntax highlighting.</sub>
 </td>
 <td width="50%">
-<img src="website/public/assets/kaleimages/HQc8WvxbkAAuSWq.jpg" width="100%" />
 <sub><b>Kale VCS</b> · <a href="vcs/">vcs/</a><br>
 Distributed version control in pure Kale. SHA-1 engine, DAG object store,<br>binary staging index, two-way diff, porcelain CLI: init/add/commit/log.</sub>
 </td>
 </tr>
 <tr>
 <td width="50%">
-<img src="website/public/assets/kaleimages/HRvckHmasAAjgR4.jpg" width="100%" />
 <sub><b>apps/lsp</b> · <a href="apps/lsp/">apps/lsp/</a><br>
 Language Server Protocol server for IDE integration and diagnostics.</sub>
 </td>
 <td width="50%">
-<img src="website/public/assets/kaleimages/HSL0Uk6bsAAylir.jpg" width="100%" />
 <sub><b>apps/kv</b> · <a href="apps/kv/">apps/kv/</a><br>
 High-performance key-value daemon.</sub>
 </td>
@@ -132,17 +119,14 @@ High-performance key-value daemon.</sub>
 <table>
 <tr>
 <td width="34%">
-<img src="website/public/assets/kaleimages/HQfeyisasAAhFNU.jpg" width="100%" />
 <sub><b>libs/render</b> · <a href="libs/render/">libs/render/</a><br>
 2D GPU batch renderer. SDF rounded rects, dynamic stb_truetype font atlas,<br>65k-vertex batches, single draw call per frame.</sub>
 </td>
 <td width="34%">
-<img src="website/public/assets/kaleimages/HQk2PcnaUAE5CfX.jpg" width="100%" />
 <sub><b>libs/ui</b> · <a href="libs/ui/">libs/ui/</a><br>
 Immediate-mode widget toolkit. Buttons, sliders, inputs, scrollers,<br>declarative flow layout, ID-hash interaction state.</sub>
 </td>
 <td width="34%">
-<img src="website/public/assets/kaleimages/HQk2PcYboAAyKNc.jpg" width="100%" />
 <sub><b>libs/framework</b> · <a href="libs/framework/">libs/framework/</a><br>
 App harness — GLFW3 window, OpenGL 3.3 context,<br>frame pacing, unified input dispatch.</sub>
 </td>
@@ -175,12 +159,10 @@ App harness — GLFW3 window, OpenGL 3.3 context,<br>frame pacing, unified input
 <table>
 <tr>
 <td width="50%">
-<img src="website/public/assets/kaleimages/HQX6KvPaEAALJnz.jpg" width="100%" />
 <sub><b>sys/ (Kale OS)</b> · <a href="sys/">sys/</a><br>
 Bare-metal x86_64 kernel. Multiboot loader, IDT dispatcher, 4KB paging,<br>direct linear framebuffer — no host OS dependencies.</sub>
 </td>
 <td width="50%">
-<img src="website/public/assets/kaleimages/HQqY7DDbkAAp-Xf.jpg" width="100%" />
 <sub><b>sys/sysmon</b> · <a href="sys/">sys/</a><br>
 Real-time system monitor &amp; diagnostics dashboard.</sub>
 </td>
