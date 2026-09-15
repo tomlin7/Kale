@@ -37,6 +37,7 @@ editor/
 ### Phase 3: IDE Capabilities (In Progress)
 - Multi-line selection and mouse drag selection.
 - File tree sidebar exploring workspace directories (`packages/std/fs/dir.kl`).
-- Multiple open tabs and horizontal/vertical split buffers.
+- Multiple open tabs with Ctrl+Tab switching and persistent per-tab buffers.
+- Horizontal/vertical split buffers.
 - Search and replace with regular expressions.
 - Command palette fuzzy finder.

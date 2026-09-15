@@ -54,6 +54,7 @@ fn void EditorState.init(string initial_code, string file_path) {
     this->active_command = 0;
     this->tab_count = 1;
     this->active_tab = 0;
+    this->tabs[0].buffer.init(initial_code);
     this->tabs[0].file_path = file_path;
     this->tabs[0].is_dirty = false;
 }
@@ -70,7 +71,20 @@ fn int EditorState.open_buffer(string initial_code, string file_path) {
 
 fn int EditorState.switch_buffer(int tab_index) {
     if (tab_index < 0 || tab_index >= this->tab_count) { return 0; }
+    if (tab_index == this->active_tab) { return 1; }
+    string current_text = this->buffer.get_text();
+    this->tabs[this->active_tab].buffer.destroy();
+    this->tabs[this->active_tab].buffer.init(current_text);
+    this->tabs[this->active_tab].is_dirty = this->is_dirty;
+    string next_text = this->tabs[tab_index].buffer.get_text();
+    this->buffer.destroy();
+    this->buffer.init(next_text);
     this->active_tab = tab_index;
+    this->file_path = this->tabs[tab_index].file_path;
+    this->is_dirty = this->tabs[tab_index].is_dirty;
+    this->cursor_row = 0;
+    this->cursor_col = 0;
+    this->scroll_row = 0;
     return 1;
 }
 
@@ -126,6 +140,7 @@ fn void EditorState.insert_char(string ch) {
     this->record_action(byte_offset, strlen(ch), 1, ch);
     this->cursor_col = this->cursor_col + strlen(ch);
     this->is_dirty = true;
+    this->tabs[this->active_tab].is_dirty = true;
 }
 
 fn void EditorState.insert_newline() {
@@ -142,6 +157,7 @@ fn void EditorState.backspace() {
         this->record_action(byte_offset, 1, 2, deleted);
         this->cursor_col = this->cursor_col - 1;
         this->is_dirty = true;
+        this->tabs[this->active_tab].is_dirty = true;
     } else {
         if (this->cursor_row > 0) {
             // Join with previous line
@@ -163,6 +179,7 @@ fn void EditorState.backspace() {
             this->cursor_row = prev_row;
             this->cursor_col = prev_len;
             this->is_dirty = true;
+            this->tabs[this->active_tab].is_dirty = true;
         }
     }
 }
@@ -177,6 +194,7 @@ fn int EditorState.undo() {
     else { this->buffer.insert(action.offset, action.text); }
     this->redo_count = this->redo_count + 1;
     this->is_dirty = true;
+    this->tabs[this->active_tab].is_dirty = true;
     return 1;
 }
 
@@ -187,11 +205,17 @@ fn int EditorState.redo() {
     if (action.kind == 1) { this->buffer.insert(action.offset, action.text); }
     else { this->buffer.delete(action.offset, action.length); }
     this->is_dirty = true;
+    this->tabs[this->active_tab].is_dirty = true;
     return 1;
 }
 
 fn void EditorState.destroy() {
     this->buffer.destroy();
+    int i = 0;
+    while (i < this->tab_count) {
+        this->tabs[i].buffer.destroy();
+        i = i + 1;
+    }
     if (this->undo_stack != (EditAction*)0) { free(this->undo_stack); }
     if (this->redo_stack != (EditAction*)0) { free(this->redo_stack); }
 }

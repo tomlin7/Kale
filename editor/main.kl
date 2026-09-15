@@ -64,6 +64,7 @@ fn void run_editor() {
     bool was_p_down = false;
     bool was_z_down = false;
     bool was_y_down = false;
+    bool was_tab_down = false;
     bool was_escape_down = false;
 
     while (app.begin_frame() != 0) {
@@ -72,10 +73,12 @@ fn void run_editor() {
         bool shift = ginput.glfwGetKey(app.window, glc.GLFW_KEY_LEFT_SHIFT()) == glc.GLFW_PRESS();
         bool p_down = ginput.glfwGetKey(app.window, glc.GLFW_KEY_P()) == glc.GLFW_PRESS();
         bool y_down = ginput.glfwGetKey(app.window, glc.GLFW_KEY_Y()) == glc.GLFW_PRESS();
+        bool tab_down = ginput.glfwGetKey(app.window, glc.GLFW_KEY_TAB()) == glc.GLFW_PRESS();
         bool z_down = ginput.glfwGetKey(app.window, glc.GLFW_KEY_Z()) == glc.GLFW_PRESS();
         bool p_pressed = p_down && !was_p_down;
         bool z_pressed = z_down && !was_z_down;
         bool y_pressed = y_down && !was_y_down;
+        bool tab_pressed = tab_down && !was_tab_down;
         bool escape_pressed = (ginput.glfwGetKey(app.window, glc.GLFW_KEY_ESCAPE()) == glc.GLFW_PRESS()) && !was_escape_down;
         if (ctrl && p_pressed) {
             if (shift) { cb.command_bar_toggle(&command_bar, 0); }
@@ -84,6 +87,10 @@ fn void run_editor() {
             state.undo();
         } else if (ctrl && y_pressed) {
             state.redo();
+        } else if (ctrl && tab_pressed) {
+            int next_tab = state.active_tab + 1;
+            if (next_tab >= state.tab_count) { next_tab = 0; }
+            state.switch_buffer(next_tab);
         } else if (escape_pressed) {
             command_bar.visible = 0;
         }
@@ -119,6 +126,7 @@ fn void run_editor() {
         was_p_down = p_down;
         was_z_down = z_down;
         was_y_down = y_down;
+        was_tab_down = tab_down;
         was_escape_down = ginput.glfwGetKey(app.window, glc.GLFW_KEY_ESCAPE()) == glc.GLFW_PRESS();
         if (key_delay > 0) {
             key_delay = key_delay - 1;
@@ -149,7 +157,7 @@ fn void run_editor() {
         app.ui_ctx.renderer.push_quad(&app.gl_ctx, 12.0f, 6.0f, 220.0f, header_h - 6.0f, header_tab_bg);
         app.ui_ctx.renderer.push_quad(&app.gl_ctx, 12.0f, 6.0f, 220.0f, 2.0f, header_accent);
 
-        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "editor_main.kl", 28.0f, 14.0f, header_fg);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, state.file_path, 28.0f, 14.0f, header_fg);
 
         // Render Components
         int total_lines = state.buffer.line_count();

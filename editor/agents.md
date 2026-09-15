@@ -32,8 +32,9 @@ Current status: 🟢 Active (GPU Architecture Completed)
 - [x] Syntax token coloring with per-vertex RGBA interpolation
 - [x] Interactive gutter with line numbers and status bar
 - [ ] Multi-line selection and mouse drag selection
-- [ ] Command palette & fuzzy file opener (`editor/command_bar.kl`)
-- [ ] Undo / Redo history tracking in piece table
+- [x] Command palette & fuzzy file opener (`editor/command_bar.kl`)
+- [x] Undo / Redo history tracking in piece table
+- [x] Multiple persistent buffers with Ctrl+Tab switching
 - [ ] Search / Replace bar
 
 ## Future Plans

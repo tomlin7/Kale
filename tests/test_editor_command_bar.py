@@ -27,3 +27,5 @@ def test_editor_state_exposes_history_and_multi_action_hooks():
     assert "record_action" in source
     assert "fn int EditorState.undo()" in source
     assert "fn int EditorState.redo()" in source
+    assert "tabs[0].buffer.init" in source
+    assert "tabs[this->active_tab].buffer.destroy" in source
