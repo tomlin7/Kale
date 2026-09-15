@@ -18,7 +18,11 @@ def test_os_boot_script_builds_a_bios_disk_image(tmp_path):
     )
     assert result.returncode == 0, result.stderr
     image = output / "kale-os.img"
+    stage2 = output / "kale-os-stage2.bin"
     assert image.exists()
+    assert stage2.exists()
+    assert stage2.stat().st_size == 2048
+    assert b"STAGE2 LOADED" in stage2.read_bytes()
     assert image.stat().st_size == 1474560
 
 

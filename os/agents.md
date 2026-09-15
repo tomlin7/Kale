@@ -7,7 +7,7 @@
 Bare-metal x86_64 operating system, bootloader, and microkernel written in Kale and assembly, demonstrating freestanding language execution.
 
 ## Status
-Current status: 🟡 Bootable long-mode milestone complete; kernel integration in progress
+Current status: 🟡 Stage-two long-mode handoff complete; linked kernel integration in progress
 
 ## Dependencies
 - Kale compiler (with freestanding / `-ffreestanding` bare-metal target)
@@ -22,18 +22,18 @@ pwsh os/boot/run-qemu.ps1
 pwsh os/boot/run-qemu.ps1 -Display none
 ```
 
-The current bootable artifact is intentionally self-contained: it enters protected
-mode and long mode, establishes identity paging, and prints a VGA banner. The Kale
-kernel sources are the next freestanding integration target; the host compiler does
-not yet expose a `--freestanding` linker mode.
+The bootable artifact loads a fixed four-sector stage-two payload at `0x8000`,
+enters protected mode and long mode, and transfers control to that payload. The
+Kale kernel sources are the next freestanding integration target; the host
+compiler does not yet expose a `--freestanding` linker mode.
 
 ## Coding Conventions
 - No standard library (`no_std` / freestanding mode).
 - Strict hardware memory alignment and volatile memory writes.
 
 ## Short-term Milestones
-- [ ] Implement Stage 1 MBR bootloader in assembly.
-- [ ] Configure GDT and enter 64-bit Long Mode.
+- [x] Implement Stage 1 MBR bootloader in assembly.
+- [x] Configure GDT, enter 64-bit Long Mode, and hand off to stage two.
 - [ ] Initialize Serial COM1 driver and VGA text mode buffer in Kale.
 - [ ] Configure IDT and timer interrupts.
 

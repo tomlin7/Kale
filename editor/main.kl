@@ -60,6 +60,7 @@ fn void run_editor() {
     rmath.Color header_accent = rmath.color_rgba(0.20f, 0.65f, 0.50f, 1.0f);
 
     int key_delay = 0;
+    int command_key_delay = 0;
     bool was_p_down = false;
     bool was_z_down = false;
     bool was_y_down = false;
@@ -92,9 +93,27 @@ fn void run_editor() {
             } else if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_DOWN()) == glc.GLFW_PRESS()) {
                 cb.command_bar_handle_navigation(&command_bar, glc.GLFW_KEY_DOWN());
             } else if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_ENTER()) == glc.GLFW_PRESS()) {
-                cb.command_bar_handle_navigation(&command_bar, glc.GLFW_KEY_ENTER());
+                string accepted = cb.command_bar_accept(&command_bar);
+                if (accepted == ">save") { state.is_dirty = false; }
+            } else if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_BACKSPACE()) == glc.GLFW_PRESS()) {
+                if (command_key_delay <= 0) {
+                    cb.command_bar_backspace(&command_bar);
+                    command_key_delay = 5;
+                }
+            } else if (command_key_delay <= 0) {
+                int key_code = glc.GLFW_KEY_A();
+                while (key_code <= glc.GLFW_KEY_Z()) {
+                    if (ginput.glfwGetKey(app.window, key_code) == glc.GLFW_PRESS()) {
+                        char typed = (char)(key_code - glc.GLFW_KEY_A() + 97);
+                        cb.command_bar_append_char(&command_bar, typed);
+                        command_key_delay = 5;
+                        break;
+                    }
+                    key_code = key_code + 1;
+                }
             }
         }
+        if (command_key_delay > 0) { command_key_delay = command_key_delay - 1; }
         was_p_down = p_down;
         was_z_down = z_down;
         was_y_down = y_down;

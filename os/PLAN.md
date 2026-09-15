@@ -33,7 +33,7 @@ os/
 ## 3. Boot Pipeline
 1. **Bootloader (`os/boot`)**:
    - BIOS loads MBR sector at `0x7C00`.
-   - Enables A20 line, loads kernel sectors into RAM.
+   - The boot sector reads a fixed 4-sector stage-two payload to `0x8000`.
    - Sets up temporary page tables and identity maps lower 2MB.
    - Enters Long Mode (64-bit), jumps to `kmain()`.
 2. **Kernel Initialization (`os/kernel/main.kl`)**:
@@ -48,5 +48,6 @@ os/
 - [x] Assemble a fixed 512-byte BIOS boot sector.
 - [x] Boot the sector in QEMU and enter x86_64 long mode.
 - [x] Provide a direct QEMU runner that avoids shell/file-association launchers.
-- [ ] Add a disk-loading second stage and transfer control to a linked kernel image.
+- [x] Add a disk-loading second stage and transfer control to a long-mode payload.
+- [ ] Replace the fixed payload with a linked Kale kernel image.
 - [ ] Add a freestanding Kale linker/runtime profile.

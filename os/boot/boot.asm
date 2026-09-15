@@ -16,6 +16,19 @@ start:
     mov sp, 0x7C00              ; Setup stack below bootloader
 
     cld
+    mov [boot_drive], dl
+
+    ; Load the second stage from sectors 2-5 at physical address 0x8000.
+    ; The build script places stage2 immediately after this boot sector.
+    mov ah, 0x02
+    mov al, 4
+    mov ch, 0
+    mov cl, 2
+    mov dh, 0
+    mov dl, [boot_drive]
+    mov bx, 0x8000
+    int 0x13
+    jc disk_error
 
     ; Fast A20 Gate Enable
     in al, 0x92
@@ -32,6 +45,21 @@ start:
 
     ; Far jump to enter 32-bit mode
     jmp CODE_SEG_32:init_pm32
+
+disk_error:
+    mov si, msg_disk_error
+.print_error:
+    lodsb
+    test al, al
+    jz .halt_real
+    mov ah, 0x0E
+    int 0x10
+    jmp .print_error
+
+.halt_real:
+    cli
+    hlt
+    jmp .halt_real
 
 ; ==============================================================================
 ; 32-Bit Protected Mode
@@ -103,22 +131,9 @@ init_lm64:
     mov ss, ax
     mov rsp, 0x00200000         ; 2MB stack top
 
-    ; Write banner to VGA text buffer at 0xB8000
-    mov rdi, 0xB8000
-    mov rsi, msg_kale_kernel
-    mov ah, 0x4F                ; White on Red (Imperial Crimson)
-
-.print_vga:
-    lodsb
-    test al, al
-    jz .halt
-    mov [rdi], ax
-    add rdi, 2
-    jmp .print_vga
-
-.halt:
-    hlt
-    jmp .halt
+    ; Transfer control to the loaded second stage.
+    mov rax, 0x8000
+    jmp rax
 
 ; ==============================================================================
 ; Global Descriptor Tables
@@ -152,7 +167,8 @@ gdt64_descriptor:
 CODE_SEG_64 equ 0x08
 DATA_SEG_64 equ 0x10
 
-msg_kale_kernel: db " [KALE OS] 64-BIT LONG MODE ACTIVE. MICROKERNEL V0.0.1 ", 0
+boot_drive: db 0
+msg_disk_error: db "KALE OS: stage2 disk read failed", 0
 
 ; Pad up to 510 bytes, then append MBR boot signature 0xAA55
 times 510 - ($ - $$) db 0

@@ -17,6 +17,7 @@ struct CommandBar {
     char* input_buffer;
     CommandItem[16] items;
     int input_length;
+    int visible_count;
 }
 
 fn void command_bar_init(CommandBar* bar, char* input_buffer) {
@@ -26,6 +27,7 @@ fn void command_bar_init(CommandBar* bar, char* input_buffer) {
     bar->item_count = 4;
     bar->input_buffer = input_buffer;
     bar->input_length = 0;
+    bar->visible_count = 4;
     bar->items[0].name = "Format document"; bar->items[0].query = ">format";
     bar->items[1].name = "Save file"; bar->items[1].query = ">save";
     bar->items[2].name = "Open file"; bar->items[2].query = ">open";
@@ -38,6 +40,23 @@ fn void command_bar_reset(CommandBar* bar) {
         bar->input_buffer[0] = (char)0;
     }
     command_bar_filter(bar, "");
+}
+
+fn int command_bar_append_char(CommandBar* bar, char value) {
+    if (bar->input_buffer == (char*)0 || bar->input_length >= 254) { return 0; }
+    bar->input_buffer[bar->input_length] = value;
+    bar->input_length = bar->input_length + 1;
+    bar->input_buffer[bar->input_length] = (char)0;
+    command_bar_filter(bar, (string)bar->input_buffer);
+    return 1;
+}
+
+fn int command_bar_backspace(CommandBar* bar) {
+    if (bar->input_length <= 0 || bar->input_buffer == (char*)0) { return 0; }
+    bar->input_length = bar->input_length - 1;
+    bar->input_buffer[bar->input_length] = (char)0;
+    command_bar_filter(bar, (string)bar->input_buffer);
+    return 1;
 }
 
 fn int command_bar_handle_navigation(CommandBar* bar, int key) {
@@ -62,7 +81,10 @@ fn int command_bar_handle_navigation(CommandBar* bar, int key) {
 }
 
 fn void command_bar_toggle(CommandBar* bar, int file_mode) {
-    if (bar->visible == 0) { bar->visible = 1; }
+    if (bar->visible == 0) {
+        bar->visible = 1;
+        command_bar_reset(bar);
+    }
     else { bar->visible = 0; }
     bar->file_mode = file_mode;
     bar->selected = 0;
@@ -88,19 +110,34 @@ fn int command_bar_filter(CommandBar* bar, string query) {
         if (bar->items[i].visible != 0) { matches = matches + 1; }
         i = i + 1;
     }
+    bar->visible_count = matches;
     bar->selected = 0;
     return matches;
 }
 
 fn void command_bar_move(CommandBar* bar, int delta) {
-    if (bar->item_count == 0) { return; }
-    bar->selected = bar->selected + delta;
-    if (bar->selected < 0) { bar->selected = bar->item_count - 1; }
-    if (bar->selected >= bar->item_count) { bar->selected = 0; }
+    if (bar->visible_count == 0) { return; }
+    int visible_index = 0;
+    int i = 0;
+    while (i < bar->selected) {
+        if (bar->items[i].visible != 0) { visible_index = visible_index + 1; }
+        i = i + 1;
+    }
+    visible_index = visible_index + delta;
+    if (visible_index < 0) { visible_index = bar->visible_count - 1; }
+    if (visible_index >= bar->visible_count) { visible_index = 0; }
+    i = 0;
+    while (i < bar->item_count) {
+        if (bar->items[i].visible != 0) {
+            if (visible_index == 0) { bar->selected = i; return; }
+            visible_index = visible_index - 1;
+        }
+        i = i + 1;
+    }
 }
 
 fn string command_bar_accept(CommandBar* bar) {
-    if (bar->visible == 0 || bar->item_count == 0) { return ""; }
+    if (bar->visible == 0 || bar->visible_count == 0) { return ""; }
     bar->visible = 0;
     return bar->items[bar->selected].query;
 }
