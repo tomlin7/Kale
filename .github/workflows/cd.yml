@@ -1,0 +1,41 @@
+name: CD – Publish to PyPI
+
+on:
+  push:
+    tags:
+      - "v*.*.*"        # trigger only on version tags like v0.2.0
+
+permissions:
+  id-token: write      # needed for PyPI trusted publishing
+  contents: write      # needed to create GitHub Releases
+
+jobs:
+  publish:
+    name: Build & publish
+    runs-on: ubuntu-latest
+    environment: pypi          # optional: protect with an env secret/approval
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install LLVM (needed by llvmlite build)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y clang lld llvm
+
+      - name: Build distribution
+        run: uv build
+
+      - name: Publish to PyPI (trusted publishing)
+        uses: pypa/gh-action-pypi-publish@release/v1
+        # No API token needed – uses OIDC trusted publishing.
+        # Configure at https://pypi.org/manage/project/kale-lang/settings/publishing/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
