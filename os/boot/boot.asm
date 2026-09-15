@@ -19,7 +19,9 @@ start:
     mov [boot_drive], dl
 
     ; Load the second stage from sectors 2-5 at physical address 0x8000.
-    ; The build script places stage2 immediately after this boot sector.
+    ; Retry after resetting the BIOS disk when a transient read fails.
+    mov si, 3
+.read_stage2:
     mov ah, 0x02
     mov al, 4
     mov ch, 0
@@ -28,7 +30,14 @@ start:
     mov dl, [boot_drive]
     mov bx, 0x8000
     int 0x13
-    jc disk_error
+    jnc stage2_loaded
+    xor ah, ah
+    int 0x13
+    dec si
+    jnz .read_stage2
+    jmp disk_error
+
+stage2_loaded:
 
     ; Fast A20 Gate Enable
     in al, 0x92

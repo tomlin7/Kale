@@ -59,6 +59,19 @@ fn int command_bar_backspace(CommandBar* bar) {
     return 1;
 }
 
+fn int command_bar_handle_key(CommandBar* bar, int key, int shift) {
+    if (key >= 65 && key <= 90) {
+        return command_bar_append_char(bar, (char)(key - 65 + 97));
+    }
+    if (key >= 48 && key <= 57) {
+        return command_bar_append_char(bar, (char)key);
+    }
+    if (key == 32) { return command_bar_append_char(bar, (char)32); }
+    if (key == 45) { return command_bar_append_char(bar, (char)45); }
+    if (key == 46 && shift != 0) { return command_bar_append_char(bar, (char)62); }
+    return 0;
+}
+
 fn int command_bar_handle_navigation(CommandBar* bar, int key) {
     if (bar->visible == 0) { return 0; }
     if (key == 265) {

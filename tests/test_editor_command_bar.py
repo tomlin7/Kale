@@ -14,6 +14,7 @@ def test_command_bar_filters_and_selects_commands():
     assert "command_bar_reset" in source
     assert "command_bar_append_char" in source
     assert "command_bar_backspace" in source
+    assert "command_bar_handle_key" in source
     assert "visible_count" in source
     assert "Format document" in source
     assert "Open file" in source

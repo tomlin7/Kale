@@ -101,13 +101,15 @@ fn void run_editor() {
                     command_key_delay = 5;
                 }
             } else if (command_key_delay <= 0) {
-                int key_code = glc.GLFW_KEY_A();
+                int key_code = glc.GLFW_KEY_SPACE();
+                int shift_key = 0;
+                if (shift) { shift_key = 1; }
                 while (key_code <= glc.GLFW_KEY_Z()) {
                     if (ginput.glfwGetKey(app.window, key_code) == glc.GLFW_PRESS()) {
-                        char typed = (char)(key_code - glc.GLFW_KEY_A() + 97);
-                        cb.command_bar_append_char(&command_bar, typed);
-                        command_key_delay = 5;
-                        break;
+                        if (cb.command_bar_handle_key(&command_bar, key_code, shift_key) != 0) {
+                            command_key_delay = 5;
+                            break;
+                        }
                     }
                     key_code = key_code + 1;
                 }
