@@ -101,6 +101,10 @@ fn void emitter_emit_int(CodeEmitter* e, int val) {
         emitter_emit_char(e, (char)48);
         return;
     }
+    if (val == -9223372036854775807 - 1) {
+        emitter_emit(e, "-9223372036854775808LL");
+        return;
+    }
     int v = val;
     if (v < 0) {
         emitter_emit_char(e, (char)45);
@@ -140,6 +144,7 @@ fn string c_type(string t) {
     if (strcmp(t, "float") == 0) { return "double"; }
     if (strcmp(t, "bool") == 0) { return "bool"; }
     if (strcmp(t, "string") == 0) { return "const char*"; }
+    if (strcmp(t, "char") == 0) { return "char"; }
     if (strcmp(t, "void") == 0) { return "void"; }
     if (strcmp(t, "") == 0) { return "void"; }
     return t;
@@ -170,6 +175,13 @@ fn void emitter_emit_expr(CodeEmitter* e, ast.ASTNode* expr) {
 
     if (expr->kind == ast.AST_LITERAL()) {
         emitter_emit_int(e, expr->int_val);
+        return;
+    }
+
+    if (expr->kind == ast.AST_STRING()) {
+        emitter_emit(e, "\"");
+        emitter_emit(e, expr->text);
+        emitter_emit(e, "\"");
         return;
     }
 

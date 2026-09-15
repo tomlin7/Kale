@@ -104,6 +104,7 @@ fn int type_from_name(string name) {
     if (strcmp(name, "float") == 0) { return TYPE_FLOAT(); }
     if (strcmp(name, "bool") == 0) { return TYPE_BOOL(); }
     if (strcmp(name, "string") == 0) { return TYPE_STRING(); }
+    if (strcmp(name, "char") == 0) { return TYPE_INT(); }
     if (strcmp(name, "void") == 0) { return TYPE_VOID(); }
     if (strcmp(name, "var") == 0) { return TYPE_UNKNOWN(); }
     if (strcmp(name, "let") == 0) { return TYPE_UNKNOWN(); }
@@ -158,6 +159,10 @@ fn int checker_check_expr(Checker* c, ast.ASTNode* expr) {
         return TYPE_INT();
     }
 
+    if (expr->kind == ast.AST_STRING()) {
+        return TYPE_STRING();
+    }
+
     if (expr->kind == ast.AST_IDENT()) {
         Symbol* sym = scope_lookup(c->current_scope, expr->text);
         if (sym == (Symbol*)0) {
@@ -170,7 +175,15 @@ fn int checker_check_expr(Checker* c, ast.ASTNode* expr) {
     if (expr->kind == ast.AST_UNARY()) {
         int operand_type = checker_check_expr(c, expr->left);
         if (expr->op == tok.TOK_BANG()) {
+            if (operand_type != TYPE_BOOL() && operand_type != TYPE_UNKNOWN()) {
+                c->error_count = c->error_count + 1;
+            }
             return TYPE_BOOL();
+        }
+        if (expr->op == tok.TOK_MINUS()) {
+            if (operand_type != TYPE_INT() && operand_type != TYPE_FLOAT() && operand_type != TYPE_UNKNOWN()) {
+                c->error_count = c->error_count + 1;
+            }
         }
         return operand_type;
     }
@@ -178,6 +191,9 @@ fn int checker_check_expr(Checker* c, ast.ASTNode* expr) {
     if (expr->kind == ast.AST_BINARY()) {
         int lt = checker_check_expr(c, expr->left);
         int rt = checker_check_expr(c, expr->right);
+        if (expr->op == tok.TOK_PLUS() && lt == TYPE_STRING() && rt == TYPE_STRING()) {
+            return TYPE_STRING();
+        }
         if (expr->op == tok.TOK_PLUS() || expr->op == tok.TOK_MINUS() ||
             expr->op == tok.TOK_STAR() || expr->op == tok.TOK_SLASH() ||
             expr->op == tok.TOK_PERCENT()) {

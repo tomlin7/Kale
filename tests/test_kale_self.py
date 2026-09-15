@@ -200,5 +200,39 @@ class TestKaleSelfHosting(unittest.TestCase):
         res = self.run_kale_jit(code)
         self.assertEqual(res, 246)
 
+    def test_kale_self_parser_typed_var_and_string(self):
+        code = """
+        import "src/kale_self/token.kl" as tok;
+        import "src/kale_self/lexer.kl" as lx;
+        import "src/kale_self/ast.kl" as ast;
+        import "src/kale_self/parser.kl" as ps;
+
+        string src = "fn int run() { string s = \\"hello\\"; int count = 10; return count; }";
+        lx.Lexer* l = lx.lexer_new(src);
+        ps.Parser* p = ps.parser_new(l);
+        ast.ASTNode* prog = ps.parser_parse_program(p);
+
+        if (prog == (ast.ASTNode*)0) { return 1; }
+        ast.ASTNode* fn_node = prog->body;
+        if (fn_node == (ast.ASTNode*)0) { return 2; }
+        ast.ASTNode* body = fn_node->body;
+        if (body == (ast.ASTNode*)0) { return 3; }
+
+        ast.ASTNode* s1 = body->body; // string s = "hello";
+        if (s1 == (ast.ASTNode*)0 || s1->kind != ast.AST_VAR_DECL()) { return 4; }
+        if (s1->left == (ast.ASTNode*)0 || s1->left->kind != ast.AST_STRING()) { return 5; }
+
+        ast.ASTNode* s2 = s1->next; // int count = 10;
+        if (s2 == (ast.ASTNode*)0 || s2->kind != ast.AST_VAR_DECL()) { return 6; }
+
+        ast.ast_free(prog);
+        ps.parser_free(p);
+        lx.lexer_free(l);
+        return 777;
+        """
+        res = self.run_kale_jit(code)
+        self.assertEqual(res, 777)
+
 if __name__ == "__main__":
     unittest.main()
+

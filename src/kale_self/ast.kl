@@ -20,6 +20,7 @@ fn int AST_PARAM() { return 16; }
 fn int AST_FOR() { return 17; }
 fn int AST_IMPORT() { return 18; }
 fn int AST_FIELD_DECL() { return 19; }
+fn int AST_STRING() { return 20; }
 
 struct ASTNode {
     int kind;
@@ -54,6 +55,12 @@ fn ASTNode* ast_node_new(int kind) {
 fn ASTNode* ast_literal(int val) {
     ASTNode* n = ast_node_new(AST_LITERAL());
     n->int_val = val;
+    return n;
+}
+
+fn ASTNode* ast_string(string val) {
+    ASTNode* n = ast_node_new(AST_STRING());
+    n->text = val;
     return n;
 }
 

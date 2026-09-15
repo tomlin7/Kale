@@ -108,5 +108,34 @@ class TestStdMem(unittest.TestCase):
         res = self.run_kale_jit(code)
         self.assertEqual(res, 99)
 
+    def test_arena_multi_block_reset_reuse(self):
+        code = """
+        import "packages/std/core/mem.kl" as mem;
+
+        mem.Arena arena;
+        arena.init(64);
+
+        // First pass: allocate across 2 blocks
+        char* a1 = arena.alloc_bytes(40);
+        char* a2 = arena.alloc_bytes(40);
+        int blks_pass1 = arena.get_block_count();
+
+        // Reset and reallocate same workload
+        arena.reset();
+        char* b1 = arena.alloc_bytes(40);
+        char* b2 = arena.alloc_bytes(40);
+        int blks_pass2 = arena.get_block_count();
+
+        arena.destroy();
+
+        // block_count should not increase on pass 2 because existing blocks are reused
+        if (blks_pass1 == 2 && blks_pass2 == 2) {
+            return 123;
+        }
+        return blks_pass2;
+        """
+        res = self.run_kale_jit(code)
+        self.assertEqual(res, 123)
+
 if __name__ == "__main__":
     unittest.main()

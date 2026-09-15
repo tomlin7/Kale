@@ -57,10 +57,16 @@ class TestStdFormat(unittest.TestCase):
         string h0 = fmt.format_hex(0);
         string h255 = fmt.format_hex(255);
         string h42 = fmt.format_hex(42);
+        string hneg1 = fmt.format_hex(-1);
+        string hneg42 = fmt.format_hex(-42);
+        string hneg255 = fmt.format_hex(-255);
 
         if (strcmp(h0, "0x0") != 0) { return 1; }
         if (strcmp(h255, "0xFF") != 0) { return 2; }
         if (strcmp(h42, "0x2A") != 0) { return 3; }
+        if (strcmp(hneg1, "-0x1") != 0) { return 4; }
+        if (strcmp(hneg42, "-0x2A") != 0) { return 5; }
+        if (strcmp(hneg255, "-0xFF") != 0) { return 6; }
 
         return 77;
         """

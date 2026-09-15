@@ -65,6 +65,11 @@ fn ast.ASTNode* parser_parse_primary(Parser* p) {
         return ast.ast_literal(t->int_val);
     }
 
+    if (parser_check(p, tok.TOK_STRING())) {
+        tok.Token* t = parser_advance(p);
+        return ast.ast_string(t->text);
+    }
+
     if (parser_check(p, tok.TOK_TRUE())) {
         parser_advance(p);
         return ast.ast_literal(1);
@@ -182,6 +187,16 @@ fn ast.ASTNode* parser_parse_block(Parser* p) {
     return block;
 }
 
+fn bool is_type_name(string s) {
+    if (strcmp(s, "int") == 0) { return true; }
+    if (strcmp(s, "float") == 0) { return true; }
+    if (strcmp(s, "bool") == 0) { return true; }
+    if (strcmp(s, "string") == 0) { return true; }
+    if (strcmp(s, "char") == 0) { return true; }
+    if (strcmp(s, "void") == 0) { return true; }
+    return false;
+}
+
 fn ast.ASTNode* parser_parse_statement(Parser* p) {
     // Return statement: return <expr>;
     if (parser_match(p, tok.TOK_RETURN())) {
@@ -263,6 +278,27 @@ fn ast.ASTNode* parser_parse_statement(Parser* p) {
         }
         parser_consume(p, tok.TOK_SEMICOLON());
         return ast.ast_var_decl("var", name, init_expr);
+    }
+
+    // Typed variable declaration: int x = <expr>; or char* p; etc.
+    if (parser_check(p, tok.TOK_IDENT())) {
+        string t_name = p->current->text;
+        if (is_type_name(t_name)) {
+            tok.Token* type_tok = parser_advance(p);
+            while (parser_match(p, tok.TOK_STAR())) {
+            }
+            tok.Token* id = parser_consume(p, tok.TOK_IDENT());
+            string name = "";
+            if (id != (tok.Token*)0) {
+                name = id->text;
+            }
+            ast.ASTNode* init_expr = (ast.ASTNode*)0;
+            if (parser_match(p, tok.TOK_EQUALS())) {
+                init_expr = parser_parse_expression(p);
+            }
+            parser_consume(p, tok.TOK_SEMICOLON());
+            return ast.ast_var_decl(type_tok->text, name, init_expr);
+        }
     }
 
     // Expression statement

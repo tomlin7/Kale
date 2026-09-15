@@ -10,6 +10,7 @@ struct ArenaBlock {
 
 struct Arena {
     ArenaBlock* head;
+    ArenaBlock* current;
     int default_block_size;
     int total_allocated;
     int block_count;
@@ -31,11 +32,15 @@ fn void Arena.init(int default_block_size) {
     first->next = (ArenaBlock*)0;
 
     this->head = first;
+    this->current = first;
 }
 
 fn char* Arena.alloc_bytes(int bytes) {
     if (bytes <= 0) {
         return (char*)0;
+    }
+    if (this->head == (ArenaBlock*)0) {
+        this->init(1024);
     }
 
     // 8-byte alignment
@@ -45,12 +50,20 @@ fn char* Arena.alloc_bytes(int bytes) {
         aligned = bytes + (8 - rem);
     }
 
-    // Check if current head block has enough space
-    if (this->head->used + aligned <= this->head->size) {
-        char* ptr = &this->head->memory[this->head->used];
-        this->head->used = this->head->used + aligned;
+    // Check if current block has enough space
+    if (this->current->used + aligned <= this->current->size) {
+        char* ptr = &this->current->memory[this->current->used];
+        this->current->used = this->current->used + aligned;
         this->total_allocated = this->total_allocated + aligned;
         return ptr;
+    }
+
+    // Current block full: check if next block already exists and has enough capacity
+    if (this->current->next != (ArenaBlock*)0 && this->current->next->size >= aligned) {
+        this->current = this->current->next;
+        this->current->used = aligned;
+        this->total_allocated = this->total_allocated + aligned;
+        return this->current->memory;
     }
 
     // Need a new block
@@ -63,9 +76,10 @@ fn char* Arena.alloc_bytes(int bytes) {
     new_block->memory = alloc(char, next_size);
     new_block->size = next_size;
     new_block->used = aligned;
-    new_block->next = this->head;
+    new_block->next = this->current->next;
+    this->current->next = new_block;
+    this->current = new_block;
 
-    this->head = new_block;
     this->block_count = this->block_count + 1;
     this->total_allocated = this->total_allocated + aligned;
 
@@ -79,6 +93,7 @@ fn void Arena.reset() {
         cur->used = 0;
         cur = cur->next;
     }
+    this->current = this->head;
     this->total_allocated = 0;
 }
 
@@ -102,6 +117,7 @@ fn void Arena.destroy() {
         cur = next;
     }
     this->head = (ArenaBlock*)0;
+    this->current = (ArenaBlock*)0;
     this->total_allocated = 0;
     this->block_count = 0;
 }

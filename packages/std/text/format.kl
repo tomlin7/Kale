@@ -92,8 +92,16 @@ fn string format_hex(int val) {
     if (val == 0) {
         return "0x0";
     }
+    if (val == -9223372036854775807 - 1) {
+        return "-0x8000000000000000";
+    }
+    bool is_neg = false;
     int v = val;
-    char* digits = alloc(char, 20);
+    if (v < 0) {
+        is_neg = true;
+        v = 0 - v;
+    }
+    char* digits = alloc(char, 24);
     int count = 0;
     while (v > 0) {
         int rem = v % 16;
@@ -102,15 +110,27 @@ fn string format_hex(int val) {
         v = v / 16;
     }
 
-    char* buf = (char*)malloc(count + 3);
-    buf[0] = (char)48; // '0'
-    buf[1] = (char)120; // 'x'
+    int prefix_len = 2;
+    if (is_neg) {
+        prefix_len = 3;
+    }
+    char* buf = (char*)malloc(prefix_len + count + 1);
+    int idx = 0;
+    if (is_neg) {
+        buf[idx] = (char)45; // '-'
+        idx = idx + 1;
+    }
+    buf[idx] = (char)48; // '0'
+    idx = idx + 1;
+    buf[idx] = (char)120; // 'x'
+    idx = idx + 1;
+
     int k = 0;
     while (k < count) {
-        buf[2 + k] = digits[count - 1 - k];
+        buf[idx + k] = digits[count - 1 - k];
         k = k + 1;
     }
-    buf[count + 2] = (char)0;
+    buf[prefix_len + count] = (char)0;
     free(digits);
     return (string)buf;
 }

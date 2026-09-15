@@ -204,5 +204,50 @@ class TestKaleSelfChecker(unittest.TestCase):
         res = self.run_kale_jit(code)
         self.assertEqual(res, 55)
 
+    def test_checker_strings_and_unary_type_errors(self):
+        code = """
+        import "src/kale_self/lexer.kl" as lx;
+        import "src/kale_self/ast.kl" as ast;
+        import "src/kale_self/parser.kl" as ps;
+        import "src/kale_self/checker.kl" as chk;
+
+        // Valid string usage
+        string valid_src = "fn string greet() { string msg = \\"hello\\"; return msg; }";
+        lx.Lexer* l1 = lx.lexer_new(valid_src);
+        ps.Parser* p1 = ps.parser_new(l1);
+        ast.ASTNode* prog1 = ps.parser_parse_program(p1);
+
+        chk.Checker* c1 = chk.checker_new();
+        int errs1 = chk.checker_check_program(c1, prog1);
+
+        ast.ast_free(prog1);
+        chk.checker_free(c1);
+        ps.parser_free(p1);
+        lx.lexer_free(l1);
+
+        if (errs1 != 0) { return 1; }
+
+        // Invalid unary: !42 (not bool)
+        string invalid_src = "fn int bad() { return !42; }";
+        lx.Lexer* l2 = lx.lexer_new(invalid_src);
+        ps.Parser* p2 = ps.parser_new(l2);
+        ast.ASTNode* prog2 = ps.parser_parse_program(p2);
+
+        chk.Checker* c2 = chk.checker_new();
+        int errs2 = chk.checker_check_program(c2, prog2);
+
+        ast.ast_free(prog2);
+        chk.checker_free(c2);
+        ps.parser_free(p2);
+        lx.lexer_free(l2);
+
+        if (errs2 > 0) {
+            return 99;
+        }
+        return 2;
+        """
+        res = self.run_kale_jit(code)
+        self.assertEqual(res, 99)
+
 if __name__ == "__main__":
     unittest.main()

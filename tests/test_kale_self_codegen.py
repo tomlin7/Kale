@@ -176,5 +176,72 @@ class TestKaleSelfCodegen(unittest.TestCase):
         res = self.run_kale_jit(code)
         self.assertEqual(res, 100)
 
+    def test_emitter_string_literal_and_int64_min(self):
+        code = """
+        import "src/kale_self/ast.kl" as ast;
+        import "src/kale_self/codegen.kl" as cg;
+        extern int strcmp(string s1, string s2);
+
+        cg.CodeEmitter* e = cg.emitter_new();
+        ast.ASTNode* str_node = ast.ast_string("kale_lang");
+        cg.emitter_emit_expr(e, str_node);
+        string s_out = cg.emitter_to_string(e);
+        ast.ast_free(str_node);
+        cg.emitter_free(e);
+
+        if (strcmp(s_out, "\\"kale_lang\\"") != 0) {
+            return 1;
+        }
+
+        cg.CodeEmitter* e2 = cg.emitter_new();
+        cg.emitter_emit_int(e2, -9223372036854775807 - 1);
+        string min_out = cg.emitter_to_string(e2);
+        cg.emitter_free(e2);
+
+        if (strcmp(min_out, "-9223372036854775808LL") != 0) {
+            return 2;
+        }
+
+        return 42;
+        """
+        res = self.run_kale_jit(code)
+        self.assertEqual(res, 42)
+
+    def test_emitter_typed_variable_declaration_pipeline(self):
+        code = """
+        import "src/kale_self/lexer.kl" as lx;
+        import "src/kale_self/ast.kl" as ast;
+        import "src/kale_self/parser.kl" as ps;
+        import "src/kale_self/checker.kl" as chk;
+        import "src/kale_self/codegen.kl" as cg;
+        extern int strstr(string haystack, string needle);
+
+        string src = "fn int compute() { int x = 42; return x; }";
+        lx.Lexer* l = lx.lexer_new(src);
+        ps.Parser* p = ps.parser_new(l);
+        ast.ASTNode* prog = ps.parser_parse_program(p);
+
+        chk.Checker* c = chk.checker_new();
+        int errs = chk.checker_check_program(c, prog);
+
+        cg.CodeEmitter* e = cg.emitter_new();
+        cg.emitter_emit_program(e, prog);
+        string out = cg.emitter_to_string(e);
+
+        ast.ast_free(prog);
+        chk.checker_free(c);
+        ps.parser_free(p);
+        lx.lexer_free(l);
+        cg.emitter_free(e);
+
+        if (errs == 0 && strstr(out, "int64_t x = 42;") != 0) {
+            return 88;
+        }
+        return 1;
+        """
+        res = self.run_kale_jit(code)
+        self.assertEqual(res, 88)
+
 if __name__ == "__main__":
     unittest.main()
+
