@@ -1,0 +1,20 @@
+// Bump allocator used during early boot before the full kernel heap exists.
+
+struct EarlyHeap {
+    uint64 base;
+    uint64 limit;
+    uint64 cursor;
+}
+
+fn void early_heap_init(EarlyHeap* heap, uint64 base, uint64 size) {
+    heap->base = base;
+    heap->limit = base + size;
+    heap->cursor = base;
+}
+
+fn uint64 early_heap_alloc(EarlyHeap* heap, uint64 size, uint64 alignment) {
+    uint64 aligned = (heap->cursor + alignment - 1) & ~(alignment - 1);
+    if (aligned + size > heap->limit) { return 0; }
+    heap->cursor = aligned + size;
+    return aligned;
+}

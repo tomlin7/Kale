@@ -1,7 +1,8 @@
 param(
     [string]$Image = "",
     [string]$Display = "gtk",
-    [string]$SerialLog = ""
+    [string]$SerialLog = "",
+    [string]$DataImage = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -14,6 +15,10 @@ $Image = [System.IO.Path]::GetFullPath($Image)
 if (-not (Test-Path -LiteralPath $Image)) {
     & (Join-Path $PSScriptRoot "build.ps1")
 }
+if ([string]::IsNullOrWhiteSpace($DataImage)) {
+    $DataImage = Join-Path (Split-Path -Parent $Image) "kale-os-data.img"
+}
+$DataImage = [System.IO.Path]::GetFullPath($DataImage)
 
 $qemu = $null
 $candidates = @(
@@ -41,6 +46,7 @@ if (-not [string]::IsNullOrWhiteSpace($SerialLog)) {
 }
 & $qemu `
     "-drive" "format=raw,file=$Image" `
+    "-drive" "format=raw,file=$DataImage,if=ide,index=1" `
     "-m" "128M" `
     "-no-reboot" `
     "-serial" $serialMode `

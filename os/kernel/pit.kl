@@ -1,0 +1,22 @@
+// PIT channel 0 programming and monotonic tick accounting.
+
+extern void outb(uint16 port, uint8 value);
+
+struct PitClock {
+    uint32 frequency_hz;
+    uint64 ticks;
+}
+
+fn void pit_init(PitClock* clock, uint32 frequency_hz) {
+    if (frequency_hz == 0) { frequency_hz = 100; }
+    clock->frequency_hz = frequency_hz;
+    clock->ticks = 0;
+    uint32 divisor = 1193182 / frequency_hz;
+    outb(0x43 as uint16, 0x36 as uint8);
+    outb(0x40 as uint16, (divisor & 0xFF) as uint8);
+    outb(0x40 as uint16, ((divisor >> 8) & 0xFF) as uint8);
+}
+
+fn void pit_tick(PitClock* clock) {
+    clock->ticks = clock->ticks + 1;
+}

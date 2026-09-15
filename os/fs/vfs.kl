@@ -1,0 +1,58 @@
+// Minimal VFS mount and file-handle layer over filesystem drivers.
+
+struct VfsFile {
+    int used;
+    uint64 offset;
+    uint64 size;
+    void* private_data;
+}
+
+struct Vfs {
+    int mounted;
+    string mount_name;
+    VfsFile[32] files;
+    int (*read_file)(void* private_data, uint64 offset, uint8* buffer, uint32 length);
+}
+
+fn int vfs_mount(Vfs* vfs, string name) {
+    if (vfs == (Vfs*)0 || name == "") { return 0; }
+    vfs->mounted = 1;
+    vfs->mount_name = name;
+    return 1;
+}
+
+fn int vfs_open_slot(Vfs* vfs) {
+    int i = 0;
+    while (i < 32) {
+        if (vfs->files[i].used == 0) {
+            vfs->files[i].used = 1;
+            vfs->files[i].offset = 0;
+            vfs->files[i].size = 0;
+            return i;
+        }
+
+        fn int vfs_read(Vfs* vfs, int fd, uint8* buffer, uint32 length) {
+            if (vfs == (Vfs*)0 || fd < 0 || fd >= 32 || vfs->files[fd].used == 0) { return 0; }
+            if (vfs->read_file == (void*)0) { return 0; }
+            uint64 remaining = vfs->files[fd].size - vfs->files[fd].offset;
+            if ((length as uint64) > remaining) { length = remaining as uint32; }
+            int read = vfs->read_file(vfs->files[fd].private_data, vfs->files[fd].offset, buffer, length);
+            if (read > 0) { vfs->files[fd].offset = vfs->files[fd].offset + read; }
+            return read;
+        }
+
+        fn int vfs_seek(Vfs* vfs, int fd, uint64 offset) {
+            if (vfs == (Vfs*)0 || fd < 0 || fd >= 32 || vfs->files[fd].used == 0) { return 0; }
+            if (offset > vfs->files[fd].size) { return 0; }
+            vfs->files[fd].offset = offset;
+            return 1;
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+fn void vfs_close(Vfs* vfs, int fd) {
+    if (vfs == (Vfs*)0 || fd < 0 || fd >= 32) { return; }
+    vfs->files[fd].used = 0;
+}

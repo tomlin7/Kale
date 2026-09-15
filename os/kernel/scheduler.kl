@@ -1,0 +1,28 @@
+// Deterministic round-robin task queue for the first preemptive scheduler.
+
+struct Task {
+    uint32 id;
+    uint32 state;
+    uint64 stack_pointer;
+}
+
+struct Scheduler {
+    Task[32] tasks;
+    uint32 count;
+    uint32 current;
+}
+
+fn int scheduler_add(Scheduler* scheduler, uint32 id, uint64 stack_pointer) {
+    if (scheduler->count >= 32) { return 0; }
+    scheduler->tasks[scheduler->count].id = id;
+    scheduler->tasks[scheduler->count].state = 1;
+    scheduler->tasks[scheduler->count].stack_pointer = stack_pointer;
+    scheduler->count = scheduler->count + 1;
+    return 1;
+}
+
+fn uint32 scheduler_next(Scheduler* scheduler) {
+    if (scheduler->count == 0) { return 0; }
+    scheduler->current = (scheduler->current + 1) % scheduler->count;
+    return scheduler->tasks[scheduler->current].id;
+}

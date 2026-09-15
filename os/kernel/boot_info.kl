@@ -1,0 +1,25 @@
+// Boot-time information shared by the loader and the kernel.
+
+struct MemoryRegion {
+    uint64 base;
+    uint64 length;
+    uint32 kind;
+}
+
+struct BootInfo {
+    uint32 magic;
+    uint32 version;
+    uint64 memory_map;
+    uint32 memory_region_count;
+    uint64 stage2_base;
+    uint32 stage2_size;
+    uint32 stage2_checksum;
+    uint16 boot_drive;
+}
+
+fn int boot_info_valid(BootInfo* info) {
+    if (info == (BootInfo*)0) { return 0; }
+    if (info->magic != 0x4B414C45) { return 0; }
+    if (info->version == 0 || info->stage2_size == 0) { return 0; }
+    return 1;
+}

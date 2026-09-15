@@ -1,0 +1,25 @@
+// Kernel console command registry. Device-specific rendering is injected.
+
+struct Console {
+    int command_count;
+    string[16] names;
+}
+
+fn void console_init(Console* console) {
+    console->command_count = 6;
+    console->names[0] = "help";
+    console->names[1] = "mem";
+    console->names[2] = "ticks";
+    console->names[3] = "ls";
+    console->names[4] = "cat";
+    console->names[5] = "reboot";
+}
+
+fn int console_find(Console* console, string command) {
+    int i = 0;
+    while (i < console->command_count) {
+        if (console->names[i] == command) { return i; }
+        i = i + 1;
+    }
+    return -1;
+}

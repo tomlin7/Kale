@@ -1,0 +1,16 @@
+// BIOS E820 memory map normalization.
+
+struct E820Entry {
+    uint64 base;
+    uint64 length;
+    uint32 type;
+}
+
+fn int e820_is_usable(E820Entry* entry) {
+    if (entry == (E820Entry*)0) { return 0; }
+    return entry->type == 1 && entry->length > 0;
+}
+
+fn uint64 e820_end(E820Entry* entry) {
+    return entry->base + entry->length;
+}

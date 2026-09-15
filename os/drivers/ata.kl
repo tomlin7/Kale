@@ -1,0 +1,22 @@
+// ATA PIO primary-master block driver contract.
+
+struct AtaDevice {
+    uint16 io_base;
+    uint16 control_base;
+    uint64 sectors;
+    int present;
+}
+
+fn void ata_init(AtaDevice* device) {
+    device->io_base = 0x1F0;
+    device->control_base = 0x3F6;
+    device->sectors = 0;
+    device->present = 0;
+}
+
+fn int ata_identify_result(AtaDevice* device, uint16 words[256]) {
+    if (device == (AtaDevice*)0 || words == (uint16[256])0) { return 0; }
+    device->sectors = words[60] | ((words[61] as uint64) << 16);
+    device->present = device->sectors > 0;
+    return device->present;
+}

@@ -1,0 +1,31 @@
+// CMOS RTC helpers. Reading is kept separate from port I/O for host testing.
+
+fn int rtc_bcd_to_binary(int value) {
+    return ((value >> 4) * 10) + (value & 0x0F);
+}
+
+struct RtcTime {
+    int second;
+    int minute;
+    int hour;
+    int day;
+    int month;
+    int year;
+}
+
+fn void rtc_decode(RtcTime* time, int second, int minute, int hour, int day, int month, int year, int bcd) {
+    if (bcd != 0) {
+        second = rtc_bcd_to_binary(second);
+        minute = rtc_bcd_to_binary(minute);
+        hour = rtc_bcd_to_binary(hour);
+        day = rtc_bcd_to_binary(day);
+        month = rtc_bcd_to_binary(month);
+        year = rtc_bcd_to_binary(year);
+    }
+    time->second = second;
+    time->minute = minute;
+    time->hour = hour;
+    time->day = day;
+    time->month = month;
+    time->year = 2000 + year;
+}

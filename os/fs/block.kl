@@ -1,0 +1,16 @@
+// Small block-device contract used by filesystems and disk drivers.
+
+struct BlockDevice {
+    uint32 sector_size;
+    uint64 sector_count;
+    void* context;
+    int (*read)(void* context, uint64 lba, uint32 count, uint8* buffer);
+    int (*write)(void* context, uint64 lba, uint32 count, uint8* buffer);
+}
+
+fn int block_device_valid(BlockDevice* device) {
+    if (device == (BlockDevice*)0) { return 0; }
+    if (device->sector_size == 0 || device->sector_count == 0) { return 0; }
+    if (device->read == (void*)0) { return 0; }
+    return 1;
+}

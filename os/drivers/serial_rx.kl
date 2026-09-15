@@ -1,0 +1,27 @@
+// 16550 receive ring and severity-tagged logging.
+
+struct SerialRx {
+    uint8[256] buffer;
+    uint16 head;
+    uint16 tail;
+}
+
+fn void serial_rx_init(SerialRx* rx) {
+    rx->head = 0;
+    rx->tail = 0;
+}
+
+fn int serial_rx_push(SerialRx* rx, uint8 value) {
+    uint16 next = (rx->head + 1) & 255;
+    if (next == rx->tail) { return 0; }
+    rx->buffer[rx->head] = value;
+    rx->head = next;
+    return 1;
+}
+
+fn int serial_rx_pop(SerialRx* rx, uint8* value) {
+    if (rx->tail == rx->head) { return 0; }
+    *value = rx->buffer[rx->tail];
+    rx->tail = (rx->tail + 1) & 255;
+    return 1;
+}

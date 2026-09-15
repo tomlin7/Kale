@@ -1,0 +1,14 @@
+// Common exception classification used by the IDT dispatcher.
+
+fn string exception_name(int vector) {
+    if (vector == 0) { return "#DE divide error"; }
+    if (vector == 6) { return "#UD invalid opcode"; }
+    if (vector == 13) { return "#GP general protection"; }
+    if (vector == 14) { return "#PF page fault"; }
+    if (vector == 8) { return "#DF double fault"; }
+    return "#EX unknown exception";
+}
+
+fn int exception_is_fatal(int vector) {
+    return vector == 8 || vector == 13 || vector == 14;
+}

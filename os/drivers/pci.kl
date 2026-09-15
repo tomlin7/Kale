@@ -1,0 +1,15 @@
+// PCI configuration-space device identity and registry.
+
+struct PciDevice {
+    uint16 vendor;
+    uint16 device;
+    uint8 bus;
+    uint8 slot;
+    uint8 function;
+    uint8 irq_line;
+}
+
+fn int pci_device_valid(PciDevice* device) {
+    if (device == (PciDevice*)0) { return 0; }
+    return device->vendor != 0xFFFF;
+}

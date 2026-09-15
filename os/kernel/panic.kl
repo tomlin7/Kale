@@ -1,0 +1,20 @@
+// Structured panic state. The architecture layer supplies the halt primitive.
+
+struct PanicState {
+    int active;
+    string message;
+    uint64 fault_address;
+    uint64 instruction_pointer;
+}
+
+fn void panic_begin(PanicState* state, string message, uint64 address, uint64 ip) {
+    state->active = 1;
+    state->message = message;
+    state->fault_address = address;
+    state->instruction_pointer = ip;
+}
+
+fn int panic_is_active(PanicState* state) {
+    if (state == (PanicState*)0) { return 0; }
+    return state->active;
+}

@@ -18,8 +18,16 @@ def test_os_boot_script_builds_a_bios_disk_image(tmp_path):
     )
     assert result.returncode == 0, result.stderr
     image = output / "kale-os.img"
+    data_image = output / "kale-os-data.img"
     stage2 = output / "kale-os-stage2.bin"
     assert image.exists()
+    assert data_image.exists()
+    assert data_image.stat().st_size == 1474560
+    data = data_image.read_bytes()
+    assert data[510:512] == b"\x55\xaa"
+    assert b"KALEOS  TXT" in data[19 * 512:33 * 512]
+    cluster2 = data[33 * 512:34 * 512]
+    assert b"Kale OS FAT12 filesystem online" in cluster2
     assert stage2.exists()
     assert stage2.stat().st_size == 2048
     assert b"STAGE2 LOADED" in stage2.read_bytes()

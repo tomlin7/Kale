@@ -12,3 +12,5 @@ def test_qemu_runner_resolves_an_executable_and_uses_absolute_image():
     assert "-display" in source
     assert "SerialLog" in source
     assert "file=$SerialLog" in source
+    assert "DataImage" in source
+    assert "if=ide,index=1" in source

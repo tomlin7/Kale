@@ -39,3 +39,6 @@ finally {
 }
 
 Write-Output "Built $image (1.44 MiB)"
+
+$dataImage = Join-Path $output "kale-os-data.img"
+& (Join-Path $root "os\fs\make-fat12.ps1") -OutputPath $dataImage

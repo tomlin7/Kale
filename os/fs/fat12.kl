@@ -1,0 +1,113 @@
+// FAT12 BPB, 8.3 lookup, cluster-chain and directory primitives.
+
+struct Fat12 {
+    uint16 bytes_per_sector;
+    uint8 sectors_per_cluster;
+    uint16 reserved_sectors;
+    uint8 fat_count;
+    uint16 root_entries;
+    uint16 sectors_per_fat;
+    uint32 root_lba;
+    uint32 data_lba;
+    uint8* image;
+}
+
+fn uint16 fat12_u16(uint8* p) {
+    return (p[0] as uint16) | ((p[1] as uint16) << 8);
+}
+
+fn int fat12_mount(Fat12* fs, uint8* image, uint32 image_size) {
+    if (image == (uint8*)0 || image_size < 512) { return 0; }
+    if (image[510] != 0x55 || image[511] != 0xAA) { return 0; }
+    fs->bytes_per_sector = fat12_u16(&image[11]);
+    fs->sectors_per_cluster = image[13];
+    fs->reserved_sectors = fat12_u16(&image[14]);
+    fs->fat_count = image[16];
+    fs->root_entries = fat12_u16(&image[17]);
+    fs->sectors_per_fat = fat12_u16(&image[22]);
+    if (fs->bytes_per_sector != 512 || fs->sectors_per_cluster == 0) { return 0; }
+    uint32 root_sectors = ((fs->root_entries * 32) + 511) / 512;
+    fs->root_lba = fs->reserved_sectors + (fs->fat_count * fs->sectors_per_fat);
+    fs->data_lba = fs->root_lba + root_sectors;
+    fs->image = image;
+    return 1;
+}
+
+fn uint32 fat12_cluster_offset(Fat12* fs, uint16 cluster) {
+    return (fs->data_lba + ((cluster - 2) * fs->sectors_per_cluster)) * fs->bytes_per_sector;
+}
+
+fn uint16 fat12_next_cluster(Fat12* fs, uint16 cluster) {
+    uint32 offset = (fs->reserved_sectors * fs->bytes_per_sector) + ((cluster * 3) / 2);
+    uint16 value = fat12_u16(&fs->image[offset]);
+    if ((cluster & 1) != 0) { value = value >> 4; }
+    else { value = value & 0x0FFF; }
+    return value;
+}
+
+fn int fat12_name_equal(uint8* entry, string name) {
+    int i = 0;
+    while (i < 11) {
+        if (entry[i] != ((uint8*)name)[i]) { return 0; }
+        i = i + 1;
+    }
+    return 1;
+}
+
+fn int fat12_find_root(Fat12* fs, string name, uint16* cluster, uint32* size) {
+    uint32 root = fs->root_lba * fs->bytes_per_sector;
+    int i = 0;
+    while (i < fs->root_entries) {
+        uint8* entry = &fs->image[root + (i * 32)];
+        if (entry[0] == 0) { return 0; }
+        if (entry[0] != 0xE5 && (entry[11] & 0x0F) != 0x0F && fat12_name_equal(entry, name)) {
+            *cluster = fat12_u16(&entry[26]);
+            *size = fat12_u16(&entry[28]) | ((fat12_u16(&entry[30])) << 16);
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn int fat12_read_file(Fat12* fs, uint16 first_cluster, uint32 size, uint8* output, uint32 capacity) {
+    if (fs == (Fat12*)0 || output == (uint8*)0 || capacity < size) { return 0; }
+    uint16 cluster = first_cluster;
+    uint32 copied = 0;
+    uint32 cluster_bytes = fs->bytes_per_sector * fs->sectors_per_cluster;
+    while (copied < size && cluster >= 2 && cluster < 0xFF8) {
+        uint32 source = fat12_cluster_offset(fs, cluster);
+        uint32 remaining = size - copied;
+        uint32 amount = cluster_bytes;
+        if (amount > remaining) { amount = remaining; }
+        uint32 i = 0;
+        while (i < amount) {
+            output[copied + i] = fs->image[source + i];
+            i = i + 1;
+        }
+        copied = copied + amount;
+        cluster = fat12_next_cluster(fs, cluster);
+    }
+    return copied == size;
+}
+
+fn int fat12_write_file(Fat12* fs, uint16 first_cluster, uint32 size, uint8* input) {
+    if (fs == (Fat12*)0 || input == (uint8*)0) { return 0; }
+    uint16 cluster = first_cluster;
+    uint32 written = 0;
+    uint32 cluster_bytes = fs->bytes_per_sector * fs->sectors_per_cluster;
+    while (written < size && cluster >= 2 && cluster < 0xFF8) {
+        uint32 target = fat12_cluster_offset(fs, cluster);
+        uint32 remaining = size - written;
+        uint32 amount = cluster_bytes;
+        if (amount > remaining) { amount = remaining; }
+        uint32 i = 0;
+        while (i < amount) {
+            fs->image[target + i] = input[written + i];
+            i = i + 1;
+        }
+        written = written + amount;
+        cluster = fat12_next_cluster(fs, cluster);
+    }
+    return written == size;
+}
