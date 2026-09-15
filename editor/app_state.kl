@@ -194,7 +194,10 @@ fn void EditorState.insert_newline() {
 fn void EditorState.backspace() {
     if (this->cursor_col > 0) {
         int byte_offset = this->cursor_offset() - 1;
-        string deleted = this->buffer.get_line(this->cursor_row);
+        char[2] deleted_char;
+        deleted_char[0] = this->buffer.char_at(byte_offset);
+        deleted_char[1] = (char)0;
+        string deleted = (string)&deleted_char[0];
         this->buffer.delete(byte_offset, 1);
         this->record_action(byte_offset, 1, 2, deleted);
         this->cursor_col = this->cursor_col - 1;
@@ -218,6 +221,7 @@ fn void EditorState.backspace() {
 
             byte_offset = byte_offset + prev_len; // Point to newline
             this->buffer.delete(byte_offset, 1); // Delete newline
+            this->record_action(byte_offset, 1, 2, "\n");
             this->cursor_row = prev_row;
             this->cursor_col = prev_len;
             this->is_dirty = true;
@@ -244,6 +248,9 @@ fn int EditorState.redo() {
     if (this->redo_count <= 0) { return 0; }
     this->redo_count = this->redo_count - 1;
     EditAction action = this->redo_stack[this->redo_count];
+    if (this->undo_stack == (EditAction*)0) { this->undo_stack = (EditAction*)malloc(4096); }
+    this->undo_stack[this->undo_count] = action;
+    this->undo_count = this->undo_count + 1;
     if (action.kind == 1) { this->buffer.insert(action.offset, action.text); }
     else { this->buffer.delete(action.offset, action.length); }
     this->is_dirty = true;

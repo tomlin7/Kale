@@ -33,3 +33,6 @@ def test_editor_state_exposes_history_and_multi_action_hooks():
     assert "save_requested" in source
     assert "save_active_buffer" in source
     assert "write_string" in source
+    assert "this->buffer.char_at(byte_offset)" in source
+    assert "this->record_action(byte_offset, 1, 2, \"\\n\")" in source
+    assert "this->undo_stack[this->undo_count] = action" in source
