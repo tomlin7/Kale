@@ -1,0 +1,366 @@
+// src/kale_self/checker.kl
+// Type-checker and semantic analyzer for self-hosting Kale compiler
+
+import "src/kale_self/token.kl" as tok;
+import "src/kale_self/ast.kl" as ast;
+
+extern int strcmp(string s1, string s2);
+
+fn int TYPE_UNKNOWN() { return 0; }
+fn int TYPE_INT() { return 1; }
+fn int TYPE_FLOAT() { return 2; }
+fn int TYPE_BOOL() { return 3; }
+fn int TYPE_STRING() { return 4; }
+fn int TYPE_VOID() { return 5; }
+fn int TYPE_STRUCT() { return 6; }
+
+fn int SYM_VAR() { return 1; }
+fn int SYM_FN() { return 2; }
+fn int SYM_PARAM() { return 3; }
+fn int SYM_STRUCT() { return 4; }
+
+struct Symbol {
+    string name;
+    int kind;
+    int type_tag;
+    string type_name;
+    Symbol* next;
+}
+
+fn Symbol* symbol_new(string name, int kind, int type_tag, string type_name) {
+    Symbol* s = alloc(Symbol);
+    s->name = name;
+    s->kind = kind;
+    s->type_tag = type_tag;
+    s->type_name = type_name;
+    s->next = (Symbol*)0;
+    return s;
+}
+
+fn void symbol_free(Symbol* s) {
+    if (s != (Symbol*)0) {
+        if (s->next != (Symbol*)0) {
+            symbol_free(s->next);
+        }
+        free(s);
+    }
+}
+
+struct Scope {
+    Scope* parent;
+    Symbol* first;
+}
+
+fn Scope* scope_new(Scope* parent) {
+    Scope* s = alloc(Scope);
+    s->parent = parent;
+    s->first = (Symbol*)0;
+    return s;
+}
+
+fn void scope_free(Scope* s) {
+    if (s != (Scope*)0) {
+        if (s->first != (Symbol*)0) {
+            symbol_free(s->first);
+        }
+        free(s);
+    }
+}
+
+fn bool scope_define(Scope* s, string name, int kind, int type_tag, string type_name) {
+    if (s == (Scope*)0) {
+        return false;
+    }
+    Symbol* cur = s->first;
+    while (cur != (Symbol*)0) {
+        if (strcmp(cur->name, name) == 0) {
+            return false;
+        }
+        cur = cur->next;
+    }
+    Symbol* sym = symbol_new(name, kind, type_tag, type_name);
+    sym->next = s->first;
+    s->first = sym;
+    return true;
+}
+
+fn Symbol* scope_lookup(Scope* s, string name) {
+    Scope* cur_scope = s;
+    while (cur_scope != (Scope*)0) {
+        Symbol* cur_sym = cur_scope->first;
+        while (cur_sym != (Symbol*)0) {
+            if (strcmp(cur_sym->name, name) == 0) {
+                return cur_sym;
+            }
+            cur_sym = cur_sym->next;
+        }
+        cur_scope = cur_scope->parent;
+    }
+    return (Symbol*)0;
+}
+
+fn int type_from_name(string name) {
+    if (strcmp(name, "int") == 0) { return TYPE_INT(); }
+    if (strcmp(name, "float") == 0) { return TYPE_FLOAT(); }
+    if (strcmp(name, "bool") == 0) { return TYPE_BOOL(); }
+    if (strcmp(name, "string") == 0) { return TYPE_STRING(); }
+    if (strcmp(name, "void") == 0) { return TYPE_VOID(); }
+    if (strcmp(name, "var") == 0) { return TYPE_UNKNOWN(); }
+    if (strcmp(name, "let") == 0) { return TYPE_UNKNOWN(); }
+    if (strcmp(name, "") == 0) { return TYPE_UNKNOWN(); }
+    return TYPE_STRUCT();
+}
+
+struct Checker {
+    Scope* current_scope;
+    int error_count;
+    int current_fn_ret_type;
+}
+
+fn Checker* checker_new() {
+    Checker* c = alloc(Checker);
+    c->current_scope = scope_new((Scope*)0);
+    c->error_count = 0;
+    c->current_fn_ret_type = TYPE_VOID();
+    return c;
+}
+
+fn void checker_free(Checker* c) {
+    if (c != (Checker*)0) {
+        Scope* cur = c->current_scope;
+        while (cur != (Scope*)0) {
+            Scope* p = cur->parent;
+            scope_free(cur);
+            cur = p;
+        }
+        free(c);
+    }
+}
+
+fn void checker_enter_scope(Checker* c) {
+    c->current_scope = scope_new(c->current_scope);
+}
+
+fn void checker_exit_scope(Checker* c) {
+    if (c->current_scope != (Scope*)0) {
+        Scope* p = c->current_scope->parent;
+        scope_free(c->current_scope);
+        c->current_scope = p;
+    }
+}
+
+fn int checker_check_expr(Checker* c, ast.ASTNode* expr) {
+    if (expr == (ast.ASTNode*)0) {
+        return TYPE_UNKNOWN();
+    }
+
+    if (expr->kind == ast.AST_LITERAL()) {
+        return TYPE_INT();
+    }
+
+    if (expr->kind == ast.AST_IDENT()) {
+        Symbol* sym = scope_lookup(c->current_scope, expr->text);
+        if (sym == (Symbol*)0) {
+            c->error_count = c->error_count + 1;
+            return TYPE_UNKNOWN();
+        }
+        return sym->type_tag;
+    }
+
+    if (expr->kind == ast.AST_UNARY()) {
+        int operand_type = checker_check_expr(c, expr->left);
+        if (expr->op == tok.TOK_BANG()) {
+            return TYPE_BOOL();
+        }
+        return operand_type;
+    }
+
+    if (expr->kind == ast.AST_BINARY()) {
+        int lt = checker_check_expr(c, expr->left);
+        int rt = checker_check_expr(c, expr->right);
+        if (expr->op == tok.TOK_PLUS() || expr->op == tok.TOK_MINUS() ||
+            expr->op == tok.TOK_STAR() || expr->op == tok.TOK_SLASH() ||
+            expr->op == tok.TOK_PERCENT()) {
+            if (lt != rt && lt != TYPE_UNKNOWN() && rt != TYPE_UNKNOWN()) {
+                c->error_count = c->error_count + 1;
+            }
+            return lt;
+        }
+        if (expr->op == tok.TOK_EQEQ() || expr->op == tok.TOK_NEQ() ||
+            expr->op == tok.TOK_LT() || expr->op == tok.TOK_LTE() ||
+            expr->op == tok.TOK_GT() || expr->op == tok.TOK_GTE()) {
+            if (lt != rt && lt != TYPE_UNKNOWN() && rt != TYPE_UNKNOWN()) {
+                c->error_count = c->error_count + 1;
+            }
+            return TYPE_BOOL();
+        }
+        if (expr->op == tok.TOK_ANDAND() || expr->op == tok.TOK_OROR()) {
+            return TYPE_BOOL();
+        }
+        return lt;
+    }
+
+    if (expr->kind == ast.AST_CALL()) {
+        Symbol* fn_sym = scope_lookup(c->current_scope, expr->text);
+        if (fn_sym == (Symbol*)0) {
+            c->error_count = c->error_count + 1;
+            return TYPE_UNKNOWN();
+        }
+        ast.ASTNode* arg = expr->left;
+        while (arg != (ast.ASTNode*)0) {
+            checker_check_expr(c, arg);
+            arg = arg->next;
+        }
+        return fn_sym->type_tag;
+    }
+
+    if (expr->kind == ast.AST_ASSIGN()) {
+        Symbol* var_sym = scope_lookup(c->current_scope, expr->text);
+        if (var_sym == (Symbol*)0) {
+            c->error_count = c->error_count + 1;
+            return TYPE_UNKNOWN();
+        }
+        int val_t = checker_check_expr(c, expr->left);
+        if (val_t != var_sym->type_tag && val_t != TYPE_UNKNOWN() && var_sym->type_tag != TYPE_UNKNOWN()) {
+            c->error_count = c->error_count + 1;
+        }
+        return var_sym->type_tag;
+    }
+
+    return TYPE_UNKNOWN();
+}
+
+fn void checker_check_stmt(Checker* c, ast.ASTNode* stmt) {
+    if (stmt == (ast.ASTNode*)0) {
+        return;
+    }
+
+    if (stmt->kind == ast.AST_RETURN()) {
+        if (stmt->left != (ast.ASTNode*)0) {
+            int ret_t = checker_check_expr(c, stmt->left);
+            if (c->current_fn_ret_type == TYPE_VOID()) {
+                c->error_count = c->error_count + 1;
+            } else if (c->current_fn_ret_type != TYPE_UNKNOWN() && ret_t != c->current_fn_ret_type && ret_t != TYPE_UNKNOWN()) {
+                c->error_count = c->error_count + 1;
+            }
+        } else {
+            if (c->current_fn_ret_type != TYPE_VOID()) {
+                c->error_count = c->error_count + 1;
+            }
+        }
+        return;
+    }
+
+    if (stmt->kind == ast.AST_VAR_DECL()) {
+        int decl_type = type_from_name(stmt->type_name);
+        if (stmt->left != (ast.ASTNode*)0) {
+            int init_t = checker_check_expr(c, stmt->left);
+            if (decl_type == TYPE_UNKNOWN()) {
+                decl_type = init_t;
+            } else if (decl_type != init_t && init_t != TYPE_UNKNOWN()) {
+                c->error_count = c->error_count + 1;
+            }
+        }
+        bool ok = scope_define(c->current_scope, stmt->text, SYM_VAR(), decl_type, stmt->type_name);
+        if (!ok) {
+            c->error_count = c->error_count + 1;
+        }
+        return;
+    }
+
+    if (stmt->kind == ast.AST_IF()) {
+        if (stmt->cond != (ast.ASTNode*)0) {
+            checker_check_expr(c, stmt->cond);
+        }
+        if (stmt->body != (ast.ASTNode*)0) {
+            checker_check_stmt(c, stmt->body);
+        }
+        if (stmt->else_body != (ast.ASTNode*)0) {
+            checker_check_stmt(c, stmt->else_body);
+        }
+        return;
+    }
+
+    if (stmt->kind == ast.AST_WHILE()) {
+        if (stmt->cond != (ast.ASTNode*)0) {
+            checker_check_expr(c, stmt->cond);
+        }
+        if (stmt->body != (ast.ASTNode*)0) {
+            checker_check_stmt(c, stmt->body);
+        }
+        return;
+    }
+
+    if (stmt->kind == ast.AST_FOR()) {
+        checker_enter_scope(c);
+        if (stmt->left != (ast.ASTNode*)0) {
+            checker_check_stmt(c, stmt->left);
+        }
+        if (stmt->cond != (ast.ASTNode*)0) {
+            checker_check_expr(c, stmt->cond);
+        }
+        if (stmt->right != (ast.ASTNode*)0) {
+            checker_check_expr(c, stmt->right);
+        }
+        if (stmt->body != (ast.ASTNode*)0) {
+            checker_check_stmt(c, stmt->body);
+        }
+        checker_exit_scope(c);
+        return;
+    }
+
+    if (stmt->kind == ast.AST_BLOCK()) {
+        checker_enter_scope(c);
+        ast.ASTNode* cur = stmt->body;
+        while (cur != (ast.ASTNode*)0) {
+            checker_check_stmt(c, cur);
+            cur = cur->next;
+        }
+        checker_exit_scope(c);
+        return;
+    }
+
+    checker_check_expr(c, stmt);
+}
+
+fn int checker_check_program(Checker* c, ast.ASTNode* prog) {
+    if (prog == (ast.ASTNode*)0) {
+        return c->error_count;
+    }
+
+    // Pass 1: Declare top-level functions and structs
+    ast.ASTNode* cur = prog->body;
+    while (cur != (ast.ASTNode*)0) {
+        if (cur->kind == ast.AST_FN_DECL()) {
+            int ret_t = type_from_name(cur->type_name);
+            scope_define(c->current_scope, cur->text, SYM_FN(), ret_t, cur->type_name);
+        } else if (cur->kind == ast.AST_STRUCT_DECL()) {
+            scope_define(c->current_scope, cur->text, SYM_STRUCT(), TYPE_STRUCT(), cur->text);
+        }
+        cur = cur->next;
+    }
+
+    // Pass 2: Check function bodies and top-level statements
+    cur = prog->body;
+    while (cur != (ast.ASTNode*)0) {
+        if (cur->kind == ast.AST_FN_DECL()) {
+            checker_enter_scope(c);
+            c->current_fn_ret_type = type_from_name(cur->type_name);
+            ast.ASTNode* p = cur->left;
+            while (p != (ast.ASTNode*)0) {
+                int pt = type_from_name(p->type_name);
+                scope_define(c->current_scope, p->text, SYM_PARAM(), pt, p->type_name);
+                p = p->next;
+            }
+            if (cur->body != (ast.ASTNode*)0) {
+                checker_check_stmt(c, cur->body);
+            }
+            checker_exit_scope(c);
+        } else if (cur->kind != ast.AST_STRUCT_DECL() && cur->kind != ast.AST_IMPORT()) {
+            checker_check_stmt(c, cur);
+        }
+        cur = cur->next;
+    }
+
+    return c->error_count;
+}
