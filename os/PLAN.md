@@ -49,5 +49,6 @@ os/
 - [x] Boot the sector in QEMU and enter x86_64 long mode.
 - [x] Provide a direct QEMU runner that avoids shell/file-association launchers.
 - [x] Add a disk-loading second stage and transfer control to a long-mode payload.
+- [x] Install a minimal IDT and remap/unmask the PIC for keyboard IRQ1.
 - [ ] Replace the fixed payload with a linked Kale kernel image.
 - [ ] Add a freestanding Kale linker/runtime profile.
