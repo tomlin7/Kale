@@ -6,9 +6,12 @@ default abs
 start:
     call serial_init
     call boot_info_init
+    call rtc_init
     mov rsi, msg_serial
     call serial_print
     mov rsi, msg_timer
+    call serial_print
+    mov rsi, msg_rtc
     call serial_print
     mov rsi, msg_boot_info
     call serial_print
@@ -97,6 +100,51 @@ serial_print_hex:
     mov byte [rdi], 0
     mov rsi, hex_buffer
     call serial_print
+    ret
+
+rtc_init:
+.wait:
+    mov al, 0x0A
+    out 0x70, al
+    in al, 0x71
+    test al, 0x80
+    jnz .wait
+    mov dl, al
+    mov al, 0x0B
+    out 0x70, al
+    in al, 0x71
+    mov dh, al
+    mov al, 0
+    out 0x70, al
+    in al, 0x71
+    mov [rtc_time + 0], al
+    mov al, 2
+    out 0x70, al
+    in al, 0x71
+    mov [rtc_time + 1], al
+    mov al, 4
+    out 0x70, al
+    in al, 0x71
+    mov [rtc_time + 2], al
+    test dh, 0x04
+    jnz .done
+    mov rsi, rtc_time
+    xor ecx, ecx
+    mov ecx, 3
+.decode:
+    mov al, [rsi]
+    mov ah, al
+    and al, 0x0F
+    shr ah, 4
+    mov bh, ah
+    xor ah, ah
+    mov bl, 10
+    mul bl
+    add al, bh
+    mov [rsi], al
+    inc rsi
+    loop .decode
+.done:
     ret
 
 boot_info_init:
@@ -208,6 +256,7 @@ msg_stage2: db " [KALE OS] STAGE2 LOADED - LONG MODE KERNEL HANDOFF READY ", 0
 msg_serial: db "KALE OS stage2: serial, IDT, PIC, keyboard queue online", 13, 10, 0
 msg_boot_info: db "KALE OS bootinfo checksum=0x", 0
 msg_timer: db "KALE OS PIT timer online", 13, 10, 0
+msg_rtc: db "KALE OS RTC clock online", 13, 10, 0
 msg_newline: db 13, 10, 0
 hex_digits: db "0123456789ABCDEF"
 hex_buffer: times 8 db 0
@@ -215,6 +264,7 @@ kbd_head: db 0
 kbd_tail: db 0
 kbd_queue: times 32 db 0
 timer_ticks: dq 0
+rtc_time: times 3 db 0
 align 8
 idt_pointer:
     dw (34 * 16) - 1

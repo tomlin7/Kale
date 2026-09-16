@@ -36,7 +36,7 @@ os/
 ### Time and hardware
 
 - [x] PIT channel-0 timer programming, IRQ0 handling, and monotonic tick counter.
-- [x] RTC CMOS date/time reader with BCD conversion.
+- [x] RTC CMOS date/time reader with BCD conversion and boot initialization.
 - [ ] PS/2 controller command path, scancode translation and keyboard console.
 - [x] 16550 serial RX interrupt ring buffer contract.
 - [x] ATA PIO identify/read/write block driver contract.
