@@ -8,6 +8,8 @@ start:
     call boot_info_init
     mov rsi, msg_serial
     call serial_print
+    mov rsi, msg_timer
+    call serial_print
     mov rsi, msg_boot_info
     call serial_print
     mov eax, [boot_info + 36]
@@ -15,6 +17,7 @@ start:
     mov rsi, msg_newline
     call serial_print
     call idt_init
+    call pit_init
     call pic_init
     mov rdi, 0xB8000
     mov rsi, msg_stage2
@@ -132,7 +135,24 @@ idt_init:
     mov dword [idt_table + (0x21 * 16) + 8], eax
     mov word [idt_table + (0x21 * 16) + 2], 0x08
     mov byte [idt_table + (0x21 * 16) + 5], 0x8E
+    mov rax, pit_isr
+    mov word [idt_table + (0x20 * 16) + 0], ax
+    shr rax, 16
+    mov word [idt_table + (0x20 * 16) + 6], ax
+    shr rax, 16
+    mov dword [idt_table + (0x20 * 16) + 8], eax
+    mov word [idt_table + (0x20 * 16) + 2], 0x08
+    mov byte [idt_table + (0x20 * 16) + 5], 0x8E
     lidt [idt_pointer]
+    ret
+
+pit_init:
+    mov al, 0x36
+    out 0x43, al
+    mov ax, 11932
+    out 0x40, al
+    mov al, ah
+    out 0x40, al
     ret
 
 pic_init:
@@ -150,7 +170,7 @@ pic_init:
     mov al, 0x01
     out 0x21, al
     out 0xA1, al
-    mov al, 0xFD
+    mov al, 0xFC
     out 0x21, al
     mov al, 0xFF
     out 0xA1, al
@@ -178,15 +198,23 @@ kbd_isr:
     pop rax
     iretq
 
+pit_isr:
+    inc qword [timer_ticks]
+    mov al, 0x20
+    out 0x20, al
+    iretq
+
 msg_stage2: db " [KALE OS] STAGE2 LOADED - LONG MODE KERNEL HANDOFF READY ", 0
 msg_serial: db "KALE OS stage2: serial, IDT, PIC, keyboard queue online", 13, 10, 0
 msg_boot_info: db "KALE OS bootinfo checksum=0x", 0
+msg_timer: db "KALE OS PIT timer online", 13, 10, 0
 msg_newline: db 13, 10, 0
 hex_digits: db "0123456789ABCDEF"
 hex_buffer: times 8 db 0
 kbd_head: db 0
 kbd_tail: db 0
 kbd_queue: times 32 db 0
+timer_ticks: dq 0
 align 8
 idt_pointer:
     dw (34 * 16) - 1

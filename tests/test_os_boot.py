@@ -101,3 +101,4 @@ def test_os_qemu_reaches_stage2_serial_banner(tmp_path):
         stdout, _ = process.communicate()
     assert b"KALE OS stage2: serial, IDT, PIC, keyboard queue online" in stdout
     assert b"KALE OS bootinfo checksum=0x" in stdout
+    assert b"KALE OS PIT timer online" in stdout
