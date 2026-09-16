@@ -18,7 +18,7 @@ start:
     cld
     mov [boot_drive], dl
 
-    ; Load the second stage from sectors 2-5 at physical address 0x8000.
+    ; Load the second stage from sectors 2-9 at physical address 0x8000.
     ; Retry after resetting the BIOS disk when a transient read fails.
     mov si, 3
 .read_stage2:

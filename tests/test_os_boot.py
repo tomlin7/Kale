@@ -42,6 +42,9 @@ def test_os_boot_script_builds_a_bios_disk_image(tmp_path):
     assert "kbd_isr:" in stage2_source
     assert "kbd_queue:" in stage2_source
     assert "kbd_head" in stage2_source
+    assert "boot_info_init:" in stage2_source
+    assert "0x4B414C45" in stage2_source
+    assert "mov rdi, boot_info" in stage2_source
     image_data = image.read_bytes()
     assert image_data[512:512 + 4096] == stage2.read_bytes()
     assert image.stat().st_size == 1474560
@@ -97,3 +100,4 @@ def test_os_qemu_reaches_stage2_serial_banner(tmp_path):
         process.kill()
         stdout, _ = process.communicate()
     assert b"KALE OS stage2: serial, IDT, PIC, keyboard queue online" in stdout
+    assert b"KALE OS bootinfo checksum=0x" in stdout

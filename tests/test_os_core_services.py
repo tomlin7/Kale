@@ -26,6 +26,7 @@ def test_os_plan_defines_the_ten_foundation_features():
 
 def test_boot_and_time_services_have_deterministic_entry_points():
     assert "boot_info_valid" in read("os/kernel/boot_info.kl")
+    assert "stage2_checksum" in read("os/kernel/boot_info.kl")
     assert "e820_is_usable" in read("os/kernel/e820.kl")
     assert "exception_name" in read("os/kernel/exceptions.kl")
     assert "panic_begin" in read("os/kernel/panic.kl")

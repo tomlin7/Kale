@@ -29,7 +29,8 @@ os/
 - [x] GDT/IDT setup, PIC remap, keyboard IRQ queue and COM1 diagnostics.
 - [x] E820 memory-map discovery and reserved-region reporting contract.
 - [x] Expand the stage-two loader capacity and collect the BIOS E820 map.
-- [ ] Link a freestanding kernel entry and pass a boot information structure.
+- [x] Build and publish a boot information structure with E820/stage metadata.
+- [ ] Link a freestanding kernel entry and consume the boot information structure.
 - [x] Exception classification and structured panic reporting contracts.
 
 ### Time and hardware

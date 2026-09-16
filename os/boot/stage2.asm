@@ -5,7 +5,14 @@ default abs
 
 start:
     call serial_init
+    call boot_info_init
     mov rsi, msg_serial
+    call serial_print
+    mov rsi, msg_boot_info
+    call serial_print
+    mov eax, [boot_info + 36]
+    call serial_print_hex
+    mov rsi, msg_newline
     call serial_print
     call idt_init
     call pic_init
@@ -22,6 +29,7 @@ start:
     jmp .print
 
 .halt:
+    mov rdi, boot_info
     sti
     hlt
     jmp .halt
@@ -64,6 +72,49 @@ serial_print:
     out dx, al
     jmp serial_print
 .done:
+    ret
+
+serial_print_hex:
+    mov rcx, 8
+    mov rdi, hex_buffer
+.hex:
+    rol eax, 4
+    mov edx, eax
+    and edx, 0x0F
+    cmp dl, 10
+    jb .digit
+    add dl, 55
+    jmp .store
+.digit:
+    add dl, 48
+.store:
+    mov [rdi], dl
+    inc rdi
+    loop .hex
+    mov byte [rdi], 0
+    mov rsi, hex_buffer
+    call serial_print
+    ret
+
+boot_info_init:
+    mov dword [boot_info + 0], 0x4B414C45
+    mov dword [boot_info + 4], 1
+    mov qword [boot_info + 8], 0x500
+    movzx eax, word [0x4F0]
+    mov dword [boot_info + 16], eax
+    mov qword [boot_info + 24], 0x8000
+    mov dword [boot_info + 32], 4096
+    xor eax, eax
+    mov rcx, 4096
+    mov rsi, 0x8000
+.sum:
+    movzx edx, byte [rsi]
+    add eax, edx
+    inc rsi
+    dec rcx
+    jnz .sum
+    mov dword [boot_info + 36], eax
+    mov word [boot_info + 40], 0
     ret
 
 ; Install the keyboard gate (vector 0x21) in a compact IDT covering vectors
@@ -129,6 +180,10 @@ kbd_isr:
 
 msg_stage2: db " [KALE OS] STAGE2 LOADED - LONG MODE KERNEL HANDOFF READY ", 0
 msg_serial: db "KALE OS stage2: serial, IDT, PIC, keyboard queue online", 13, 10, 0
+msg_boot_info: db "KALE OS bootinfo checksum=0x", 0
+msg_newline: db 13, 10, 0
+hex_digits: db "0123456789ABCDEF"
+hex_buffer: times 8 db 0
 kbd_head: db 0
 kbd_tail: db 0
 kbd_queue: times 32 db 0
@@ -138,5 +193,8 @@ idt_pointer:
     dq idt_table
 idt_table:
     times 34 * 16 db 0
+; BootInfo lives below the stage-two image so runtime writes do not alter the
+; payload checksum recorded by the build manifest.
+boot_info equ 0x7000
 
 times 4096 - ($ - $$) db 0
