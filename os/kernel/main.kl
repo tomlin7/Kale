@@ -1,10 +1,24 @@
 // Kale Microkernel Entry Point
 import "os/drivers/vga.kl" as vga;
+import "os/kernel/pmm.kl" as pmm;
+import "os/kernel/vmm.kl" as vmm;
 
 struct KernelInfo {
     magic: uint32,
     memory_lower_kb: uint32,
     memory_upper_kb: uint32,
+}
+
+// PMM bitmap buffer (static allocation for simplicity)
+let pmm_bitmap: [uint64; 16384]; // Enough for 1GB of memory
+
+// Bridge functions for VMM to call PMM
+fn vmm_pmm_alloc_frame(pmm: *void) -> uint64 {
+    return pmm.pmm_alloc_frame(pmm as *pmm.PMM);
+}
+
+fn vmm_pmm_free_frame(pmm: *void, frame_addr: uint64) -> void {
+    pmm.pmm_free_frame(pmm as *pmm.PMM, frame_addr);
 }
 
 fn kmain(info: *KernelInfo) -> int32 {
@@ -17,6 +31,28 @@ fn kmain(info: *KernelInfo) -> int32 {
     vga.vga_putc(&display, 'L' as uint8);
     vga.vga_putc(&display, 'E' as uint8);
     vga.vga_putc(&display, ']' as uint8);
+    
+    // Initialize PMM
+    let total_memory: uint64 = (info.memory_lower_kb as uint64 + info.memory_upper_kb as uint64) * 1024;
+    let pmm_instance: pmm.PMM = pmm.pmm_init(&pmm_bitmap, total_memory);
+    
+    // Initialize VMM PMM function pointers
+    vmm.vmm_init_pmm_functions(vmm_pmm_alloc_frame, vmm_pmm_free_frame);
+    
+    // Initialize VMM (pass PMM as opaque pointer)
+    let vmm_instance: vmm.VMM = vmm.vmm_init_with_pmm(&pmm_instance as *void);
+    
+    // Test VMM with a simple mapping
+    let test_virt: uint64 = 0xFFFFFFFF80000000;
+    let test_phys: uint64 = pmm.pmm_alloc_frame(&pmm_instance);
+    if test_phys != 0 {
+        let success: bool = vmm.vmm_map_page(&vmm_instance, &pmm_instance as *void, test_virt, test_phys, 0x3);
+        if success {
+            vga.vga_putc(&display, 'V' as uint8);
+            vga.vga_putc(&display, 'M' as uint8);
+            vga.vga_putc(&display, 'M' as uint8);
+        }
+    }
     
     return 0;
 }

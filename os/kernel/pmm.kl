@@ -58,3 +58,12 @@ fn pmm_free_frame(pmm: *PMM, frame_addr: uint64) -> void {
     pmm.bitmap[word_idx] = pmm.bitmap[word_idx] & (~mask);
     pmm.used_frames = pmm.used_frames - 1;
 }
+
+// Export functions for use by VMM (with generic pointer signature)
+extern fn pmm_alloc_frame_generic(pmm: *void) -> uint64 {
+    return pmm_alloc_frame(pmm as *PMM);
+}
+
+extern fn pmm_free_frame_generic(pmm: *void, frame_addr: uint64) -> void {
+    pmm_free_frame(pmm as *PMM, frame_addr);
+}

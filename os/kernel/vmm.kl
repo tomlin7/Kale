@@ -1,14 +1,6 @@
 // Virtual Memory Manager (VMM) - 4-level paging implementation
 // x86_64 Long Mode paging with PML4, PDPT, PD, PT
 
-// PMM struct reference (defined in pmm.kl)
-struct PMM {
-    bitmap: *uint64,
-    total_frames: uint64,
-    used_frames: uint64,
-    bitmap_size_words: uint64,
-}
-
 // Page Table Entry (64-bit)
 struct PageTableEntry {
     present: bool,
@@ -89,13 +81,15 @@ fn pte_is_empty(entry: *PageTableEntry) -> bool {
     return !entry.present && entry.frame == 0;
 }
 
-// Page table allocation functions (will be updated to use PMM parameter)
-// For now, these are stubs that will be replaced with PMM-aware versions
-extern fn pmm_alloc_frame(pmm: *PMM) -> uint64;
-extern fn pmm_free_frame(pmm: *PMM, frame_addr: uint64) -> void;
+// Page table allocation functions - use function pointers
+type PMMAllocFn = fn(pmm: *void) -> uint64;
+type PMMFreeFn = fn(pmm: *void, frame_addr: uint64) -> void;
 
-// These functions need PMM parameter - updated versions below
-fn vmm_alloc_page_table(pmm: *PMM) -> *PageTable {
+let pmm_alloc_frame: PMMAllocFn;
+let pmm_free_frame: PMMFreeFn;
+
+// These functions use function pointers for PMM access
+fn vmm_alloc_page_table(pmm: *void) -> *PageTable {
     let frame: uint64 = pmm_alloc_frame(pmm);
     if frame == 0 {
         return null;
@@ -123,12 +117,12 @@ fn vmm_alloc_page_table(pmm: *PMM) -> *PageTable {
     return table;
 }
 
-fn vmm_free_page_table(pmm: *PMM, table: *PageTable) -> void {
+fn vmm_free_page_table(pmm: *void, table: *PageTable) -> void {
     let frame: uint64 = table as uint64;
     pmm_free_frame(pmm, frame);
 }
 
-fn vmm_get_or_create_table(pmm: *PMM, entry: *PageTableEntry) -> *PageTable {
+fn vmm_get_or_create_table(pmm: *void, entry: *PageTableEntry) -> *PageTable {
     if entry.present {
         return entry.frame as *PageTable;
     }
@@ -147,7 +141,7 @@ fn vmm_get_or_create_table(pmm: *PMM, entry: *PageTableEntry) -> *PageTable {
 }
 
 // Virtual address mapping functions
-fn vmm_map_page(vmm: *VMM, pmm: *PMM, virt_addr: uint64, phys_addr: uint64, flags: uint64) -> bool {
+fn vmm_map_page(vmm: *VMM, pmm: *void, virt_addr: uint64, phys_addr: uint64, flags: uint64) -> bool {
     // Extract page table indices
     let pml4_idx: uint64 = (virt_addr >> 39) & 0x1FF;
     let pdpt_idx: uint64 = (virt_addr >> 30) & 0x1FF;
@@ -262,7 +256,7 @@ fn vmm_get_phys_addr(vmm: *VMM, virt_addr: uint64) -> uint64 {
     return page_entry.frame + page_offset;
 }
 
-fn vmm_map_range(vmm: *VMM, pmm: *PMM, virt_start: uint64, phys_start: uint64, pages: uint64, flags: uint64) -> bool {
+fn vmm_map_range(vmm: *VMM, pmm: *void, virt_start: uint64, phys_start: uint64, pages: uint64, flags: uint64) -> bool {
     let i: uint64 = 0;
     while i < pages {
         let virt_addr: uint64 = virt_start + (i * PAGE_SIZE);
@@ -286,15 +280,14 @@ fn vmm_map_range(vmm: *VMM, pmm: *PMM, virt_start: uint64, phys_start: uint64, p
 
 // TLB management
 extern fn invlpg(addr: uint64) -> void;
+extern fn get_cr3() -> uint64;
+extern fn set_cr3(value: uint64) -> void;
 
 fn vmm_flush_tlb() -> void {
     // Reload CR3 to flush entire TLB
     let cr3: uint64 = get_cr3();
     set_cr3(cr3);
 }
-
-extern fn get_cr3() -> uint64;
-extern fn set_cr3(value: uint64) -> void;
 
 // VMM initialization
 fn vmm_init() -> VMM {
@@ -337,7 +330,7 @@ fn vmm_mark_page_cow(entry: *PageTableEntry) -> void {
 // Import PMM struct definition
 import "os/kernel/pmm.kl" as pmm_module;
 
-fn vmm_handle_cow_fault(vmm: *VMM, pmm: *PMM, fault_addr: uint64) -> bool {
+fn vmm_handle_cow_fault(vmm: *VMM, pmm: *void, fault_addr: uint64) -> bool {
     let phys_addr: uint64 = vmm_get_phys_addr(vmm, fault_addr);
     if phys_addr == 0 {
         return false;
@@ -413,7 +406,7 @@ fn vmm_get_kernel_pml4() -> *PageTable {
 }
 
 // VMM initialization with PMM reference
-fn vmm_init_with_pmm(pmm_instance: *PMM) -> VMM {
+fn vmm_init_with_pmm(pmm_instance: *void) -> VMM {
     let vmm: VMM;
     
     // Get current PML4 from CR3
@@ -429,8 +422,14 @@ fn vmm_init_with_pmm(pmm_instance: *PMM) -> VMM {
     return vmm;
 }
 
+// Initialize PMM function pointers (called from main.kl)
+fn vmm_init_pmm_functions(alloc_fn: PMMAllocFn, free_fn: PMMFreeFn) -> void {
+    pmm_alloc_frame = alloc_fn;
+    pmm_free_frame = free_fn;
+}
+
 // Update page table allocation to use PMM parameter
-fn vmm_alloc_page_table_with_pmm(pmm: *PMM) -> *PageTable {
+fn vmm_alloc_page_table_with_pmm(pmm: *void) -> *PageTable {
     let frame: uint64 = pmm_alloc_frame(pmm);
     if frame == 0 {
         return null;
@@ -458,7 +457,7 @@ fn vmm_alloc_page_table_with_pmm(pmm: *PMM) -> *PageTable {
     return table;
 }
 
-fn vmm_free_page_table_with_pmm(pmm: *PMM, table: *PageTable) -> void {
+fn vmm_free_page_table_with_pmm(pmm: *void, table: *PageTable) -> void {
     let frame: uint64 = table as uint64;
     pmm_free_frame(pmm, frame);
 }
