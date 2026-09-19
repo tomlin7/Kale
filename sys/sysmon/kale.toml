@@ -1,0 +1,22 @@
+[package]
+name = "kale-sysmon"
+version = "0.1.0"
+description = "Real-time systems telemetry, hardware monitor, and TUI dashboard for Kale"
+authors = ["Tom Lin <tom@kale-lang.org>"]
+license = "MIT"
+edition = "2026"
+entry = "main.kl"
+
+[dependencies]
+std = { path = "../../packages/std" }
+term = { path = "../../libs/term" }
+
+[scripts]
+start = "kale run main.kl"
+build = "kale build main.kl -o ../../bin/kale_sysmon.exe"
+
+[build]
+backend = "llvm"
+opt = 2
+output = "../../bin/kale_sysmon.exe"
+includes = ["../..", "../../packages/std"]

@@ -1,0 +1,13 @@
+[package]
+name = "kale-ui"
+version = "0.1.0"
+description = "Immediate-mode UI toolkit, layout engine, and interactive widgets for Kale"
+authors = ["Tom Lin <tom@kale-lang.org>"]
+license = "MIT"
+edition = "2026"
+entry = "ui.kl"
+
+[dependencies]
+std = { path = "../../packages/std" }
+framework = { path = "../framework" }
+render = { path = "../render" }

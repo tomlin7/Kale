@@ -1,0 +1,28 @@
+[workspace]
+name = "kale-monorepo"
+version = "0.1.0"
+members = [
+    "editor",
+    "apps/kv",
+    "apps/lsp",
+    "sys/sysmon",
+    "packages/std",
+    "packages/editor",
+    "packages/bindings/win32",
+    "libs/render",
+    "libs/ui",
+    "libs/framework",
+    "libs/gl",
+    "libs/net",
+    "libs/term",
+    "libs/json",
+    "libs/matrix",
+    "libs/sql"
+]
+
+[scripts]
+test = "uv run pytest tests/"
+check = "kale check editor/main.kl"
+build-editor = "kale build editor/main.kl -o bin/kale_edit.exe -LE:\\kale\\libs\\glfw\\lib -lglfw3 -LE:\\kale\\libs\\stb\\lib -lstb -lopengl32"
+build-kv = "kale build apps/kv/main.kl -o bin/kale_kv.exe"
+registry = "kale registry start --port 8080"

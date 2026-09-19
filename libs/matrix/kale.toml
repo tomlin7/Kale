@@ -1,0 +1,11 @@
+[package]
+name = "kale-matrix"
+version = "0.1.0"
+description = "Fast 2D/3D/4D matrix math, vector transformations, and SIMD linear algebra for Kale"
+authors = ["Tom Lin <tom@kale-lang.org>"]
+license = "MIT"
+edition = "2026"
+entry = "matrix.kl"
+
+[dependencies]
+std = { path = "../../packages/std" }

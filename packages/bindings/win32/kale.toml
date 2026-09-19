@@ -1,0 +1,11 @@
+[package]
+name = "kale-bindings-win32"
+version = "0.1.0"
+description = "Native Win32 API bindings (user32, kernel32, gdi32) for Kale"
+authors = ["Tom Lin <tom@kale-lang.org>"]
+license = "MIT"
+edition = "2026"
+entry = "user32.kl"
+
+[dependencies]
+std = { path = "../../std" }

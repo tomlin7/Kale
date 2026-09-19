@@ -1,0 +1,22 @@
+[package]
+name = "kale-lsp"
+version = "0.1.0"
+description = "Language Server Protocol daemon for the Kale programming language"
+authors = ["Tom Lin <tom@kale-lang.org>"]
+license = "MIT"
+edition = "2026"
+entry = "main.kl"
+
+[dependencies]
+std = { path = "../../packages/std" }
+json = { path = "../../libs/json" }
+
+[scripts]
+start = "kale run main.kl"
+build = "kale build main.kl -o ../../bin/kale_lsp.exe"
+
+[build]
+backend = "llvm"
+opt = 2
+output = "../../bin/kale_lsp.exe"
+includes = ["../..", "../../packages/std"]

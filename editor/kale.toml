@@ -1,0 +1,26 @@
+[package]
+name = "kale-editor"
+version = "0.1.0"
+description = "High-performance GPU code editor for the Kale ecosystem"
+authors = ["Tom Lin <tom@kale-lang.org>"]
+license = "MIT"
+edition = "2026"
+entry = "main.kl"
+
+[dependencies]
+std = { path = "../packages/std" }
+render = { path = "../libs/render" }
+ui = { path = "../libs/ui" }
+framework = { path = "../libs/framework" }
+
+[scripts]
+start = "kale run main.kl"
+build = "kale build main.kl -o ../bin/kale_edit.exe"
+
+[build]
+backend = "llvm"
+opt = 2
+output = "../bin/kale_edit.exe"
+libs = ["glfw3", "stb", "opengl32"]
+lib-dirs = ["../libs/glfw/lib", "../libs/stb/lib"]
+includes = ["..", "../packages/std", "../libs"]
