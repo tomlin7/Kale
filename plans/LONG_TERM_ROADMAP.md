@@ -29,10 +29,14 @@ The mission is to establish Kale as a premier, high-performance systems language
 |  - packages/compiler: Self-hosted Kale compiler (Kale written in Kale)        |
 |  - LLVM IR generation, native AOT compilation, and JIT execution              |
 +-------------------------------------------------------------------------------+
-|  Tier 0: Operating System & Hardware Abstraction (sys/*)                     |
-|  - sys/boot: Multiboot / UEFI x86_64 bootloader                               |
-|  - sys/kernel: Microkernel in Kale + ASM                                      |
-|  - sys/drivers: Device drivers (VGA, Framebuffer, VirtIO, Serial)             |
+|  Tier 0: Operating System & Hardware Abstraction (os/*)                      |
+|  - os/boot: Multiboot / UEFI x86_64 bootloader                                 |
+|  - os/kernel: Microkernel in Kale + ASM                                       |
+|  - os/drivers: Device drivers (VGA, Framebuffer, PS/2, Serial)                |
++-------------------------------------------------------------------------------+
+|  Tier 0.5: Systems Utilities & Diagnostics (sys/*)                            |
+|  - sys/sysmon: Real-time terminal process monitor & telemetry                 |
+|  - sys/dig: Low-level DNS packet craft diagnostic tool                        |
 +-------------------------------------------------------------------------------+
 ```
 
@@ -70,16 +74,16 @@ Transitioning from PythonKale to a fully self-hosting compiler:
 
 ---
 
-## 💻 Pillar 4: Bare-Metal Systems & Kale OS (`sys/*`)
+## 💻 Pillar 4: Bare-Metal Systems & Kale OS (`os/*`)
 Taking Kale directly to bare-metal x86_64 hardware:
-1. **Bootloader (`sys/boot`)**: Stage 1 MBR & Stage 2 protected mode loader transition to 64-bit long mode.
-2. **Kernel (`sys/kernel`)**:
+1. **Bootloader (`os/boot`)**: Stage 1 MBR & Stage 2 protected mode loader transition to 64-bit long mode.
+2. **Kernel (`os/kernel`)**:
    - Memory management: Physical page frame allocator, virtual paging table setup.
    - Interrupt handling: IDT, PIC/APIC controllers, timer interrupts.
    - Process scheduler: Preemptive multitasking, context switching in ASM.
-3. **Framebuffer Display (`sys/drivers`)**: Linear framebuffer driver rendering Kale UI directly onto bare hardware without an underlying OS.
-4. **Terminal & Process Monitor (`sys/sysmon`)**: Bare-metal & native real-time CPU, memory, thread, and process inspection TUI tool.
-5. **DNS Resolver & Diagnostic CLI (`sys/dig`)**: Low-level packet-crafted DNS query tool and resolver for systems networking.
+3. **Framebuffer Display (`os/drivers`)**: Linear framebuffer driver rendering Kale UI directly onto bare hardware without an underlying OS.
+4. **Hardware Drivers (`os/drivers`)**: 16550 UART serial logger, PS/2 keyboard controller, VGA 80x25 text mode driver.
+5. **Systems Diagnostics & Telemetry (`sys/*`)**: Host-level process monitor (`sys/sysmon`) and raw wire DNS diagnostic resolver (`sys/dig`).
 
 ---
 
@@ -97,7 +101,11 @@ Taking Kale directly to bare-metal x86_64 hardware:
 ## 🛠️ Pillar 6: Developer Tooling & Ecosystem Infrastructure
 1. **Language Server Protocol Server (`apps/lsp` / `tools/lsp`)**: High-performance LSP server delivering jump-to-definition, hover docs, completions, and real-time semantic diagnostics.
 2. **Editor Supercharges (`editor/`)**: Deep LSP client integration, fuzzy project finder, tree-sitter or native Kale AST folding, Git gutter indicators, and split panes.
-3. **Package Manager & Build Automation (`kale-pm` / `tools/pkg`)**: Monorepo dependency resolution, package registry client, lockfiles, and hermetic reproducible build pipeline.
+3. **Package Manager & Publishing Platform (`kale.pm` / `tools/registry`)**:
+   - `kale.toml` project manifest specification (`[package]`, `[dependencies]`, `[scripts]`, `[build]`).
+   - CLI package manager tooling (`kale new`, `kale init`, `kale add`, `kale remove`, `kale run`, `kale build`, `kale pack`).
+   - Reproducible tar.gz packaging (`.kale-pkg`) with deterministic pax timestamps and SHA-256 integrity verification.
+   - Reference publishing platform server & client (`kale publish`, `kale search`, `kale info`, `kale login`, `kale whoami`), supporting local private registries and public registry infrastructure.
 4. **Web & Community**:
    - High-throughput CMS & web publishing platform (`apps/blog` - *⏸️ Postponed until explicit command*).
    - Kale Official Showcase Website (`website/`): Next.js Renaissance-themed portal highlighting all monorepo projects, architecture blueprints, interactive API specs, and benchmarks.

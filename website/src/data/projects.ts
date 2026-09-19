@@ -613,14 +613,14 @@ fn main() -> int32 {
     ],
   },
   {
-    slug: "sys",
-    name: "sys/ (Kale OS)",
+    slug: "os",
+    name: "os/ (Kale OS)",
     romanNumeral: "XI",
     subtitle: "Bare-Metal Operating System & Microkernel",
     tier: "Low-Level & OS",
     status: "Foundational",
-    version: "v0.0.1",
-    path: "sys/",
+    version: "v0.1.0",
+    path: "os/",
     image: "/assets/kaleimages/HQQA_vDbsAAFoJM.jpg",
     secondaryImage: "/assets/kaleimages/HR-35WubIAAt3Wd.jpg",
     tagline: "Multiboot x86_64 loader, physical page frame allocator, preemptive multitasking, and linear framebuffer.",
@@ -669,8 +669,8 @@ fn kernel_main(boot: *BootInfo) -> void {
 }`,
     },
     cliCommands: [
-      "nasm -f elf64 sys/boot/boot.asm -o bin/boot.o",
-      "kale build sys/kernel/main.kl -o bin/kernel.bin --no-std",
+      "nasm -f elf64 os/boot/boot.asm -o bin/boot.o",
+      "kale build os/kernel/main.kl -o bin/kernel.bin --no-std",
       "qemu-system-x86_64 -kernel bin/kernel.bin",
     ],
   },
@@ -1110,6 +1110,62 @@ target = "x86_64-windows-msvc"`,
       "kale-pm new my_project",
       "kale-pm build --release",
       "kale-pm test",
+    ],
+  },
+  {
+    slug: "kv",
+    name: "apps/kv (kaledis)",
+    romanNumeral: "XX",
+    subtitle: "In-Memory Key-Value Store & Redis Daemon",
+    tier: "Flagship Apps",
+    status: "Active",
+    version: "v0.1.0",
+    path: "apps/kv/",
+    image: "/assets/kaleimages/HR-35WubIAAt3Wd.jpg",
+    secondaryImage: "/assets/kaleimages/HQQA_vDbsAAFoJM.jpg",
+    tagline: "RESP-compatible in-memory database daemon with zero-latency TCP networking and hash map storage.",
+    description: "A high-performance in-memory key-value database engine and TCP network daemon for Kale. Implements Redis RESP serialization (strings, integers, arrays, errors), hash map storage with collision handling, slot compaction, and CLI command dispatching.",
+    stats: [
+      { label: "Protocol", value: "Redis RESP / TCP" },
+      { label: "Storage Engine", value: "In-Memory Hash Map" },
+      { label: "Commands", value: "PING, SET, GET, DEL, KEYS" },
+      { label: "Milestone", value: "Active Module" },
+    ],
+    highlights: [
+      {
+        title: "RESP Serialization",
+        description: "Full wire-level parser and serializer for Redis Simple Strings, Bulk Strings, Integers, and Arrays.",
+      },
+      {
+        title: "High-Throughput Daemon",
+        description: "Powered by libs/net/tcp for concurrent network I/O and zero-allocation query handling.",
+      },
+      {
+        title: "In-Memory Hash Map",
+        description: "Deterministic bucket hashing with dynamic capacity tracking, slot reuse, and key enumeration.",
+      },
+    ],
+    codeSnippet: {
+      filename: "kv_main.kl",
+      language: "kale",
+      code: `import "apps/kv/store.kl" as kv;
+import "apps/kv/daemon.kl" as daemon;
+
+fn main() -> int32 {
+    let store: kv.KvStore* = kv.store_new(256);
+    kv.store_set(store, "system_name", "Kale Ecosystem");
+    kv.store_set(store, "version", "v0.2.0");
+
+    let val: string = kv.store_get(store, "system_name");
+    print(val);
+    kv.store_free(store);
+    return 0;
+}`,
+    },
+    cliCommands: [
+      "kale build apps/kv/main.kl -o bin/kaledis.exe -lws2_32",
+      "./bin/kaledis.exe --port 6379",
+      "redis-cli -p 6379 PING",
     ],
   },
 ];

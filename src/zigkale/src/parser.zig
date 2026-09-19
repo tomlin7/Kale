@@ -540,14 +540,14 @@ pub const Parser = struct {
 
         if (self.match(.kw_fn)) {
             // fn [Type] name(...)
-            if (self.isTypeStart()) {
-                // Check if following token is '('; if so, this identifier is the function name!
-                if (self.peek(1).kind == .lparen or (self.peek(1).kind == .dot and self.peek(3).kind == .lparen)) {
-                    has_explicit_ret = false;
-                } else {
-                    ret_type = try self.parseTypeRef();
-                    has_explicit_ret = true;
-                }
+            // If current token is followed by dot and paren (e.g. fn Struct.method()), no explicit return type
+            if (self.peek(1).kind == .dot and self.peek(3).kind == .lparen) {
+                has_explicit_ret = false;
+            } else if (self.peek(1).kind == .lparen) {
+                has_explicit_ret = false;
+            } else if (self.isTypeStart()) {
+                ret_type = try self.parseTypeRef();
+                has_explicit_ret = true;
             }
         } else {
             // C style: Type name(...)
@@ -1132,6 +1132,26 @@ pub const Parser = struct {
             if (has_star and self.peek(idx).kind == .rparen) {
                 return true;
             }
+        }
+
+        // Case 3: Function pointer type e.g. (fn(int): void)
+        if (self.peek(idx).kind == .kw_fn and self.peek(idx + 1).kind == .lparen) {
+            idx += 2;
+            var depth: usize = 1;
+            while (depth > 0 and self.peek(idx).kind != .eof) {
+                if (self.peek(idx).kind == .lparen) depth += 1;
+                if (self.peek(idx).kind == .rparen) depth -= 1;
+                idx += 1;
+            }
+            if (self.peek(idx).kind == .colon) {
+                idx += 1;
+                // Skip return type
+                if (self.peek(idx).isTypeKeyword() or self.peek(idx).kind == .identifier) {
+                    idx += 1;
+                    while (self.peek(idx).kind == .star) idx += 1;
+                }
+            }
+            return self.peek(idx).kind == .rparen;
         }
 
         return false;

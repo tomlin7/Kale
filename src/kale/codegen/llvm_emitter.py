@@ -215,23 +215,36 @@ class LLVMEmitter:
                     self._builder.ret(ir.Constant(to_llvm_type(fn_decl.symbol.return_type, self._struct_types), 0))
 
         # Pass 3: Create main() function for top-level statements
-        func_type = ir.FunctionType(ir.IntType(32), [])
-        self._main_func = ir.Function(self.module, func_type, name="main")
-        self._current_func = self._main_func
-        self._current_fn_sym = None
-        self._entry_block = self._main_func.append_basic_block(name="entry")
-        self._builder = ir.IRBuilder(self._entry_block)
+        if "main" in self._functions:
+            self._main_func = self._functions["main"]
+            self._current_func = self._main_func
+            self._current_fn_sym = None
+            if program.statements:
+                self._entry_block = self._main_func.basic_blocks[-1]
+                self._builder = ir.IRBuilder(self._entry_block)
+                self._scopes = [{}]
+                self._break_blocks = []
+                self._continue_blocks = []
+                for statement in program.statements:
+                    self._emit_statement(statement)
+        else:
+            func_type = ir.FunctionType(ir.IntType(32), [])
+            self._main_func = ir.Function(self.module, func_type, name="main")
+            self._current_func = self._main_func
+            self._current_fn_sym = None
+            self._entry_block = self._main_func.append_basic_block(name="entry")
+            self._builder = ir.IRBuilder(self._entry_block)
 
-        self._scopes = [{}]
-        self._break_blocks = []
-        self._continue_blocks = []
+            self._scopes = [{}]
+            self._break_blocks = []
+            self._continue_blocks = []
 
-        for statement in program.statements:
-            self._emit_statement(statement)
+            for statement in program.statements:
+                self._emit_statement(statement)
 
-        # Ensure main function terminates properly
-        if not self._is_block_terminated():
-            self._builder.ret(ir.Constant(ir.IntType(32), 0))
+            # Ensure main function terminates properly
+            if not self._is_block_terminated():
+                self._builder.ret(ir.Constant(ir.IntType(32), 0))
 
         return self.module
 

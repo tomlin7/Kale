@@ -1,0 +1,464 @@
+// Virtual Memory Manager (VMM) - 4-level paging implementation
+// x86_64 Long Mode paging with PML4, PDPT, PD, PT
+
+// PMM struct reference (defined in pmm.kl)
+struct PMM {
+    bitmap: *uint64,
+    total_frames: uint64,
+    used_frames: uint64,
+    bitmap_size_words: uint64,
+}
+
+// Page Table Entry (64-bit)
+struct PageTableEntry {
+    present: bool,
+    writable: bool,
+    user_accessible: bool,
+    page_write_through: bool,
+    page_cache_disable: bool,
+    accessed: bool,
+    dirty: bool,
+    global: bool,
+    available: uint8,
+    frame: uint64,
+    no_execute: bool,
+}
+
+// Page Table (512 entries)
+struct PageTable {
+    entries: [PageTableEntry; 512],
+}
+
+// Virtual Memory Manager
+struct VMM {
+    pml4: *PageTable,
+    kernel_heap_start: uint64,
+    kernel_heap_end: uint64,
+    user_heap_start: uint64,
+    user_heap_end: uint64,
+}
+
+// Memory layout constants
+const KERNEL_PML4_INDEX: uint64 = 511;
+const KERNEL_CODE_BASE: uint64 = 0xFFFFFFFF80000000;
+const KERNEL_HEAP_BASE: uint64 = 0xFFFFFFFF80000000;
+const KERNEL_HEAP_SIZE: uint64 = 0x10000000; // 256MB
+
+const USER_STACK_BASE: uint64 = 0x00007FFFFFFFFFFF;
+const USER_STACK_SIZE: uint64 = 0x100000; // 1MB
+const USER_HEAP_BASE: uint64 = 0x0000000000400000;
+const USER_HEAP_MAX: uint64 = 0x00007FFFFFFFFFFF;
+
+// Page size
+const PAGE_SIZE: uint64 = 4096; // 4KB pages
+
+// Helper functions for page table entry manipulation
+fn pte_get_present(entry: *PageTableEntry) -> bool {
+    return entry.present;
+}
+
+fn pte_set_present(entry: *PageTableEntry, value: bool) -> void {
+    entry.present = value;
+}
+
+fn pte_get_writable(entry: *PageTableEntry) -> bool {
+    return entry.writable;
+}
+
+fn pte_set_writable(entry: *PageTableEntry, value: bool) -> void {
+    entry.writable = value;
+}
+
+fn pte_get_user_accessible(entry: *PageTableEntry) -> bool {
+    return entry.user_accessible;
+}
+
+fn pte_set_user_accessible(entry: *PageTableEntry, value: bool) -> void {
+    entry.user_accessible = value;
+}
+
+fn pte_get_frame(entry: *PageTableEntry) -> uint64 {
+    return entry.frame;
+}
+
+fn pte_set_frame(entry: *PageTableEntry, frame: uint64) -> void {
+    entry.frame = frame;
+}
+
+fn pte_is_empty(entry: *PageTableEntry) -> bool {
+    return !entry.present && entry.frame == 0;
+}
+
+// Page table allocation functions (will be updated to use PMM parameter)
+// For now, these are stubs that will be replaced with PMM-aware versions
+extern fn pmm_alloc_frame(pmm: *PMM) -> uint64;
+extern fn pmm_free_frame(pmm: *PMM, frame_addr: uint64) -> void;
+
+// These functions need PMM parameter - updated versions below
+fn vmm_alloc_page_table(pmm: *PMM) -> *PageTable {
+    let frame: uint64 = pmm_alloc_frame(pmm);
+    if frame == 0 {
+        return null;
+    }
+    
+    let table: *PageTable = frame as *PageTable;
+    
+    // Clear the page table
+    let i: uint64 = 0;
+    while i < 512 {
+        table.entries[i].present = false;
+        table.entries[i].writable = false;
+        table.entries[i].user_accessible = false;
+        table.entries[i].page_write_through = false;
+        table.entries[i].page_cache_disable = false;
+        table.entries[i].accessed = false;
+        table.entries[i].dirty = false;
+        table.entries[i].global = false;
+        table.entries[i].available = 0;
+        table.entries[i].frame = 0;
+        table.entries[i].no_execute = false;
+        i = i + 1;
+    }
+    
+    return table;
+}
+
+fn vmm_free_page_table(pmm: *PMM, table: *PageTable) -> void {
+    let frame: uint64 = table as uint64;
+    pmm_free_frame(pmm, frame);
+}
+
+fn vmm_get_or_create_table(pmm: *PMM, entry: *PageTableEntry) -> *PageTable {
+    if entry.present {
+        return entry.frame as *PageTable;
+    }
+    
+    let table: *PageTable = vmm_alloc_page_table(pmm);
+    if table == null {
+        return null;
+    }
+    
+    entry.frame = table as uint64;
+    entry.present = true;
+    entry.writable = true;
+    entry.user_accessible = false;
+    
+    return table;
+}
+
+// Virtual address mapping functions
+fn vmm_map_page(vmm: *VMM, pmm: *PMM, virt_addr: uint64, phys_addr: uint64, flags: uint64) -> bool {
+    // Extract page table indices
+    let pml4_idx: uint64 = (virt_addr >> 39) & 0x1FF;
+    let pdpt_idx: uint64 = (virt_addr >> 30) & 0x1FF;
+    let pd_idx: uint64 = (virt_addr >> 21) & 0x1FF;
+    let pt_idx: uint64 = (virt_addr >> 12) & 0x1FF;
+    
+    // Get or create PDPT
+    let pdpt_entry: *PageTableEntry = &vmm.pml4.entries[pml4_idx];
+    let pdpt: *PageTable = vmm_get_or_create_table(pmm, pdpt_entry);
+    if pdpt == null {
+        return false;
+    }
+    
+    // Get or create PD
+    let pd_entry: *PageTableEntry = &pdpt.entries[pdpt_idx];
+    let pd: *PageTable = vmm_get_or_create_table(pmm, pd_entry);
+    if pd == null {
+        return false;
+    }
+    
+    // Get or create PT
+    let pt_entry: *PageTableEntry = &pd.entries[pd_idx];
+    let pt: *PageTable = vmm_get_or_create_table(pmm, pt_entry);
+    if pt == null {
+        return false;
+    }
+    
+    // Map the page
+    let page_entry: *PageTableEntry = &pt.entries[pt_idx];
+    if page_entry.present {
+        return false; // Already mapped
+    }
+    
+    page_entry.frame = phys_addr;
+    page_entry.present = true;
+    page_entry.writable = (flags & 0x2) != 0;
+    page_entry.user_accessible = (flags & 0x4) != 0;
+    page_entry.no_execute = (flags & 0x8000000000000000) != 0;
+    
+    return true;
+}
+
+fn vmm_unmap_page(vmm: *VMM, virt_addr: uint64) -> void {
+    // Extract page table indices
+    let pml4_idx: uint64 = (virt_addr >> 39) & 0x1FF;
+    let pdpt_idx: uint64 = (virt_addr >> 30) & 0x1FF;
+    let pd_idx: uint64 = (virt_addr >> 21) & 0x1FF;
+    let pt_idx: uint64 = (virt_addr >> 12) & 0x1FF;
+    
+    // Walk page tables
+    let pdpt_entry: *PageTableEntry = &vmm.pml4.entries[pml4_idx];
+    if !pdpt_entry.present {
+        return;
+    }
+    
+    let pdpt: *PageTable = pdpt_entry.frame as *PageTable;
+    let pd_entry: *PageTableEntry = &pdpt.entries[pdpt_idx];
+    if !pd_entry.present {
+        return;
+    }
+    
+    let pd: *PageTable = pd_entry.frame as *PageTable;
+    let pt_entry: *PageTableEntry = &pd.entries[pd_idx];
+    if !pt_entry.present {
+        return;
+    }
+    
+    let pt: *PageTable = pt_entry.frame as *PageTable;
+    let page_entry: *PageTableEntry = &pt.entries[pt_idx];
+    
+    // Unmap the page
+    page_entry.present = false;
+    page_entry.frame = 0;
+    
+    // Invalidate TLB entry
+    invlpg(virt_addr);
+}
+
+fn vmm_get_phys_addr(vmm: *VMM, virt_addr: uint64) -> uint64 {
+    // Extract page table indices
+    let pml4_idx: uint64 = (virt_addr >> 39) & 0x1FF;
+    let pdpt_idx: uint64 = (virt_addr >> 30) & 0x1FF;
+    let pd_idx: uint64 = (virt_addr >> 21) & 0x1FF;
+    let pt_idx: uint64 = (virt_addr >> 12) & 0x1FF;
+    
+    // Walk page tables
+    let pdpt_entry: *PageTableEntry = &vmm.pml4.entries[pml4_idx];
+    if !pdpt_entry.present {
+        return 0;
+    }
+    
+    let pdpt: *PageTable = pdpt_entry.frame as *PageTable;
+    let pd_entry: *PageTableEntry = &pdpt.entries[pdpt_idx];
+    if !pd_entry.present {
+        return 0;
+    }
+    
+    let pd: *PageTable = pd_entry.frame as *PageTable;
+    let pt_entry: *PageTableEntry = &pd.entries[pd_idx];
+    if !pt_entry.present {
+        return 0;
+    }
+    
+    let pt: *PageTable = pt_entry.frame as *PageTable;
+    let page_entry: *PageTableEntry = &pt.entries[pt_idx];
+    if !page_entry.present {
+        return 0;
+    }
+    
+    // Calculate physical address
+    let page_offset: uint64 = virt_addr & 0xFFF;
+    return page_entry.frame + page_offset;
+}
+
+fn vmm_map_range(vmm: *VMM, pmm: *PMM, virt_start: uint64, phys_start: uint64, pages: uint64, flags: uint64) -> bool {
+    let i: uint64 = 0;
+    while i < pages {
+        let virt_addr: uint64 = virt_start + (i * PAGE_SIZE);
+        let phys_addr: uint64 = phys_start + (i * PAGE_SIZE);
+        
+        if !vmm_map_page(vmm, pmm, virt_addr, phys_addr, flags) {
+            // Cleanup on failure
+            let j: uint64 = 0;
+            while j < i {
+                vmm_unmap_page(vmm, virt_start + (j * PAGE_SIZE));
+                j = j + 1;
+            }
+            return false;
+        }
+        
+        i = i + 1;
+    }
+    
+    return true;
+}
+
+// TLB management
+extern fn invlpg(addr: uint64) -> void;
+
+fn vmm_flush_tlb() -> void {
+    // Reload CR3 to flush entire TLB
+    let cr3: uint64 = get_cr3();
+    set_cr3(cr3);
+}
+
+extern fn get_cr3() -> uint64;
+extern fn set_cr3(value: uint64) -> void;
+
+// VMM initialization
+fn vmm_init() -> VMM {
+    let vmm: VMM;
+    
+    // Get current PML4 from CR3
+    let current_pml4_phys: uint64 = get_cr3();
+    vmm.pml4 = current_pml4_phys as *PageTable;
+    
+    // Set up memory layout
+    vmm.kernel_heap_start = KERNEL_HEAP_BASE;
+    vmm.kernel_heap_end = KERNEL_HEAP_BASE + KERNEL_HEAP_SIZE;
+    vmm.user_heap_start = USER_HEAP_BASE;
+    vmm.user_heap_end = USER_HEAP_MAX;
+    
+    return vmm;
+}
+
+// Copy-on-write support
+struct COWInfo {
+    reference_count: uint32,
+    original_frame: uint64,
+}
+
+let cow_table: [COWInfo; 65536]; // For tracking COW pages
+
+fn vmm_mark_page_cow(entry: *PageTableEntry) -> void {
+    let frame: uint64 = entry.frame;
+    let frame_index: uint64 = frame / 4096;
+    
+    if frame_index < 65536 {
+        cow_table[frame_index].reference_count = cow_table[frame_index].reference_count + 1;
+        cow_table[frame_index].original_frame = frame;
+    }
+    
+    // Mark page as read-only
+    entry.writable = false;
+}
+
+// Import PMM struct definition
+import "os/kernel/pmm.kl" as pmm_module;
+
+fn vmm_handle_cow_fault(vmm: *VMM, pmm: *PMM, fault_addr: uint64) -> bool {
+    let phys_addr: uint64 = vmm_get_phys_addr(vmm, fault_addr);
+    if phys_addr == 0 {
+        return false;
+    }
+    
+    let frame_index: uint64 = phys_addr / 4096;
+    if frame_index >= 65536 {
+        return false;
+    }
+    
+    // Allocate new frame
+    let new_frame: uint64 = pmm_alloc_frame(pmm);
+    if new_frame == 0 {
+        return false;
+    }
+    
+    // Copy page content
+    let src: *uint8 = phys_addr as *uint8;
+    let dst: *uint8 = new_frame as *uint8;
+    let i: uint64 = 0;
+    while i < 4096 {
+        dst[i] = src[i];
+        i = i + 1;
+    }
+    
+    // Update page table entry
+    let pml4_idx: uint64 = (fault_addr >> 39) & 0x1FF;
+    let pdpt_idx: uint64 = (fault_addr >> 30) & 0x1FF;
+    let pd_idx: uint64 = (fault_addr >> 21) & 0x1FF;
+    let pt_idx: uint64 = (fault_addr >> 12) & 0x1FF;
+    
+    let pdpt: *PageTable = vmm.pml4.entries[pml4_idx].frame as *PageTable;
+    let pd: *PageTable = pdpt.entries[pdpt_idx].frame as *PageTable;
+    let pt: *PageTable = pd.entries[pd_idx].frame as *PageTable;
+    let page_entry: *PageTableEntry = &pt.entries[pt_idx];
+    
+    page_entry.frame = new_frame;
+    page_entry.writable = true;
+    
+    // Decrement reference count
+    cow_table[frame_index].reference_count = cow_table[frame_index].reference_count - 1;
+    if cow_table[frame_index].reference_count == 0 {
+        pmm_free_frame(pmm, phys_addr);
+    }
+    
+    // Invalidate TLB
+    invlpg(fault_addr);
+    
+    return true;
+}
+
+// Address space management
+fn vmm_create_address_space(pmm: *PMM) -> *PageTable {
+    let new_pml4: *PageTable = vmm_alloc_page_table(pmm);
+    if new_pml4 == null {
+        return null;
+    }
+    
+    // Copy kernel mappings (PML4 entry 511)
+    let kernel_pml4_entry: PageTableEntry = (vmm_get_kernel_pml4()).entries[511];
+    new_pml4.entries[511] = kernel_pml4_entry;
+    
+    return new_pml4;
+}
+
+fn vmm_switch_address_space(pml4: *PageTable) -> void {
+    let cr3: uint64 = pml4 as uint64;
+    set_cr3(cr3);
+}
+
+fn vmm_get_kernel_pml4() -> *PageTable {
+    return get_cr3() as *PageTable;
+}
+
+// VMM initialization with PMM reference
+fn vmm_init_with_pmm(pmm_instance: *PMM) -> VMM {
+    let vmm: VMM;
+    
+    // Get current PML4 from CR3
+    let current_pml4_phys: uint64 = get_cr3();
+    vmm.pml4 = current_pml4_phys as *PageTable;
+    
+    // Set up memory layout
+    vmm.kernel_heap_start = KERNEL_HEAP_BASE;
+    vmm.kernel_heap_end = KERNEL_HEAP_BASE + KERNEL_HEAP_SIZE;
+    vmm.user_heap_start = USER_HEAP_BASE;
+    vmm.user_heap_end = USER_HEAP_MAX;
+    
+    return vmm;
+}
+
+// Update page table allocation to use PMM parameter
+fn vmm_alloc_page_table_with_pmm(pmm: *PMM) -> *PageTable {
+    let frame: uint64 = pmm_alloc_frame(pmm);
+    if frame == 0 {
+        return null;
+    }
+    
+    let table: *PageTable = frame as *PageTable;
+    
+    // Clear the page table
+    let i: uint64 = 0;
+    while i < 512 {
+        table.entries[i].present = false;
+        table.entries[i].writable = false;
+        table.entries[i].user_accessible = false;
+        table.entries[i].page_write_through = false;
+        table.entries[i].page_cache_disable = false;
+        table.entries[i].accessed = false;
+        table.entries[i].dirty = false;
+        table.entries[i].global = false;
+        table.entries[i].available = 0;
+        table.entries[i].frame = 0;
+        table.entries[i].no_execute = false;
+        i = i + 1;
+    }
+    
+    return table;
+}
+
+fn vmm_free_page_table_with_pmm(pmm: *PMM, table: *PageTable) -> void {
+    let frame: uint64 = table as uint64;
+    pmm_free_frame(pmm, frame);
+}

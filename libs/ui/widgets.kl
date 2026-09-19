@@ -1,8 +1,9 @@
 // libs/ui/widgets.kl
-// Standard Immediate-Mode Interactive UI Widgets (Buttons, Panels, Text, Sliders)
+// Standard Immediate-Mode Interactive UI Widgets (Buttons, Panels, Text, Sliders, Checkbox, Scrollbar, TextInput)
 
 import "libs/ui/ui.kl" as ui;
 import "libs/render/math.kl" as rmath;
+import "packages/std/text/string_builder.kl" as sb;
 
 extern int strlen(string s);
 
@@ -102,4 +103,135 @@ fn float ui_slider(ui.UIContext* ctx, int id, float value, float min_val, float 
     ctx->renderer.push_quad(ctx->gl_ctx, thumb_x, y, thumb_w, h, thumb_col);
 
     return cur_val;
+}
+
+fn bool ui_checkbox(ui.UIContext* ctx, int id, string text, bool checked, float x, float y) {
+    float box_size = 18.0f;
+    int hovered = ctx->is_hovered(x, y, box_size + 140.0f, box_size);
+    bool new_checked = checked;
+
+    if (hovered != 0) {
+        ctx->hot_id = id;
+        if (ctx->active_id == 0 && ctx->mouse_pressed != 0) {
+            ctx->active_id = id;
+            ctx->focused_id = id;
+        }
+    }
+
+    if (ctx->active_id == id && ctx->mouse_released != 0) {
+        if (hovered != 0) {
+            new_checked = !checked;
+            ctx->last_clicked_id = id;
+        }
+        ctx->active_id = 0;
+    }
+
+    // Outer box border & fill
+    rmath.Color box_col = ctx->theme.input_bg;
+    if (checked) {
+        box_col = ctx->theme.accent;
+    }
+    ctx->renderer.push_quad(ctx->gl_ctx, x, y, box_size, box_size, ctx->theme.input_border);
+    ctx->renderer.push_quad(ctx->gl_ctx, x + 2.0f, y + 2.0f, box_size - 4.0f, box_size - 4.0f, box_col);
+
+    // Inner check indicator if checked
+    if (checked) {
+        ctx->renderer.push_quad(ctx->gl_ctx, x + 5.0f, y + 5.0f, box_size - 10.0f, box_size - 10.0f, ctx->theme.button_text);
+    }
+
+    // Label text
+    ctx->font.draw_text(&ctx->renderer, ctx->gl_ctx, text, x + box_size + 8.0f, y + 1.0f, ctx->theme.text);
+
+    return new_checked;
+}
+
+fn float ui_scrollbar(ui.UIContext* ctx, int id, float offset, float content_h, float view_h, float x, float y, float w, float h) {
+    if (content_h <= view_h) {
+        return 0.0f;
+    }
+
+    float max_scroll = content_h - view_h;
+    float cur_offset = offset;
+    int hovered = ctx->is_hovered(x, y, w, h);
+
+    if (hovered != 0) {
+        ctx->hot_id = id;
+        if (ctx->active_id == 0 && ctx->mouse_pressed != 0) {
+            ctx->active_id = id;
+            ctx->focused_id = id;
+        }
+    }
+
+    // Background track
+    ctx->renderer.push_quad(ctx->gl_ctx, x, y, w, h, ctx->theme.panel_bg);
+
+    // Thumb size and position calculation
+    float thumb_h = (view_h / content_h) * h;
+    if (thumb_h < 24.0f) { thumb_h = 24.0f; }
+
+    float track_scroll_range = h - thumb_h;
+    if (ctx->active_id == id) {
+        float rel_y = ctx->mouse_y - y - (thumb_h * 0.5f);
+        if (rel_y < 0.0f) { rel_y = 0.0f; }
+        if (rel_y > track_scroll_range) { rel_y = track_scroll_range; }
+        float frac = rel_y / track_scroll_range;
+        cur_offset = frac * max_scroll;
+        if (ctx->mouse_released != 0) {
+            ctx->active_id = 0;
+        }
+    }
+
+    float frac = cur_offset / max_scroll;
+    if (frac < 0.0f) { frac = 0.0f; }
+    if (frac > 1.0f) { frac = 1.0f; }
+    float thumb_y = y + (frac * track_scroll_range);
+
+    rmath.Color thumb_col = ctx->theme.button_normal;
+    if (ctx->active_id == id) {
+        thumb_col = ctx->theme.accent;
+    }
+    ctx->renderer.push_quad(ctx->gl_ctx, x + 1.0f, thumb_y, w - 2.0f, thumb_h, thumb_col);
+
+    return cur_offset;
+}
+
+fn int ui_text_input(ui.UIContext* ctx, int id, string text, float x, float y, float w, float h) {
+    int hovered = ctx->is_hovered(x, y, w, h);
+
+    if (hovered != 0) {
+        ctx->hot_id = id;
+        if (ctx->active_id == 0 && ctx->mouse_pressed != 0) {
+            ctx->active_id = id;
+            ctx->focused_id = id;
+        }
+    }
+
+    if (ctx->active_id == id && ctx->mouse_released != 0) {
+        ctx->active_id = 0;
+    }
+
+    bool is_focused = (ctx->focused_id == id);
+    rmath.Color border_col = ctx->theme.input_border;
+    if (is_focused) {
+        border_col = ctx->theme.input_border_focus;
+    }
+
+    // Outer border & input surface
+    ctx->renderer.push_quad(ctx->gl_ctx, x, y, w, h, border_col);
+    ctx->renderer.push_quad(ctx->gl_ctx, x + 1.0f, y + 1.0f, w - 2.0f, h - 2.0f, ctx->theme.input_bg);
+
+    // Text content
+    ctx->font.draw_text(&ctx->renderer, ctx->gl_ctx, text, x + 8.0f, y + (h - 20.0f) * 0.5f, ctx->theme.input_text);
+
+    // Blinking cursor if focused
+    if (is_focused) {
+        float text_len = (float)strlen(text) * 11.0f;
+        float caret_x = x + 8.0f + text_len;
+        ctx->renderer.push_quad(ctx->gl_ctx, caret_x, y + 4.0f, 2.0f, h - 8.0f, ctx->theme.cursor);
+    }
+
+    if (is_focused) {
+        return 1;
+    }
+    return 0;
 }

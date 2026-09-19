@@ -1,0 +1,74 @@
+// libs/ui/layout.kl
+// Immediate-Mode Flex Layout Engine (Rows, Columns, Inset, Auto-Advancing Cursor)
+
+struct Rect {
+    float x;
+    float y;
+    float w;
+    float h;
+}
+
+struct UILayout {
+    float start_x;
+    float start_y;
+    float cur_x;
+    float cur_y;
+    float max_w;
+    float max_h;
+    float spacing;
+    float padding;
+    bool is_row;
+}
+
+fn UILayout layout_begin_column(float x, float y, float w, float h, float spacing, float padding) {
+    UILayout l;
+    l.start_x = x + padding;
+    l.start_y = y + padding;
+    l.cur_x = x + padding;
+    l.cur_y = y + padding;
+    l.max_w = w - (padding * 2.0f);
+    l.max_h = h - (padding * 2.0f);
+    l.spacing = spacing;
+    l.padding = padding;
+    l.is_row = false;
+    return l;
+}
+
+fn UILayout layout_begin_row(float x, float y, float w, float h, float spacing, float padding) {
+    UILayout l;
+    l.start_x = x + padding;
+    l.start_y = y + padding;
+    l.cur_x = x + padding;
+    l.cur_y = y + padding;
+    l.max_w = w - (padding * 2.0f);
+    l.max_h = h - (padding * 2.0f);
+    l.spacing = spacing;
+    l.padding = padding;
+    l.is_row = true;
+    return l;
+}
+
+fn Rect layout_next_item(UILayout* layout, float item_w, float item_h) {
+    Rect r;
+    r.x = layout->cur_x;
+    r.y = layout->cur_y;
+    r.w = item_w;
+    r.h = item_h;
+
+    if (layout->is_row) {
+        layout->cur_x = layout->cur_x + item_w + layout->spacing;
+    } else {
+        layout->cur_y = layout->cur_y + item_h + layout->spacing;
+    }
+    return r;
+}
+
+fn void layout_newline(UILayout* layout, float next_line_advance) {
+    if (layout->is_row) {
+        layout->cur_x = layout->start_x;
+        layout->cur_y = layout->cur_y + next_line_advance + layout->spacing;
+    } else {
+        layout->cur_y = layout->start_y;
+        layout->cur_x = layout->cur_x + next_line_advance + layout->spacing;
+    }
+}

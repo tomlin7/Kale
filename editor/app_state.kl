@@ -1,9 +1,17 @@
-// apps/editor/app_state.kl
-// State Management for Kale Code Editor
+// editor/app_state.kl
+// State Management for Kale Code Editor with Undo/Redo and Multi-Buffer Support
 
 import "packages/std/text/piece_table.kl" as pt;
 
 extern int strlen(string s);
+
+struct EditAction {
+    int kind; // 1 = insert, 2 = delete
+    int offset;
+    string text;
+    int row;
+    int col;
+}
 
 struct EditorState {
     pt.PieceTable buffer;
@@ -13,6 +21,14 @@ struct EditorState {
     int scroll_col;
     string file_path;
     bool is_dirty;
+
+    // Undo / Redo history
+    EditAction* undo_stack;
+    int undo_count;
+    int undo_cap;
+    EditAction* redo_stack;
+    int redo_count;
+    int redo_cap;
 }
 
 fn void EditorState.init(string initial_code, string file_path) {
@@ -23,6 +39,26 @@ fn void EditorState.init(string initial_code, string file_path) {
     this->scroll_col = 0;
     this->file_path = file_path;
     this->is_dirty = false;
+
+    this->undo_cap = 32;
+    this->undo_count = 0;
+    this->undo_stack = alloc(EditAction, 32);
+
+    this->redo_cap = 32;
+    this->redo_count = 0;
+    this->redo_stack = alloc(EditAction, 32);
+}
+
+fn void EditorState.push_undo(int kind, int offset, string text, int row, int col) {
+    if (this->undo_count < this->undo_cap) {
+        this->undo_stack[this->undo_count].kind = kind;
+        this->undo_stack[this->undo_count].offset = offset;
+        this->undo_stack[this->undo_count].text = text;
+        this->undo_stack[this->undo_count].row = row;
+        this->undo_stack[this->undo_count].col = col;
+        this->undo_count = this->undo_count + 1;
+    }
+    this->redo_count = 0; // Clear redo on fresh edit
 }
 
 fn void EditorState.move_cursor(int d_row, int d_col, int visible_rows) {
@@ -55,7 +91,7 @@ fn void EditorState.move_cursor(int d_row, int d_col, int visible_rows) {
     }
 }
 
-fn void EditorState.insert_char(string ch) {
+fn int EditorState.get_cursor_byte_offset() {
     int lines = this->buffer.line_count();
     int byte_offset = 0;
     int row = 0;
@@ -64,7 +100,13 @@ fn void EditorState.insert_char(string ch) {
         byte_offset = byte_offset + strlen(l) + 1; // +1 for \n
         row = row + 1;
     }
-    byte_offset = byte_offset + this->cursor_col;
+    return byte_offset + this->cursor_col;
+}
+
+fn void EditorState.insert_char(string ch) {
+    int byte_offset = this->get_cursor_byte_offset();
+    this->push_undo(1, byte_offset, ch, this->cursor_row, this->cursor_col);
+
     this->buffer.insert(byte_offset, ch);
     this->cursor_col = this->cursor_col + strlen(ch);
     this->is_dirty = true;
@@ -78,15 +120,9 @@ fn void EditorState.insert_newline() {
 
 fn void EditorState.backspace() {
     if (this->cursor_col > 0) {
-        int lines = this->buffer.line_count();
-        int byte_offset = 0;
-        int row = 0;
-        while (row < this->cursor_row && row < lines) {
-            string l = this->buffer.get_line(row);
-            byte_offset = byte_offset + strlen(l) + 1;
-            row = row + 1;
-        }
-        byte_offset = byte_offset + this->cursor_col - 1;
+        int byte_offset = this->get_cursor_byte_offset() - 1;
+        this->push_undo(2, byte_offset, " ", this->cursor_row, this->cursor_col);
+
         this->buffer.delete(byte_offset, 1);
         this->cursor_col = this->cursor_col - 1;
         this->is_dirty = true;
@@ -106,6 +142,8 @@ fn void EditorState.backspace() {
                 row = row + 1;
             }
             byte_offset = byte_offset + prev_len; // Point to newline
+            this->push_undo(2, byte_offset, "\n", this->cursor_row, this->cursor_col);
+
             this->buffer.delete(byte_offset, 1); // Delete newline
             this->cursor_row = prev_row;
             this->cursor_col = prev_len;
@@ -114,6 +152,64 @@ fn void EditorState.backspace() {
     }
 }
 
+fn void EditorState.undo() {
+    if (this->undo_count <= 0) {
+        return;
+    }
+    this->undo_count = this->undo_count - 1;
+    EditAction act = this->undo_stack[this->undo_count];
+
+    if (act.kind == 1) {
+        // Was insert -> delete it
+        this->buffer.delete(act.offset, strlen(act.text));
+        this->cursor_row = act.row;
+        this->cursor_col = act.col;
+    } else if (act.kind == 2) {
+        // Was delete -> re-insert it
+        this->buffer.insert(act.offset, act.text);
+        this->cursor_row = act.row;
+        this->cursor_col = act.col;
+    }
+
+    if (this->redo_count < this->redo_cap) {
+        this->redo_stack[this->redo_count] = act;
+        this->redo_count = this->redo_count + 1;
+    }
+    this->is_dirty = true;
+}
+
+fn void EditorState.redo() {
+    if (this->redo_count <= 0) {
+        return;
+    }
+    this->redo_count = this->redo_count - 1;
+    EditAction act = this->redo_stack[this->redo_count];
+
+    if (act.kind == 1) {
+        this->buffer.insert(act.offset, act.text);
+        this->cursor_row = act.row;
+        this->cursor_col = act.col + strlen(act.text);
+    } else if (act.kind == 2) {
+        this->buffer.delete(act.offset, strlen(act.text));
+        this->cursor_row = act.row;
+        this->cursor_col = act.col;
+    }
+
+    if (this->undo_count < this->undo_cap) {
+        this->undo_stack[this->undo_count] = act;
+        this->undo_count = this->undo_count + 1;
+    }
+    this->is_dirty = true;
+}
+
 fn void EditorState.destroy() {
+    if (this->undo_stack != (EditAction*)0) {
+        free(this->undo_stack);
+        this->undo_stack = (EditAction*)0;
+    }
+    if (this->redo_stack != (EditAction*)0) {
+        free(this->redo_stack);
+        this->redo_stack = (EditAction*)0;
+    }
     this->buffer.destroy();
 }

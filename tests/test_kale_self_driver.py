@@ -33,11 +33,17 @@ def test_self_hosting_compiler_driver():
         # 4. Verify clang can compile the generated C code to an object file
         clang_exe = shutil.which("clang")
         if clang_exe:
+            cmd = [clang_exe, "-c", c_out_path, "-o", "bin/driver_sample.obj"]
+            from kale.codegen.llvm_driver import LLVMDriver
+            driver = LLVMDriver()
+            for inc in driver._find_msvc_include_dirs():
+                cmd.append(f"-I{inc}")
             clang_res = subprocess.run(
-                [clang_exe, "-c", c_out_path, "-o", "bin/driver_sample.obj"],
+                cmd,
                 capture_output=True, text=True, cwd="E:/kale"
             )
             assert clang_res.returncode == 0, f"Clang compilation of generated C code failed:\n{clang_res.stderr}"
+
     finally:
         # 5. Clean up temporary files in bin/
         for tmp_file in [

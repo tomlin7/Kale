@@ -10,8 +10,62 @@ import "editor/app_state.kl" as st;
 import "editor/gutter.kl" as gt;
 import "editor/status_bar.kl" as sb;
 import "editor/text_viewport.kl" as vp;
+import "editor/command_bar.kl" as cb;
 
 extern int strlen(string s);
+
+fn void poll_typing(void* window, st.EditorState* state, bool shift_down) {
+    // Letters A-Z
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_A()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("A"); } else { state->insert_char("a"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_B()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("B"); } else { state->insert_char("b"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_C()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("C"); } else { state->insert_char("c"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_D()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("D"); } else { state->insert_char("d"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_E()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("E"); } else { state->insert_char("e"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_F()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("F"); } else { state->insert_char("f"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_G()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("G"); } else { state->insert_char("g"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_H()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("H"); } else { state->insert_char("h"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_I()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("I"); } else { state->insert_char("i"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_J()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("J"); } else { state->insert_char("j"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_K()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("K"); } else { state->insert_char("k"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_L()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("L"); } else { state->insert_char("l"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_M()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("M"); } else { state->insert_char("m"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_N()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("N"); } else { state->insert_char("n"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_O()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("O"); } else { state->insert_char("o"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_P()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("P"); } else { state->insert_char("p"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_Q()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("Q"); } else { state->insert_char("q"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_R()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("R"); } else { state->insert_char("r"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_S()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("S"); } else { state->insert_char("s"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_T()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("T"); } else { state->insert_char("t"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_U()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("U"); } else { state->insert_char("u"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_V()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("V"); } else { state->insert_char("v"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_W()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("W"); } else { state->insert_char("w"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_X()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("X"); } else { state->insert_char("x"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_Y()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("Y"); } else { state->insert_char("y"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_Z()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("Z"); } else { state->insert_char("z"); } return; }
+
+    // Numbers & row
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_0()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char(")"); } else { state->insert_char("0"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_1()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("!"); } else { state->insert_char("1"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_2()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("@"); } else { state->insert_char("2"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_3()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("#"); } else { state->insert_char("3"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_4()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("$"); } else { state->insert_char("4"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_5()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("%"); } else { state->insert_char("5"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_6()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("^"); } else { state->insert_char("6"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_7()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("&"); } else { state->insert_char("7"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_8()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("*"); } else { state->insert_char("8"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_9()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("("); } else { state->insert_char("9"); } return; }
+
+    // Symbols & whitespace
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_SPACE()) == glc.GLFW_PRESS()) { state->insert_char(" "); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_TAB()) == glc.GLFW_PRESS()) { state->insert_char("    "); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_SEMICOLON()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char(":"); } else { state->insert_char(";"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_EQUAL()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("+"); } else { state->insert_char("="); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_MINUS()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("_"); } else { state->insert_char("-"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_COMMA()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("<"); } else { state->insert_char(","); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_PERIOD()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char(">"); } else { state->insert_char("."); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_SLASH()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("?"); } else { state->insert_char("/"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_APOSTROPHE()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("\""); } else { state->insert_char("'"); } return; }
+}
 
 fn void run_editor() {
     int app_w = 1120;
@@ -31,6 +85,9 @@ fn void run_editor() {
 
     st.EditorState state;
     state.init(sample_code, "editor_main.kl");
+
+    cb.CommandBar cmd_bar;
+    cmd_bar.init();
 
     float header_h = 42.0f;
     float status_h = 28.0f;
@@ -58,28 +115,97 @@ fn void run_editor() {
     int key_delay = 0;
 
     while (app.begin_frame() != 0) {
-        // Keyboard Navigation
+        // Mouse click navigation in viewport
+        if (app.ui_ctx.mouse_pressed != 0) {
+            float mx = app.ui_ctx.mouse_x;
+            float my = app.ui_ctx.mouse_y;
+
+            if (mx >= gutter_w && mx <= (float)app.width && my >= header_h && my <= (header_h + content_h)) {
+                int clicked_row = state.scroll_row + (int)((my - header_h) / line_h);
+                int clicked_col = (int)((mx - gutter_w - 12.0f) / char_w);
+                if (clicked_col < 0) { clicked_col = 0; }
+                state.cursor_row = clicked_row;
+                state.cursor_col = clicked_col;
+                state.move_cursor(0, 0, visible_rows); // Clamp to line bounds
+            }
+        }
+
+        // Keyboard Navigation, Typing, & Command Palette handling
         if (key_delay > 0) {
             key_delay = key_delay - 1;
         } else {
-            if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_UP()) == glc.GLFW_PRESS()) {
-                state.move_cursor(-1, 0, visible_rows);
-                key_delay = 6;
-            } else if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_DOWN()) == glc.GLFW_PRESS()) {
-                state.move_cursor(1, 0, visible_rows);
-                key_delay = 6;
-            } else if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_LEFT()) == glc.GLFW_PRESS()) {
-                state.move_cursor(0, -1, visible_rows);
-                key_delay = 6;
-            } else if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_RIGHT()) == glc.GLFW_PRESS()) {
-                state.move_cursor(0, 1, visible_rows);
-                key_delay = 6;
-            } else if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_BACKSPACE()) == glc.GLFW_PRESS()) {
-                state.backspace();
-                key_delay = 8;
-            } else if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_ENTER()) == glc.GLFW_PRESS()) {
-                state.insert_newline();
-                key_delay = 8;
+            bool ctrl_down = ginput.glfwGetKey(app.window, glc.GLFW_KEY_LEFT_CONTROL()) == glc.GLFW_PRESS() ||
+                             ginput.glfwGetKey(app.window, glc.GLFW_KEY_RIGHT_CONTROL()) == glc.GLFW_PRESS();
+            bool shift_down = ginput.glfwGetKey(app.window, glc.GLFW_KEY_LEFT_SHIFT()) == glc.GLFW_PRESS() ||
+                              ginput.glfwGetKey(app.window, glc.GLFW_KEY_RIGHT_SHIFT()) == glc.GLFW_PRESS();
+
+            if ((ctrl_down && ginput.glfwGetKey(app.window, glc.GLFW_KEY_P()) == glc.GLFW_PRESS()) ||
+                ginput.glfwGetKey(app.window, glc.GLFW_KEY_F1()) == glc.GLFW_PRESS()) {
+                cmd_bar.toggle();
+                key_delay = 12;
+            } else if (cmd_bar.is_visible) {
+                // Command bar is open: intercept arrow keys & enter/escape
+                if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_ESCAPE()) == glc.GLFW_PRESS()) {
+                    cmd_bar.toggle();
+                    key_delay = 10;
+                } else if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_UP()) == glc.GLFW_PRESS()) {
+                    cmd_bar.select_prev();
+                    key_delay = 6;
+                } else if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_DOWN()) == glc.GLFW_PRESS()) {
+                    cmd_bar.select_next();
+                    key_delay = 6;
+                } else if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_ENTER()) == glc.GLFW_PRESS()) {
+                    int act_id = cmd_bar.get_selected_id();
+                    if (act_id == 2) { // Save
+                        state.is_dirty = false;
+                    }
+                    cmd_bar.toggle();
+                    key_delay = 10;
+                }
+            } else {
+                // Regular editor key handling
+                if (ctrl_down && ginput.glfwGetKey(app.window, glc.GLFW_KEY_Z()) == glc.GLFW_PRESS()) {
+                    state.undo();
+                    key_delay = 8;
+                } else if (ctrl_down && ginput.glfwGetKey(app.window, glc.GLFW_KEY_Y()) == glc.GLFW_PRESS()) {
+                    state.redo();
+                    key_delay = 8;
+                } else if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_UP()) == glc.GLFW_PRESS()) {
+                    state.move_cursor(-1, 0, visible_rows);
+                    key_delay = 5;
+                } else if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_DOWN()) == glc.GLFW_PRESS()) {
+                    state.move_cursor(1, 0, visible_rows);
+                    key_delay = 5;
+                } else if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_LEFT()) == glc.GLFW_PRESS()) {
+                    state.move_cursor(0, -1, visible_rows);
+                    key_delay = 5;
+                } else if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_RIGHT()) == glc.GLFW_PRESS()) {
+                    state.move_cursor(0, 1, visible_rows);
+                    key_delay = 5;
+                } else if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_PAGE_UP()) == glc.GLFW_PRESS()) {
+                    state.move_cursor(-visible_rows, 0, visible_rows);
+                    key_delay = 8;
+                } else if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_PAGE_DOWN()) == glc.GLFW_PRESS()) {
+                    state.move_cursor(visible_rows, 0, visible_rows);
+                    key_delay = 8;
+                } else if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_HOME()) == glc.GLFW_PRESS()) {
+                    state.cursor_col = 0;
+                    key_delay = 6;
+                } else if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_END()) == glc.GLFW_PRESS()) {
+                    string cur_l = state.buffer.get_line(state.cursor_row);
+                    state.cursor_col = strlen(cur_l);
+                    key_delay = 6;
+                } else if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_BACKSPACE()) == glc.GLFW_PRESS()) {
+                    state.backspace();
+                    key_delay = 6;
+                } else if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_ENTER()) == glc.GLFW_PRESS()) {
+                    state.insert_newline();
+                    key_delay = 8;
+                } else if (!ctrl_down) {
+                    // Poll full alphanumeric typing
+                    poll_typing(app.window, &state, shift_down);
+                    key_delay = 6;
+                }
             }
         }
 
@@ -95,6 +221,9 @@ fn void run_editor() {
         gutter.render(&app.ui_ctx.renderer, &app.gl_ctx, &app.ui_ctx.font, state.scroll_row, state.cursor_row, total_lines);
         viewport.render(&app.ui_ctx.renderer, &app.gl_ctx, &app.ui_ctx.font, &state.buffer, state.scroll_row, state.cursor_row, state.cursor_col);
         status_bar.render(&app.ui_ctx.renderer, &app.gl_ctx, &app.ui_ctx.font, state.cursor_row, state.cursor_col, total_lines, state.is_dirty);
+
+        // Render Command Bar Overlay if active
+        cmd_bar.render(&app.ui_ctx.renderer, &app.gl_ctx, &app.ui_ctx.font, (float)app.width, (float)app.height);
 
         app.end_frame();
     }

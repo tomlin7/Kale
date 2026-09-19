@@ -1,0 +1,136 @@
+// editor/command_bar.kl
+// Floating Command Palette & Fuzzy File Finder (Ctrl+P / Ctrl+Shift+P)
+
+import "libs/gl/loader.kl" as glloader;
+import "libs/render/math.kl" as rmath;
+import "libs/render/batch.kl" as rbatch;
+import "libs/render/font.kl" as rfont;
+
+extern int strlen(string s);
+
+struct CommandItem {
+    int id;
+    string title;
+    string shortcut;
+}
+
+struct CommandBar {
+    bool is_visible;
+    int selected_index;
+    int items_count;
+    rmath.Color bg_color;
+    rmath.Color panel_bg;
+    rmath.Color selected_bg;
+    rmath.Color fg_title;
+    rmath.Color fg_shortcut;
+    rmath.Color border_color;
+}
+
+fn void CommandBar.init() {
+    this->is_visible = false;
+    this->selected_index = 0;
+    this->items_count = 6;
+
+    this->bg_color = rmath.color_rgba(0.0f, 0.0f, 0.0f, 0.45f);
+    this->panel_bg = rmath.color_rgba(0.16f, 0.17f, 0.20f, 1.0f);
+    this->selected_bg = rmath.color_rgba(0.24f, 0.38f, 0.65f, 1.0f);
+    this->fg_title = rmath.color_rgba(0.95f, 0.95f, 0.98f, 1.0f);
+    this->fg_shortcut = rmath.color_rgba(0.65f, 0.70f, 0.80f, 1.0f);
+    this->border_color = rmath.color_rgba(0.28f, 0.30f, 0.36f, 1.0f);
+}
+
+fn void CommandBar.toggle() {
+    this->is_visible = !this->is_visible;
+    this->selected_index = 0;
+}
+
+fn void CommandBar.select_prev() {
+    if (this->selected_index > 0) {
+        this->selected_index = this->selected_index - 1;
+    } else {
+        this->selected_index = this->items_count - 1;
+    }
+}
+
+fn void CommandBar.select_next() {
+    if (this->selected_index + 1 < this->items_count) {
+        this->selected_index = this->selected_index + 1;
+    } else {
+        this->selected_index = 0;
+    }
+}
+
+fn int CommandBar.get_selected_id() {
+    return this->selected_index + 1;
+}
+
+fn string CommandBar.get_item_title(int idx) {
+    if (idx == 0) { return "File: Open File..."; }
+    if (idx == 1) { return "File: Save Active Document"; }
+    if (idx == 2) { return "Format: Format Kale Source Document"; }
+    if (idx == 3) { return "View: Toggle Embedded Terminal"; }
+    if (idx == 4) { return "Build: Compile with Kale LLVM Backend"; }
+    return "Help: About Kale GPU IDE";
+}
+
+fn string CommandBar.get_item_shortcut(int idx) {
+    if (idx == 0) { return "Ctrl+O"; }
+    if (idx == 1) { return "Ctrl+S"; }
+    if (idx == 2) { return "Shift+Alt+F"; }
+    if (idx == 3) { return "Ctrl+`"; }
+    if (idx == 4) { return "F5"; }
+    return "F1";
+}
+
+fn void CommandBar.render(
+    rbatch.BatchRenderer* renderer,
+    glloader.GLContext* gl_ctx,
+    rfont.FontAtlas* font,
+    float app_w,
+    float app_h
+) {
+    if (!this->is_visible) {
+        return;
+    }
+
+    // Fullscreen dim overlay
+    renderer->push_quad(gl_ctx, 0.0f, 0.0f, app_w, app_h, this->bg_color);
+
+    // Floating palette modal dimensions
+    float modal_w = 580.0f;
+    float row_h = 32.0f;
+    float header_h = 44.0f;
+    float modal_h = header_h + ((float)this->items_count * row_h) + 12.0f;
+    float modal_x = (app_w - modal_w) * 0.5f;
+    float modal_y = 60.0f;
+
+    // Modal background & subtle border
+    renderer->push_quad(gl_ctx, modal_x - 1.0f, modal_y - 1.0f, modal_w + 2.0f, modal_h + 2.0f, this->border_color);
+    renderer->push_quad(gl_ctx, modal_x, modal_y, modal_w, modal_h, this->panel_bg);
+
+    // Header search prompt
+    font->draw_text(renderer, gl_ctx, "> Type a command or search actions...", modal_x + 18.0f, modal_y + 12.0f, this->fg_title);
+
+    // Divider
+    renderer->push_quad(gl_ctx, modal_x, modal_y + header_h, modal_w, 1.0f, this->border_color);
+
+    // Items list
+    float item_y = modal_y + header_h + 6.0f;
+    int i = 0;
+    while (i < this->items_count) {
+        if (i == this->selected_index) {
+            renderer->push_quad(gl_ctx, modal_x + 6.0f, item_y - 2.0f, modal_w - 12.0f, row_h, this->selected_bg);
+        }
+
+        string title = this->get_item_title(i);
+        font->draw_text(renderer, gl_ctx, title, modal_x + 20.0f, item_y + 4.0f, this->fg_title);
+
+        string sc = this->get_item_shortcut(i);
+        int sc_len = strlen(sc);
+        float sc_x = modal_x + modal_w - ((float)sc_len * 11.0f) - 24.0f;
+        font->draw_text(renderer, gl_ctx, sc, sc_x, item_y + 4.0f, this->fg_shortcut);
+
+        item_y = item_y + row_h;
+        i = i + 1;
+    }
+}

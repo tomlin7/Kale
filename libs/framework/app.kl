@@ -8,6 +8,20 @@ import "libs/gl/constants.kl" as kgl;
 import "libs/gl/loader.kl" as glloader;
 import "libs/ui/ui.kl" as ui;
 
+struct EventType {
+    // 1 = NONE, 2 = KEY_DOWN, 3 = KEY_UP, 4 = MOUSE_MOVE, 5 = MOUSE_DOWN, 6 = MOUSE_UP, 7 = RESIZE, 8 = QUIT
+}
+
+struct AppEvent {
+    int event_type;
+    int key_code;
+    float mouse_x;
+    float mouse_y;
+    int mouse_button;
+    int window_w;
+    int window_h;
+}
+
 struct AppConfig {
     string title;
     int width;

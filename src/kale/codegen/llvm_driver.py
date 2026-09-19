@@ -18,6 +18,46 @@ class LLVMDriver:
             return vs_clang
         return None
 
+    def _find_msvc_lib_dirs(self) -> list[str]:
+        dirs = []
+        # Find MSVC lib dir
+        msvc_base = r"C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC"
+        if os.path.isdir(msvc_base):
+            for v in sorted(os.listdir(msvc_base), reverse=True):
+                p = os.path.join(msvc_base, v, "lib", "x64")
+                if os.path.isdir(p):
+                    dirs.append(p)
+                    break
+        # Find Windows SDK lib dirs
+        sdk_base = r"C:\Program Files (x86)\Windows Kits\10\Lib"
+        if os.path.isdir(sdk_base):
+            for v in sorted(os.listdir(sdk_base), reverse=True):
+                um = os.path.join(sdk_base, v, "um", "x64")
+                ucrt = os.path.join(sdk_base, v, "ucrt", "x64")
+                if os.path.isdir(um) and os.path.isdir(ucrt):
+                    dirs.extend([um, ucrt])
+                    break
+        return dirs
+
+    def _find_msvc_include_dirs(self) -> list[str]:
+        dirs = []
+        msvc_base = r"C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC"
+        if os.path.isdir(msvc_base):
+            for v in sorted(os.listdir(msvc_base), reverse=True):
+                p = os.path.join(msvc_base, v, "include")
+                if os.path.isdir(p):
+                    dirs.append(p)
+                    break
+        sdk_base = r"C:\Program Files (x86)\Windows Kits\10\Include"
+        if os.path.isdir(sdk_base):
+            for v in sorted(os.listdir(sdk_base), reverse=True):
+                ucrt = os.path.join(sdk_base, v, "ucrt")
+                if os.path.isdir(ucrt):
+                    dirs.append(ucrt)
+                    break
+        return dirs
+
+
     def compile_ll(
         self,
         ll_path: str,
@@ -40,14 +80,18 @@ class LLVMDriver:
             os.makedirs(out_dir, exist_ok=True)
 
         cmd = [self.clang_path, ll_path, f"-O{opt_level}", "-o", output_path]
+        all_lib_dirs = list(lib_dirs or [])
+
         if is_windows:
-            cmd.extend(["--target=x86_64-pc-windows-msvc", "-luser32", "-lgdi32", "-lkernel32", "-lshell32"])
+            cmd.extend(["--target=x86_64-pc-windows-msvc", "-fuse-ld=lld", "-luser32", "-lgdi32", "-lkernel32", "-lshell32"])
+            for msvc_dir in self._find_msvc_lib_dirs():
+                if msvc_dir not in all_lib_dirs:
+                    all_lib_dirs.append(msvc_dir)
         else:
             cmd.append("-lm")
 
-        if lib_dirs:
-            for d in lib_dirs:
-                cmd.append(f"-L{d}" if not d.startswith("-L") else d)
+        for d in all_lib_dirs:
+            cmd.append(f"-L{d}" if not d.startswith("-L") else d)
 
         if extra_libs:
             for lib in extra_libs:
