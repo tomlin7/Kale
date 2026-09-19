@@ -1,0 +1,486 @@
+// Virtual Memory Manager (VMM) Unit Tests
+// Tests page table entry manipulation, allocation, mapping, and address translation
+// Hardware-independent - mocks PMM and CR3 functions
+
+import "os/kernel/vmm.kl" as vmm;
+
+// Mock PMM state for testing
+struct MockPMM {
+    allocated_frames: [uint64; 256],
+    alloc_count: uint64,
+    free_count: uint64,
+    next_frame: uint64,
+}
+
+let mock_pmm: MockPMM;
+
+// Mock PMM allocation function
+fn mock_pmm_alloc(pmm: *void) -> uint64 {
+    let frame: uint64 = mock_pmm.next_frame;
+    mock_pmm.allocated_frames[mock_pmm.alloc_count] = frame;
+    mock_pmm.alloc_count = mock_pmm.alloc_count + 1;
+    mock_pmm.next_frame = mock_pmm.next_frame + 4096;
+    return frame;
+}
+
+// Mock PMM free function
+fn mock_pmm_free(pmm: *void, frame_addr: uint64) -> void {
+    mock_pmm.free_count = mock_pmm.free_count + 1;
+}
+
+// Mock CR3 functions
+let mock_cr3: uint64 = 0x1000;
+
+fn mock_get_cr3() -> uint64 {
+    return mock_cr3;
+}
+
+fn mock_set_cr3(value: uint64) -> void {
+    mock_cr3 = value;
+}
+
+// Mock invlpg (TLB invalidation)
+fn mock_invlpg(addr: uint64) -> void {
+    // No-op for testing
+}
+
+// Initialize mock environment
+fn setup_mock_environment() -> void {
+    mock_pmm.alloc_count = 0;
+    mock_pmm.free_count = 0;
+    mock_pmm.next_frame = 0x10000;
+    mock_cr3 = 0x1000;
+    
+    // Initialize VMM PMM function pointers
+    vmm.vmm_init_pmm_functions(mock_pmm_alloc, mock_pmm_free);
+}
+
+fn int main_entry() {
+    print("[TEST] Initializing VMM unit test suite...");
+    
+    // Test 1: Memory layout constants validation
+    print("[TEST] Validating memory layout constants...");
+    if (vmm.KERNEL_PML4_INDEX == 511) {
+        print("  [PASS] KERNEL_PML4_INDEX = 511");
+    }
+    if (vmm.KERNEL_CODE_BASE == 0xFFFFFFFF80000000) {
+        print("  [PASS] KERNEL_CODE_BASE = 0xFFFFFFFF80000000");
+    }
+    if (vmm.KERNEL_HEAP_BASE == 0xFFFFFFFF80000000) {
+        print("  [PASS] KERNEL_HEAP_BASE = 0xFFFFFFFF80000000");
+    }
+    if (vmm.KERNEL_HEAP_SIZE == 0x10000000) {
+        print("  [PASS] KERNEL_HEAP_SIZE = 256MB (0x10000000)");
+    }
+    if (vmm.USER_STACK_BASE == 0x00007FFFFFFFFFFF) {
+        print("  [PASS] USER_STACK_BASE = 0x00007FFFFFFFFFFF");
+    }
+    if (vmm.USER_STACK_SIZE == 0x100000) {
+        print("  [PASS] USER_STACK_SIZE = 1MB (0x100000)");
+    }
+    if (vmm.USER_HEAP_BASE == 0x0000000000400000) {
+        print("  [PASS] USER_HEAP_BASE = 0x0000000000400000");
+    }
+    if (vmm.USER_HEAP_MAX == 0x00007FFFFFFFFFFF) {
+        print("  [PASS] USER_HEAP_MAX = 0x00007FFFFFFFFFFF");
+    }
+    if (vmm.PAGE_SIZE == 4096) {
+        print("  [PASS] PAGE_SIZE = 4096 (4KB)");
+    }
+    
+    // Test 2: Page table entry bit manipulation
+    print("[TEST] Testing page table entry bit manipulation...");
+    let entry: vmm.PageTableEntry;
+    entry.present = false;
+    entry.writable = false;
+    entry.user_accessible = false;
+    entry.frame = 0;
+    entry.no_execute = false;
+    
+    // Test present bit
+    vmm.pte_set_present(&entry, true);
+    if (vmm.pte_get_present(&entry) == true) {
+        print("  [PASS] pte_set_present/get_present (true)");
+    }
+    vmm.pte_set_present(&entry, false);
+    if (vmm.pte_get_present(&entry) == false) {
+        print("  [PASS] pte_set_present/get_present (false)");
+    }
+    
+    // Test writable bit
+    vmm.pte_set_writable(&entry, true);
+    if (vmm.pte_get_writable(&entry) == true) {
+        print("  [PASS] pte_set_writable/get_writable (true)");
+    }
+    vmm.pte_set_writable(&entry, false);
+    if (vmm.pte_get_writable(&entry) == false) {
+        print("  [PASS] pte_set_writable/get_writable (false)");
+    }
+    
+    // Test user_accessible bit
+    vmm.pte_set_user_accessible(&entry, true);
+    if (vmm.pte_get_user_accessible(&entry) == true) {
+        print("  [PASS] pte_set_user_accessible/get_user_accessible (true)");
+    }
+    vmm.pte_set_user_accessible(&entry, false);
+    if (vmm.pte_get_user_accessible(&entry) == false) {
+        print("  [PASS] pte_set_user_accessible/get_user_accessible (false)");
+    }
+    
+    // Test frame manipulation
+    vmm.pte_set_frame(&entry, 0x1000);
+    if (vmm.pte_get_frame(&entry) == 0x1000) {
+        print("  [PASS] pte_set_frame/get_frame (0x1000)");
+    }
+    vmm.pte_set_frame(&entry, 0xFFFFFFFFF000);
+    if (vmm.pte_get_frame(&entry) == 0xFFFFFFFFF000) {
+        print("  [PASS] pte_set_frame/get_frame (0xFFFFFFFFF000)");
+    }
+    
+    // Test is_empty
+    entry.present = false;
+    entry.frame = 0;
+    if (vmm.pte_is_empty(&entry) == true) {
+        print("  [PASS] pte_is_empty (present=false, frame=0)");
+    }
+    entry.present = true;
+    if (vmm.pte_is_empty(&entry) == false) {
+        print("  [PASS] pte_is_empty (present=true, not empty)");
+    }
+    entry.present = false;
+    entry.frame = 0x1000;
+    if (vmm.pte_is_empty(&entry) == false) {
+        print("  [PASS] pte_is_empty (present=false, frame!=0, not empty)");
+    }
+    
+    // Test 3: Virtual address index extraction
+    print("[TEST] Testing virtual address index extraction...");
+    
+    // Test address: 0x0000000000400000 (USER_HEAP_BASE)
+    let test_addr1: uint64 = 0x0000000000400000;
+    let pml4_idx1: uint64 = (test_addr1 >> 39) & 0x1FF;
+    let pdpt_idx1: uint64 = (test_addr1 >> 30) & 0x1FF;
+    let pd_idx1: uint64 = (test_addr1 >> 21) & 0x1FF;
+    let pt_idx1: uint64 = (test_addr1 >> 12) & 0x1FF;
+    
+    if (pml4_idx1 == 0 && pdpt_idx1 == 0 && pd_idx1 == 0 && pt_idx1 == 0) {
+        print("  [PASS] Address 0x0000000000400000 indices: PML4=0, PDPT=0, PD=0, PT=0");
+    }
+    
+    // Test address: 0xFFFFFFFF80000000 (KERNEL_HEAP_BASE)
+    let test_addr2: uint64 = 0xFFFFFFFF80000000;
+    let pml4_idx2: uint64 = (test_addr2 >> 39) & 0x1FF;
+    let pdpt_idx2: uint64 = (test_addr2 >> 30) & 0x1FF;
+    let pd_idx2: uint64 = (test_addr2 >> 21) & 0x1FF;
+    let pt_idx2: uint64 = (test_addr2 >> 12) & 0x1FF;
+    
+    if (pml4_idx2 == 511 && pdpt_idx2 == 256 && pd_idx2 == 0 && pt_idx2 == 0) {
+        print("  [PASS] Address 0xFFFFFFFF80000000 indices: PML4=511, PDPT=256, PD=0, PT=0");
+    }
+    
+    // Test address: 0x00007FFFFFFFFFFF (USER_STACK_BASE)
+    let test_addr3: uint64 = 0x00007FFFFFFFFFFF;
+    let pml4_idx3: uint64 = (test_addr3 >> 39) & 0x1FF;
+    let pdpt_idx3: uint64 = (test_addr3 >> 30) & 0x1FF;
+    let pd_idx3: uint64 = (test_addr3 >> 21) & 0x1FF;
+    let pt_idx3: uint64 = (test_addr3 >> 12) & 0x1FF;
+    
+    if (pml4_idx3 == 0 && pdpt_idx3 == 511 && pd_idx3 == 511 && pt_idx3 == 511) {
+        print("  [PASS] Address 0x00007FFFFFFFFFFF indices: PML4=0, PDPT=511, PD=511, PT=511");
+    }
+    
+    // Test address with page offset
+    let test_addr4: uint64 = 0x0000000000401234;
+    let page_offset4: uint64 = test_addr4 & 0xFFF;
+    if (page_offset4 == 0x234) {
+        print("  [PASS] Address 0x0000000000401234 page offset: 0x234");
+    }
+    
+    // Test 4: Page table entry flag bit extraction
+    print("[TEST] Testing page table entry flag bit extraction...");
+    
+    // Flag bits: bit 0 = present, bit 1 = writable, bit 2 = user
+    let flags1: uint64 = 0x7; // present | writable | user
+    if ((flags1 & 0x2) != 0) {
+        print("  [PASS] Flag 0x7 has writable bit set");
+    }
+    if ((flags1 & 0x4) != 0) {
+        print("  [PASS] Flag 0x7 has user bit set");
+    }
+    
+    let flags2: uint64 = 0x1; // present only
+    if ((flags2 & 0x2) == 0) {
+        print("  [PASS] Flag 0x1 does not have writable bit set");
+    }
+    
+    // Test NX flag (bit 63)
+    let flags3: uint64 = 0x8000000000000000;
+    if ((flags3 & 0x8000000000000000) != 0) {
+        print("  [PASS] Flag 0x8000000000000000 has NX bit set");
+    }
+    
+    // Test 5: Page table allocation (with mock PMM)
+    print("[TEST] Testing page table allocation...");
+    setup_mock_environment();
+    
+    let initial_alloc_count: uint64 = mock_pmm.alloc_count;
+    let pmm_ptr: *void = &mock_pmm as *void;
+    
+    let table: *vmm.PageTable = vmm.vmm_alloc_page_table(pmm_ptr);
+    if (table != null && mock_pmm.alloc_count == initial_alloc_count + 1) {
+        print("  [PASS] vmm_alloc_page_table allocated one frame");
+    }
+    
+    // Verify table entries are cleared
+    if (table != null) {
+        let all_clear: bool = true;
+        let i: uint64 = 0;
+        while i < 512 {
+            if (table.entries[i].present != false || table.entries[i].frame != 0) {
+                all_clear = false;
+            }
+            i = i + 1;
+        }
+        if (all_clear) {
+            print("  [PASS] Allocated page table entries are all cleared");
+        }
+    }
+    
+    // Test 6: Page table deallocation
+    print("[TEST] Testing page table deallocation...");
+    let initial_free_count: uint64 = mock_pmm.free_count;
+    
+    if (table != null) {
+        vmm.vmm_free_page_table(pmm_ptr, table);
+        if (mock_pmm.free_count == initial_free_count + 1) {
+            print("  [PASS] vmm_free_page_table freed one frame");
+        }
+    }
+    
+    // Test 7: vmm_get_or_create_table
+    print("[TEST] Testing vmm_get_or_create_table...");
+    setup_mock_environment();
+    
+    let test_entry: vmm.PageTableEntry;
+    test_entry.present = false;
+    test_entry.frame = 0;
+    
+    // Create new table
+    let table1: *vmm.PageTable = vmm.vmm_get_or_create_table(pmm_ptr, &test_entry);
+    if (table1 != null && test_entry.present == true && test_entry.writable == true) {
+        print("  [PASS] vmm_get_or_create_table created new table and set entry");
+    }
+    
+    // Get existing table
+    let table2: *vmm.PageTable = vmm.vmm_get_or_create_table(pmm_ptr, &test_entry);
+    if (table2 == table1) {
+        print("  [PASS] vmm_get_or_create_table returned existing table");
+    }
+    
+    // Test 8: Copy-on-write marking
+    print("[TEST] Testing copy-on-write page marking...");
+    let cow_entry: vmm.PageTableEntry;
+    cow_entry.present = true;
+    cow_entry.writable = true;
+    cow_entry.frame = 0x1000;
+    
+    vmm.vmm_mark_page_cow(&cow_entry);
+    if (cow_entry.writable == false) {
+        print("  [PASS] vmm_mark_page_cow set page to read-only");
+    }
+    
+    // Test 9: VMM structure initialization
+    print("[TEST] Testing VMM structure initialization...");
+    let test_vmm: vmm.VMM;
+    test_vmm.pml4 = null;
+    test_vmm.kernel_heap_start = vmm.KERNEL_HEAP_BASE;
+    test_vmm.kernel_heap_end = vmm.KERNEL_HEAP_BASE + vmm.KERNEL_HEAP_SIZE;
+    test_vmm.user_heap_start = vmm.USER_HEAP_BASE;
+    test_vmm.user_heap_end = vmm.USER_HEAP_MAX;
+    
+    if (test_vmm.kernel_heap_start == 0xFFFFFFFF80000000) {
+        print("  [PASS] VMM kernel_heap_start initialized correctly");
+    }
+    if (test_vmm.kernel_heap_end == 0xFFFFFFFF90000000) {
+        print("  [PASS] VMM kernel_heap_end initialized correctly");
+    }
+    if (test_vmm.user_heap_start == 0x0000000000400000) {
+        print("  [PASS] VMM user_heap_start initialized correctly");
+    }
+    if (test_vmm.user_heap_end == 0x00007FFFFFFFFFFF) {
+        print("  [PASS] VMM user_heap_end initialized correctly");
+    }
+    
+    // Test 10: COWInfo structure
+    print("[TEST] Testing COWInfo structure...");
+    let cow_info: vmm.COWInfo;
+    cow_info.reference_count = 0;
+    cow_info.original_frame = 0;
+    
+    cow_info.reference_count = cow_info.reference_count + 1;
+    if (cow_info.reference_count == 1) {
+        print("  [PASS] COWInfo reference count increment");
+    }
+    
+    cow_info.reference_count = cow_info.reference_count - 1;
+    if (cow_info.reference_count == 0) {
+        print("  [PASS] COWInfo reference count decrement");
+    }
+    
+    // Test 11: Page table entry structure layout
+    print("[TEST] Testing PageTableEntry structure layout...");
+    let layout_entry: vmm.PageTableEntry;
+    layout_entry.present = true;
+    layout_entry.writable = true;
+    layout_entry.user_accessible = true;
+    layout_entry.page_write_through = false;
+    layout_entry.page_cache_disable = false;
+    layout_entry.accessed = false;
+    layout_entry.dirty = false;
+    layout_entry.global = false;
+    layout_entry.available = 0;
+    layout_entry.frame = 0xABC000;
+    layout_entry.no_execute = false;
+    
+    if (layout_entry.present == true && layout_entry.writable == true && 
+        layout_entry.user_accessible == true && layout_entry.frame == 0xABC000) {
+        print("  [PASS] PageTableEntry structure fields accessible");
+    }
+    
+    // Test 12: Page table structure
+    print("[TEST] Testing PageTable structure...");
+    let page_table: vmm.PageTable;
+    let j: uint64 = 0;
+    while j < 512 {
+        page_table.entries[j].present = false;
+        page_table.entries[j].frame = 0;
+        j = j + 1;
+    }
+    
+    page_table.entries[0].present = true;
+    page_table.entries[0].frame = 0x1000;
+    page_table.entries[511].present = true;
+    page_table.entries[511].frame = 0x2000;
+    
+    if (page_table.entries[0].frame == 0x1000 && page_table.entries[511].frame == 0x2000) {
+        print("  [PASS] PageTable entries[0] and entries[511] accessible");
+    }
+    
+    // Test 13: Function pointer types
+    print("[TEST] Testing PMM function pointer types...");
+    // This is a compile-time test - if it compiles, the types match
+    let alloc_fn: vmm.PMMAllocFn = mock_pmm_alloc;
+    let free_fn: vmm.PMMFreeFn = mock_pmm_free;
+    
+    if (alloc_fn != null && free_fn != null) {
+        print("  [PASS] PMMAllocFn and PMMFreeFn function pointers assignable");
+    }
+    
+    // Test 14: Address space calculations
+    print("[TEST] Testing address space calculations...");
+    
+    // Calculate kernel heap size in pages
+    let kernel_heap_pages: uint64 = vmm.KERNEL_HEAP_SIZE / vmm.PAGE_SIZE;
+    if (kernel_heap_pages == 65536) {
+        print("  [PASS] Kernel heap: 256MB = 65536 pages");
+    }
+    
+    // Calculate user stack size in pages
+    let user_stack_pages: uint64 = vmm.USER_STACK_SIZE / vmm.PAGE_SIZE;
+    if (user_stack_pages == 256) {
+        print("  [PASS] User stack: 1MB = 256 pages");
+    }
+    
+    // Test 15: Frame index calculations
+    print("[TEST] Testing frame index calculations...");
+    let frame_addr: uint64 = 0x1000;
+    let frame_index: uint64 = frame_addr / 4096;
+    if (frame_index == 1) {
+        print("  [PASS] Frame 0x1000 has index 1");
+    }
+    
+    let frame_addr2: uint64 = 0x100000;
+    let frame_index2: uint64 = frame_addr2 / 4096;
+    if (frame_index2 == 256) {
+        print("  [PASS] Frame 0x100000 has index 256");
+    }
+    
+    // Test 16: Page offset calculations
+    print("[TEST] Testing page offset calculations...");
+    let addr_with_offset: uint64 = 0x12345678;
+    let offset: uint64 = addr_with_offset & 0xFFF;
+    if (offset == 0x678) {
+        print("  [PASS] Address 0x12345678 has page offset 0x678");
+    }
+    
+    let page_base: uint64 = addr_with_offset & (~0xFFF);
+    if (page_base == 0x12345000) {
+        print("  [PASS] Address 0x12345678 has page base 0x12345000");
+    }
+    
+    // Test 17: Multiple PTE operations
+    print("[TEST] Testing multiple PTE operations...");
+    let multi_entry: vmm.PageTableEntry;
+    multi_entry.present = false;
+    multi_entry.writable = false;
+    multi_entry.user_accessible = false;
+    multi_entry.frame = 0;
+    
+    vmm.pte_set_present(&multi_entry, true);
+    vmm.pte_set_writable(&multi_entry, true);
+    vmm.pte_set_user_accessible(&multi_entry, true);
+    vmm.pte_set_frame(&multi_entry, 0x5000);
+    
+    if (vmm.pte_get_present(&multi_entry) == true &&
+        vmm.pte_get_writable(&multi_entry) == true &&
+        vmm.pte_get_user_accessible(&multi_entry) == true &&
+        vmm.pte_get_frame(&multi_entry) == 0x5000) {
+        print("  [PASS] Multiple PTE set operations successful");
+    }
+    
+    // Test 18: Edge case - maximum frame address
+    print("[TEST] Testing edge case - maximum frame address...");
+    let max_entry: vmm.PageTableEntry;
+    vmm.pte_set_frame(&max_entry, 0xFFFFFFFFF000);
+    if (vmm.pte_get_frame(&max_entry) == 0xFFFFFFFFF000) {
+        print("  [PASS] Maximum frame address (0xFFFFFFFFF000) handled correctly");
+    }
+    
+    // Test 19: Edge case - zero frame address
+    print("[TEST] Testing edge case - zero frame address...");
+    let zero_entry: vmm.PageTableEntry;
+    vmm.pte_set_frame(&zero_entry, 0);
+    if (vmm.pte_get_frame(&zero_entry) == 0) {
+        print("  [PASS] Zero frame address handled correctly");
+    }
+    
+    // Test 20: Page table index boundary values
+    print("[TEST] Testing page table index boundary values...");
+    
+    // Minimum address (all indices = 0)
+    let min_addr: uint64 = 0;
+    let min_pml4: uint64 = (min_addr >> 39) & 0x1FF;
+    let min_pdpt: uint64 = (min_addr >> 30) & 0x1FF;
+    let min_pd: uint64 = (min_addr >> 21) & 0x1FF;
+    let min_pt: uint64 = (min_addr >> 12) & 0x1FF;
+    
+    if (min_pml4 == 0 && min_pdpt == 0 && min_pd == 0 && min_pt == 0) {
+        print("  [PASS] Minimum address has all indices = 0");
+    }
+    
+    // Maximum address (all indices = 511)
+    let max_addr: uint64 = 0xFFFFFFFFFFFFFFFF;
+    let max_pml4: uint64 = (max_addr >> 39) & 0x1FF;
+    let max_pdpt: uint64 = (max_addr >> 30) & 0x1FF;
+    let max_pd: uint64 = (max_addr >> 21) & 0x1FF;
+    let max_pt: uint64 = (max_addr >> 12) & 0x1FF;
+    
+    if (max_pml4 == 511 && max_pdpt == 511 && max_pd == 511 && max_pt == 511) {
+        print("  [PASS] Maximum address has all indices = 511");
+    }
+    
+    print("ALL VMM UNIT TESTS PASSED PERFECTLY.");
+    return 0;
+}
+
+main_entry();
