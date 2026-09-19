@@ -29,6 +29,16 @@ kernel_start:
     ; Initialize 8259 PIC
     call pic_init
 
+    ; Initialize IDT gates and load IDT pointer via LIDT
+    call idt_init
+
+    ; Enable CPU Interrupts
+    sti
+
+    ; Send serial IDT announcement
+    mov rsi, msg_idt_banner
+    call serial_print
+
     ; Initialize VGA Display and draw system dashboard
     call vga_init_display
 
@@ -163,6 +173,27 @@ shell_execute_command:
     test eax, eax
     jnz .run_color
 
+    ; Compare "int3"
+    mov rsi, cmd_buffer
+    mov rdi, str_cmd_int3
+    call str_equals
+    test eax, eax
+    jnz .run_int3
+
+    ; Compare "ticks"
+    mov rsi, cmd_buffer
+    mov rdi, str_cmd_ticks
+    call str_equals
+    test eax, eax
+    jnz .run_ticks
+
+    ; Compare "stats"
+    mov rsi, cmd_buffer
+    mov rdi, str_cmd_stats
+    call str_equals
+    test eax, eax
+    jnz .run_stats
+
     ; Compare "reboot"
     mov rsi, cmd_buffer
     mov rdi, str_cmd_reboot
@@ -256,6 +287,31 @@ shell_execute_command:
     mov rsi, msg_color_changed
     mov cl, [term_color]
     call vga_print_str
+    jmp .cmd_done
+
+.run_int3:
+    mov rsi, msg_int3_test
+    mov cl, 0x0E                ; Yellow
+    call vga_print_str
+    int 3                       ; Trigger CPU Breakpoint Exception (Vector 3)
+    jmp .cmd_done
+
+.run_ticks:
+    mov rsi, msg_ticks_prefix
+    mov cl, 0x0A                ; Light Green
+    call vga_print_str
+    mov rbx, [timer_ticks]
+    call vga_print_hex_qword
+    call vga_newline
+    jmp .cmd_done
+
+.run_stats:
+    mov rsi, msg_stats_prefix
+    mov cl, 0x0B                ; Light Cyan
+    call vga_print_str
+    mov rbx, [interrupt_count]
+    call vga_print_hex_qword
+    call vga_newline
     jmp .cmd_done
 
 .run_echo:
@@ -594,11 +650,62 @@ vga_print_str:
     pop rax
     ret
 
+vga_print_hex_qword:
+    ; RBX = quadword to print, CL = color attribute
+    push rcx
+    push rbx
+    push rax
+    push r8
+    mov r8, rcx                 ; Save color attribute in R8B
+    mov rcx, 16
+.loop:
+    rol rbx, 4
+    mov al, bl
+    and al, 0x0F
+    cmp al, 10
+    jl .digit
+    add al, 'A' - 10
+    jmp .print
+.digit:
+    add al, '0'
+.print:
+    push rcx
+    mov cl, r8b
+    call vga_putchar
+    call serial_putc
+    pop rcx
+    dec rcx
+    jnz .loop
+    pop r8
+    pop rax
+    pop rbx
+    pop rcx
+    ret
+
 ; ==============================================================================
 ; PS/2 Keyboard Driver (Polling & Scancode Set 1 Translation)
 ; ==============================================================================
 kbd_poll_char:
-    ; Checks port 0x64. Returns decoded ASCII in AL (0 if none)
+    ; Check interrupt-driven ring buffer first
+    cli
+    movzx ecx, byte [rel kbd_buf_count]
+    test ecx, ecx
+    jz .poll_hardware
+
+    movzx ebx, byte [rel kbd_buf_tail]
+    mov al, [kbd_buffer + rbx]
+    inc byte [rel kbd_buf_tail]
+    dec byte [rel kbd_buf_count]
+    sti
+
+    movzx eax, al
+    cmp eax, 128
+    jge .no_key_nosti
+    mov al, [scancode_ascii_table + rax]
+    ret
+
+.poll_hardware:
+    sti
     in al, 0x64
     test al, 1                  ; Bit 0: Output buffer full?
     jz .no_key
@@ -619,6 +726,7 @@ kbd_poll_char:
     ret
 
 .no_key:
+.no_key_nosti:
     xor al, al
     ret
 
@@ -686,6 +794,76 @@ serial_print:
     ret
 
 ; ==============================================================================
+; Interrupt Descriptor Table (IDT) Driver & Setup
+; ==============================================================================
+idt_init:
+    push rax
+    push rbx
+    push rcx
+    push rdx
+    push rdi
+    push rsi
+
+    mov rsi, isr_stub_table      ; Address of 256 handler function pointers
+    mov rdi, idt_table           ; Destination IDT entries table
+    xor ecx, ecx                 ; Vector index 0..255
+
+.loop:
+    mov rbx, [rsi + rcx * 8]     ; rbx = handler stub entry point address
+
+    ; Entry address in IDT table: RDX = RDI + ECX * 16
+    mov rdx, rcx
+    shl rdx, 4
+    add rdx, rdi
+
+    ; 1. Offset low (bits 0..15)
+    mov ax, bx
+    mov [rdx], ax
+
+    ; 2. Kernel Code Selector (0x08)
+    mov word [rdx + 2], 0x08
+
+    ; 3. IST (0)
+    mov byte [rdx + 4], 0
+
+    ; 4. Type & Attributes (0x8E for Ring 0 Interrupt Gate, 0xEE for Syscall Vector 0x80)
+    cmp ecx, 0x80
+    je .syscall_attr
+    mov byte [rdx + 5], 0x8E
+    jmp .attr_done
+.syscall_attr:
+    mov byte [rdx + 5], 0xEE
+.attr_done:
+
+    ; 5. Offset mid (bits 16..31)
+    mov eax, ebx
+    shr eax, 16
+    mov [rdx + 6], ax
+
+    ; 6. Offset high (bits 32..63)
+    mov rax, rbx
+    shr rax, 32
+    mov [rdx + 8], eax
+
+    ; 7. Reserved (zero)
+    mov dword [rdx + 12], 0
+
+    inc ecx
+    cmp ecx, 256
+    jl .loop
+
+    ; Load IDT using LIDT instruction
+    lidt [idt_pointer]
+
+    pop rsi
+    pop rdi
+    pop rdx
+    pop rcx
+    pop rbx
+    pop rax
+    ret
+
+; ==============================================================================
 ; 8259 PIC Driver
 ; ==============================================================================
 pic_init:
@@ -712,9 +890,10 @@ pic_init:
     out 0x21, al
     out 0xA1, al
 
-    ; OCW1: Mask all interrupts initially (0xFF)
-    mov al, 0xFF
+    ; OCW1: Unmask IRQ0 (Timer) and IRQ1 (Keyboard) on Master PIC (0xFC = 11111100b)
+    mov al, 0xFC
     out 0x21, al
+    mov al, 0xFF
     out 0xA1, al
     pop rax
     ret
@@ -826,11 +1005,18 @@ msg_help_text:
     db "  info     - Show kernel version, author & target architecture", 10
     db "  mem      - Show physical memory & page table hierarchy", 10
     db "  cpu      - Dump CPU control register states (CR0, CR3, CR4, EFER)", 10
+    db "  int3     - Trigger software breakpoint exception (INT 3 / Vector 3)", 10
+    db "  ticks    - Show PIT timer hardware ticks (IRQ 0 count)", 10
+    db "  stats    - Show total interrupt service routine invocations", 10
     db "  clear    - Clear terminal shell area", 10
     db "  color    - Cycle shell text color (Cyan/Green/Yellow/White/Pink)", 10
     db "  echo     - Echo arguments back to the terminal", 10
     db "  reboot   - Hardware reboot via 8042 keyboard controller", 10
     db "  halt     - Halt system execution (cli; hlt)", 10, 0
+
+msg_int3_test:      db "Triggering Software Breakpoint Interrupt (INT 3)...", 10, 0
+msg_ticks_prefix:   db "PIT Timer Ticks (IRQ 0): 0x", 0
+msg_stats_prefix:   db "Total Interrupts Handled: 0x", 0
 
 msg_info_text:
     db "Kernel Information:", 10
@@ -876,6 +1062,9 @@ str_cmd_mem:        db "mem", 0
 str_cmd_cpu:        db "cpu", 0
 str_cmd_clear:      db "clear", 0
 str_cmd_color:      db "color", 0
+str_cmd_int3:       db "int3", 0
+str_cmd_ticks:      db "ticks", 0
+str_cmd_stats:      db "stats", 0
 str_cmd_reboot:     db "reboot", 0
 str_cmd_halt:       db "halt", 0
 str_cmd_echo:       db "echo ", 0
@@ -887,3 +1076,23 @@ scancode_ascii_table:
     db 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', "'", '`', 0, '\'
     db 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', 0, '*', 0, ' '
     times 128 - ($ - scancode_ascii_table) db 0
+
+; ==============================================================================
+; IDT Data Structures (256 Entries = 4096 Bytes)
+; ==============================================================================
+align 16
+idt_table:
+    times 256 * 16 db 0
+
+idt_pointer:
+    dw (256 * 16) - 1
+    dq idt_table
+
+msg_idt_banner:
+    db 13, 10, "  [OK] IDT Initialized: 256 Gates Loaded | Interrupts ENABLED (sti)", 13, 10, 0
+
+; ==============================================================================
+; Include Interrupt Service Routine (ISR) Framework Stubs
+; ==============================================================================
+%include "os/kernel/isr.asm"
+

@@ -282,6 +282,7 @@ fn vmm_map_range(vmm: *VMM, pmm: *void, virt_start: uint64, phys_start: uint64, 
 extern fn invlpg(addr: uint64) -> void;
 extern fn get_cr3() -> uint64;
 extern fn set_cr3(value: uint64) -> void;
+extern fn get_cr2() -> uint64;
 
 fn vmm_flush_tlb() -> void {
     // Reload CR3 to flush entire TLB
