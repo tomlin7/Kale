@@ -21,6 +21,24 @@ fn vmm_pmm_free_frame(pmm: *void, frame_addr: uint64) -> void {
     pmm.pmm_free_frame(pmm as *pmm.PMM, frame_addr);
 }
 
+// Bridge functions for memory layout checks
+fn check_canonical_address(addr: uint64) -> bool {
+    return mem_layout.is_canonical_address(addr);
+}
+
+fn check_user_address(addr: uint64) -> bool {
+    return mem_layout.is_user_address(addr);
+}
+
+// Bridge functions for page fault handler
+fn bridge_vmm_handle_cow(vmm: *void, pmm: *void, addr: uint64) -> bool {
+    return vmm.vmm_handle_cow_fault(vmm, pmm, addr);
+}
+
+fn bridge_vmm_map_page(vmm: *void, pmm: *void, virt: uint64, phys: uint64, flags: uint64) -> bool {
+    return vmm.vmm_map_page(vmm, pmm, virt, phys, flags);
+}
+
 fn kmain(info: *KernelInfo) -> int32 {
     let display: vga.VGADriver = vga.vga_init();
     vga.vga_clear(&display);
@@ -31,6 +49,13 @@ fn kmain(info: *KernelInfo) -> int32 {
     vga.vga_putc(&display, 'L' as uint8);
     vga.vga_putc(&display, 'E' as uint8);
     vga.vga_putc(&display, ']' as uint8);
+    
+    // Initialize memory layout
+    mem_layout.init_memory_layout();
+    if !mem_layout.validate_memory_layout() {
+        vga.vga_putc(&display, 'E' as uint8); // Memory layout error
+        return -1;
+    }
     
     // Initialize PMM
     let total_memory: uint64 = (info.memory_lower_kb as uint64 + info.memory_upper_kb as uint64) * 1024;

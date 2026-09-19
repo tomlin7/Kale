@@ -1,0 +1,185 @@
+// Page Fault Handler
+// Handles page faults including copy-on-write and demand paging
+
+// External declarations for VMM functions
+extern fn vmm_handle_cow_fault(vmm: *void, pmm: *void, fault_addr: uint64) -> bool;
+extern fn vmm_map_page(vmm: *void, pmm: *void, virt_addr: uint64, phys_addr: uint64, flags: uint64) -> bool;
+
+// Page fault error code bits
+const PF_PRESENT: uint32 = 0x1;     // Page not present
+const PF_WRITE: uint32 = 0x2;       // Write operation
+const PF_USER: uint32 = 0x4;        // User mode
+const PF_RESERVED: uint32 = 0x8;    // Reserved bit set
+const PF_INSTRUCTION: uint32 = 0x10; // Instruction fetch
+
+struct PageFaultInfo {
+    fault_address: uint64,
+    error_code: uint32,
+    is_present: bool,
+    is_write: bool,
+    is_user: bool,
+    is_reserved: bool,
+    is_instruction: bool,
+}
+
+struct InterruptFrame {
+    // Basic interrupt frame structure (will be expanded)
+    error_code: uint64,
+    rip: uint64,
+    cs: uint64,
+    rflags: uint64,
+    rsp: uint64,
+    ss: uint64,
+}
+
+fn parse_page_fault_error(error_code: uint32) -> PageFaultInfo {
+    let info: PageFaultInfo;
+    info.error_code = error_code;
+    info.is_present = (error_code & PF_PRESENT) == 0;
+    info.is_write = (error_code & PF_WRITE) != 0;
+    info.is_user = (error_code & PF_USER) != 0;
+    info.is_reserved = (error_code & PF_RESERVED) != 0;
+    info.is_instruction = (error_code & PF_INSTRUCTION) != 0;
+    return info;
+}
+
+extern fn get_cr2() -> uint64;
+
+fn page_fault_handler(frame: *InterruptFrame, vmm: *void, pmm: *void) -> void {
+    let fault_addr: uint64 = get_cr2();
+    let error_code: uint32 = frame.error_code as uint32;
+    
+    let info: PageFaultInfo = parse_page_fault_error(error_code);
+    info.fault_address = fault_addr;
+    
+    // Log the fault for debugging
+    log_page_fault(&info);
+    
+    // Handle different fault types
+    if info.is_reserved {
+        // Reserved bit set - critical error
+        handle_reserved_bit_fault(&info);
+        return;
+    }
+    
+    if info.is_present && info.is_write {
+        // Present but write fault - copy-on-write
+        if vmm_handle_cow_fault(vmm, pmm, fault_addr) {
+            return; // Handled successfully
+        }
+    }
+    
+    if !info.is_present {
+        // Page not present - demand paging
+        if handle_demand_paging(vmm, pmm, fault_addr, info.is_write) {
+            return; // Handled successfully
+        }
+    }
+    
+    // Unhandled fault - kill process or panic
+    if info.is_user {
+        // User page fault - kill current process
+        handle_user_page_fault(&info);
+    } else {
+        // Kernel page fault - panic
+        handle_kernel_page_fault(&info);
+    }
+}
+
+fn log_page_fault(info: *PageFaultInfo) -> void {
+    serial_write_string("Page fault at 0x");
+    serial_write_hex(info.fault_address);
+    serial_write_string(", error: 0x");
+    serial_write_hex(info.error_code as uint64);
+    serial_write_string("\n");
+    
+    if info.is_present {
+        serial_write_string("  Present page, ");
+    } else {
+        serial_write_string("  Non-present page, ");
+    }
+    
+    if info.is_write {
+        serial_write_string("write, ");
+    } else {
+        serial_write_string("read, ");
+    }
+    
+    if info.is_user {
+        serial_write_string("user mode\n");
+    } else {
+        serial_write_string("kernel mode\n");
+    }
+}
+
+fn handle_reserved_bit_fault(info: *PageFaultInfo) -> void {
+    serial_write_string("Reserved bit set in page table entry - critical error\n");
+    serial_write_string("Address: 0x");
+    serial_write_hex(info.fault_address);
+    serial_write_string("\n");
+    kernel_panic();
+}
+
+fn handle_demand_paging(vmm: *void, pmm: *void, addr: uint64, is_write: bool) -> bool {
+    // For now, implement simple demand paging
+    // In future, this would load from filesystem or swap
+    
+    // Check if address is in valid range
+    if !is_canonical_address(addr) {
+        return false;
+    }
+    
+    // Allocate physical frame
+    let phys: uint64 = pmm_alloc_frame(pmm);
+    if phys == 0 {
+        return false;
+    }
+    
+    // Determine protection flags
+    let flags: uint64 = 0x1; // Present
+    if is_write {
+        flags = flags | 0x2; // Writable
+    }
+    
+    if is_user_address(addr) {
+        flags = flags | 0x4; // User accessible
+    }
+    
+    // Map the page
+    if !vmm_map_page(vmm, pmm, addr, phys, flags) {
+        pmm_free_frame(pmm, phys);
+        return false;
+    }
+    
+    // Clear the page (zero-fill)
+    let virt_ptr: *uint8 = addr as *uint8;
+    let i: uint64 = 0;
+    while i < 4096 {
+        virt_ptr[i] = 0;
+        i = i + 1;
+    }
+    
+    return true;
+}
+
+fn handle_user_page_fault(info: *PageFaultInfo) -> void {
+    serial_write_string("User page fault - terminating process\n");
+    // TODO: Implement process termination
+    // terminate_process(current_process, -1);
+    kernel_panic();
+}
+
+fn handle_kernel_page_fault(info: *PageFaultInfo) -> void {
+    serial_write_string("Kernel page fault - system panic\n");
+    serial_write_string("This indicates a kernel bug or memory corruption\n");
+    kernel_panic();
+}
+
+// Serial functions for debugging
+extern fn serial_write_string(s: *char) -> void;
+extern fn serial_write_hex(value: uint64) -> void;
+extern fn kernel_panic() -> void;
+extern fn is_canonical_address(addr: uint64) -> bool;
+extern fn is_user_address(addr: uint64) -> bool;
+extern fn pmm_alloc_frame(pmm: *void) -> uint64;
+extern fn pmm_free_frame(pmm: *void, frame_addr: uint64) -> void;

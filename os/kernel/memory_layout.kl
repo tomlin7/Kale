@@ -1,0 +1,138 @@
+// Memory Layout and Address Space Setup
+// Defines the memory map for kernel and user space
+
+// Canonical address ranges for x86_64
+const CANONICAL_LOWER_START: uint64 = 0x0000000000000000;
+const CANONICAL_LOWER_END: uint64 = 0x00007FFFFFFFFFFF;
+const CANONICAL_UPPER_START: uint64 = 0xFFFF800000000000;
+const CANONICAL_UPPER_END: uint64 = 0xFFFFFFFFFFFFFFFF;
+
+// Kernel space layout (higher half)
+const KERNEL_PML4_INDEX: uint64 = 511;
+const KERNEL_CODE_BASE: uint64 = 0xFFFFFFFF80000000;
+const KERNEL_CODE_SIZE: uint64 = 0x00200000; // 2MB
+const KERNEL_CODE_END: uint64 = KERNEL_CODE_BASE + KERNEL_CODE_SIZE;
+
+const KERNEL_DATA_BASE: uint64 = 0xFFFFFFFF80200000;
+const KERNEL_DATA_SIZE: uint64 = 0x00100000; // 1MB
+const KERNEL_DATA_END: uint64 = KERNEL_DATA_BASE + KERNEL_DATA_SIZE;
+
+const KERNEL_HEAP_BASE: uint64 = 0xFFFFFFFF80300000;
+const KERNEL_HEAP_SIZE: uint64 = 0x10000000; // 256MB
+const KERNEL_HEAP_END: uint64 = KERNEL_HEAP_BASE + KERNEL_HEAP_SIZE;
+
+const KERNEL_STACK_BASE: uint64 = 0xFFFFFFFF90300000;
+const KERNEL_STACK_SIZE: uint64 = 0x00100000; // 1MB per stack
+const KERNEL_STACK_END: uint64 = 0xFFFFFFFF90400000;
+
+// User space layout (lower half)
+const USER_CODE_BASE: uint64 = 0x0000000000400000;
+const USER_CODE_SIZE: uint64 = 0x00100000; // 1MB
+const USER_CODE_END: uint64 = USER_CODE_BASE + USER_CODE_SIZE;
+
+const USER_DATA_BASE: uint64 = 0x0000000000500000;
+const USER_DATA_SIZE: uint64 = 0x00100000; // 1MB
+const USER_DATA_END: uint64 = USER_DATA_BASE + USER_DATA_SIZE;
+
+const USER_HEAP_BASE: uint64 = 0x0000000000600000;
+const USER_HEAP_MAX: uint64 = 0x00007FFFFFE00000;
+
+const USER_STACK_BASE: uint64 = 0x00007FFFFFFFFFFF;
+const USER_STACK_SIZE: uint64 = 0x00100000; // 1MB
+const USER_STACK_END: uint64 = USER_STACK_BASE - USER_STACK_SIZE;
+
+// Memory regions
+struct MemoryRegion {
+    name: *char,
+    start: uint64,
+    end: uint64,
+    size: uint64,
+    is_kernel: bool,
+    is_writable: bool,
+    is_executable: bool,
+}
+
+let memory_regions: [MemoryRegion; 16];
+let region_count: uint32 = 0;
+
+fn add_memory_region(name: *char, start: uint64, end: uint64, is_kernel: bool, is_writable: bool, is_executable: bool) -> void {
+    if region_count >= 16 {
+        return;
+    }
+    
+    memory_regions[region_count].name = name;
+    memory_regions[region_count].start = start;
+    memory_regions[region_count].end = end;
+    memory_regions[region_count].size = end - start;
+    memory_regions[region_count].is_kernel = is_kernel;
+    memory_regions[region_count].is_writable = is_writable;
+    memory_regions[region_count].is_executable = is_executable;
+    region_count = region_count + 1;
+}
+
+fn init_memory_layout() -> void {
+    region_count = 0;
+    
+    // Kernel regions
+    add_memory_region("KERNEL_CODE", KERNEL_CODE_BASE, KERNEL_CODE_END, true, false, true);
+    add_memory_region("KERNEL_DATA", KERNEL_DATA_BASE, KERNEL_DATA_END, true, true, false);
+    add_memory_region("KERNEL_HEAP", KERNEL_HEAP_BASE, KERNEL_HEAP_END, true, true, false);
+    add_memory_region("KERNEL_STACK", KERNEL_STACK_BASE, KERNEL_STACK_END, true, true, false);
+    
+    // User regions
+    add_memory_region("USER_CODE", USER_CODE_BASE, USER_CODE_END, false, false, true);
+    add_memory_region("USER_DATA", USER_DATA_BASE, USER_DATA_END, false, true, false);
+    add_memory_region("USER_HEAP", USER_HEAP_BASE, USER_HEAP_MAX, false, true, false);
+    add_memory_region("USER_STACK", USER_STACK_END, USER_STACK_BASE, false, true, false);
+}
+
+fn is_kernel_address(addr: uint64) -> bool {
+    return addr >= CANONICAL_UPPER_START;
+}
+
+fn is_user_address(addr: uint64) -> bool {
+    return addr >= CANONICAL_LOWER_START && addr <= CANONICAL_LOWER_END;
+}
+
+fn is_canonical_address(addr: uint64) -> bool {
+    return is_kernel_address(addr) || is_user_address(addr);
+}
+
+fn get_region_for_address(addr: uint64) -> *MemoryRegion {
+    let i: uint32 = 0;
+    while i < region_count {
+        if addr >= memory_regions[i].start && addr < memory_regions[i].end {
+            return &memory_regions[i];
+        }
+        i = i + 1;
+    }
+    return null;
+}
+
+fn validate_memory_layout() -> bool {
+    // Check for overlapping regions
+    let i: uint32 = 0;
+    while i < region_count {
+        let j: uint32 = i + 1;
+        while j < region_count {
+            if memory_regions[i].start < memory_regions[j].end && 
+               memory_regions[i].end > memory_regions[j].start {
+                return false; // Overlap detected
+            }
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    
+    // Check all addresses are canonical
+    i = 0;
+    while i < region_count {
+        if !is_canonical_address(memory_regions[i].start) ||
+           !is_canonical_address(memory_regions[i].end) {
+            return false;
+        }
+        i = i + 1;
+    }
+    
+    return true;
+}
