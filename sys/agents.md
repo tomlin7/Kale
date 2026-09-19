@@ -1,35 +1,33 @@
-# Bare-Metal OS & Microkernel (`sys/`)
+# Systems Utilities & Telemetry (`sys/`)
 
 ## Version
-`0.0.1`
+`0.1.0`
 
 ## Description
-Bare-metal x86_64 operating system, bootloader, and microkernel written in Kale and assembly, demonstrating freestanding language execution.
+High-performance systems engineering utilities, telemetry daemons, and diagnostics written in pure Kale (`sysmon`, `dig`).
 
 ## Status
-Current status: 🔴 Not Started
+Current status: 🟢 Active
+
+## Sub-projects
+- `sys/sysmon`: Terminal & process telemetry monitor (ANSI TrueColor, CPU sparklines).
+- `sys/dig`: Low-level packet-crafted DNS query tool and diagnostic resolver.
 
 ## Dependencies
-- Kale compiler (with freestanding / `-ffreestanding` bare-metal target)
-- NASM assembler & GNU ld / lld linker
-- QEMU / Bochs for emulation and testing
+- `packages/std`: standard library, collections, filesystem
+- `libs/term`: virtual terminal emulation and VT100 control sequences
+- `libs/net`: networking socket layer
 
 ## Build Instructions
 ```bash
-nasm -f bin sys/boot/boot.asm -o bin/boot.bin
-kale build sys/kernel/main.kl --freestanding -o bin/kernel.bin
-qemu-system-x86_64 -drive format=raw,file=bin/os.img
+# Build sysmon
+kale build sys/sysmon/main.kl -o bin/sysmon.exe
+
+# Build dig
+kale build sys/dig/main.kl -o bin/kale_dig.exe -lws2_32
 ```
 
-## Coding Conventions
-- No standard library (`no_std` / freestanding mode).
-- Strict hardware memory alignment and volatile memory writes.
+## Conventions
+- High-frequency loops must minimize heap allocations.
+- System metrics sample OS counters directly via Win32 / host APIs.
 
-## Short-term Milestones
-- [ ] Implement Stage 1 MBR bootloader in assembly.
-- [ ] Configure GDT and enter 64-bit Long Mode.
-- [ ] Initialize Serial COM1 driver and VGA text mode buffer in Kale.
-- [ ] Configure IDT and timer interrupts.
-
-## Future Plans
-Preemptive multitasking scheduler, SMP multicore initialization, VirtIO drivers, and userland syscall interface.

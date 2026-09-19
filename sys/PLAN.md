@@ -1,44 +1,40 @@
-# Bare-Metal OS & Microkernel (`sys/`) Plan
+# Systems Utilities & Telemetry (`sys/`) Plan
 
 ## 1. Overview
-The `sys/` tree houses the low-level operating system components written in Kale and x86_64 assembly. It demonstrates Kale running on bare-metal hardware without any host operating system or C runtime.
+The `sys/` project houses high-performance systems engineering tools, telemetry daemons, and diagnostics written in Kale. It runs atop host operating systems (Windows NT and POSIX) using direct system calls and zero-dependency socket abstractions.
 
 ---
 
-## 2. Directory Layout & Architecture
+## 2. Directory Layout & Subsystems
 
 ```
 sys/
-├── boot/            # Stage 1 MBR & Stage 2 protected-to-long mode bootloader
-│   ├── boot.asm     # Real mode (16-bit) -> Protected mode (32-bit) -> Long mode (64-bit)
-│   └── linker.ld    # Memory layout script (loads kernel at 1MB or 2MB higher-half)
-├── kernel/          # Microkernel core written in Kale
-│   ├── main.kl      # Kernel entry point (kmain)
-│   ├── gdt.kl       # Global Descriptor Table & TSS setup
-│   ├── idt.kl       # Interrupt Descriptor Table & ISR dispatch
-│   ├── pic.kl       # 8259 Programmable Interrupt Controller remapping
-│   ├── pmm.kl       # Physical Memory Manager (bitmap frame allocator)
-│   ├── vmm.kl       # Virtual Memory Manager (x86_64 4-level paging tables)
-│   └── sched.kl     # Cooperative/preemptive task scheduler
-├── drivers/         # Hardware abstraction drivers
-│   ├── vga.kl       # VGA text mode buffer (0xB8000)
-│   ├── serial.kl    # 16550 UART serial driver for debug logging (COM1)
-│   ├── fb.kl        # Linear framebuffer driver (VESA / UEFI GOP)
-│   └── kbd.kl       # PS/2 keyboard controller & scancode decoder
-└── PLAN.md
+├── sysmon/          # Real-time TUI process monitor, CPU core sparklines, memory breakdown
+│   ├── main.kl      # Interactive CLI entry point and event loop
+│   ├── telemetry.kl # CPU usage sampling, RAM statistics, thread count discovery
+│   ├── tui.kl       # ANSI TrueColor virtual terminal dashboard renderer
+│   ├── PLAN.md      # sysmon architecture roadmap
+│   └── agents.md    # Agent instructions for sysmon
+├── dig/             # Packet-crafted DNS query tool and diagnostic resolver
+│   ├── main.kl      # DNS CLI client and human-readable answer formatter
+│   ├── packet.kl    # Raw wire-format DNS header and question encoder/decoder
+│   ├── resolver.kl  # UDP/TCP DNS socket client with timeout and retries
+│   ├── PLAN.md      # dig architecture roadmap
+│   └── agents.md    # Agent instructions for dig
+└── PLAN.md          # Systems utilities roadmap
 ```
 
 ---
 
-## 3. Boot Pipeline
-1. **Bootloader (`sys/boot`)**:
-   - BIOS loads MBR sector at `0x7C00`.
-   - Enables A20 line, loads kernel sectors into RAM.
-   - Sets up temporary page tables and identity maps lower 2MB.
-   - Enters Long Mode (64-bit), jumps to `kmain()`.
-2. **Kernel Initialization (`sys/kernel/main.kl`)**:
-   - Initializes Serial COM1 port for debugging output.
-   - Installs GDT, IDT, and remaps PIC interrupts (0x20 - 0x2F).
-   - Initializes physical page frame allocator from BIOS memory map.
-   - Clears VGA screen / initializes GOP framebuffer.
-   - Enables interrupts (`sti`) and enters idle loop.
+## 3. Mission & Capabilities
+1. **Real-time Telemetry (`sys/sysmon`)**:
+   - Zero-allocation 60 Hz polling loops using Windows NT Toolhelp32 snapshots and Win32 queries.
+   - Per-core CPU load sparklines, memory gauge visualizers, and responsive ANSI terminal UI.
+2. **DNS Diagnostics (`sys/dig`)**:
+   - Native wire-level DNS query construction without third-party C resolver libraries.
+   - Comprehensive record resolution (A, AAAA, MX, CNAME, TXT, NS, SOA) directly over raw sockets.
+
+---
+
+## 4. Bare-Metal OS Migration
+The standalone bare-metal x86_64 operating system, bootloader, microkernel, and hardware drivers have been relocated to the dedicated top-level project `os/`.

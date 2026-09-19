@@ -1,0 +1,56 @@
+// os/kernel/gdt.kl
+// Global Descriptor Table (GDT) & Task State Segment (TSS) Setup for x86_64
+
+struct GDTEntry {
+    int limit_low;
+    int base_low;
+    int base_mid;
+    int access;
+    int granularity;
+    int base_high;
+}
+
+struct GDTPointer {
+    int limit;
+    int base;
+}
+
+struct GDTTable {
+    GDTEntry null_entry;
+    GDTEntry kernel_code;
+    GDTEntry kernel_data;
+    GDTEntry user_code;
+    GDTEntry user_data;
+    GDTPointer pointer;
+}
+
+fn GDTEntry gdt_create_entry(int base, int limit, int access, int gran) {
+    GDTEntry entry;
+    entry.limit_low = limit & 65535;
+    entry.base_low = base & 65535;
+    entry.base_mid = (base / 65536) & 255;
+    entry.access = access;
+    entry.granularity = ((limit / 65536) & 15) | (gran & 240);
+    entry.base_high = (base / 16777216) & 255;
+    return entry;
+}
+
+fn void gdt_init(GDTTable* table) {
+    // 0x00: Null descriptor
+    table->null_entry = gdt_create_entry(0, 0, 0, 0);
+
+    // 0x08: Kernel 64-bit Code Segment (Access: 0x9A = 154, Granularity: 0x20 = 32 - Long Mode)
+    table->kernel_code = gdt_create_entry(0, 1048575, 154, 32);
+
+    // 0x10: Kernel 64-bit Data Segment (Access: 0x92 = 146, Granularity: 0)
+    table->kernel_data = gdt_create_entry(0, 1048575, 146, 0);
+
+    // 0x18: User 64-bit Code Segment (Access: 0xFA = 250, Granularity: 0x20 = 32)
+    table->user_code = gdt_create_entry(0, 1048575, 250, 32);
+
+    // 0x20: User 64-bit Data Segment (Access: 0xF2 = 242, Granularity: 0)
+    table->user_data = gdt_create_entry(0, 1048575, 242, 0);
+
+    table->pointer.limit = 39; // 5 * 8 - 1
+    table->pointer.base = 0;
+}

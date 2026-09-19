@@ -1,0 +1,60 @@
+// os/drivers/fb.kl
+// VESA / UEFI Linear Framebuffer Graphics Driver (32-bpp BGRA / RGBA)
+
+struct Framebuffer {
+    base_address: *uint32,
+    width: uint32,
+    height: uint32,
+    pitch: uint32, // bytes per line
+}
+
+fn fb_init(base: *uint32, w: uint32, h: uint32, pitch: uint32) -> Framebuffer {
+    let fb: Framebuffer = Framebuffer {
+        base_address: base,
+        width: w,
+        height: h,
+        pitch: pitch,
+    };
+    return fb;
+}
+
+fn fb_put_pixel(fb: *Framebuffer, x: uint32, y: uint32, color: uint32) -> void {
+    if x >= fb.width || y >= fb.height {
+        return;
+    }
+    let pixels_per_pitch: uint32 = fb.pitch / 4;
+    let offset: uint32 = (y * pixels_per_pitch) + x;
+    fb.base_address[offset] = color;
+}
+
+fn fb_clear(fb: *Framebuffer, color: uint32) -> void {
+    let pixels_per_pitch: uint32 = fb.pitch / 4;
+    let y: uint32 = 0;
+    while y < fb.height {
+        let x: uint32 = 0;
+        let line_offset: uint32 = y * pixels_per_pitch;
+        while x < fb.width {
+            fb.base_address[line_offset + x] = color;
+            x = x + 1;
+        }
+        y = y + 1;
+    }
+}
+
+fn fb_fill_rect(fb: *Framebuffer, x: uint32, y: uint32, w: uint32, h: uint32, color: uint32) -> void {
+    let dy: uint32 = 0;
+    while dy < h {
+        let cur_y: uint32 = y + dy;
+        if cur_y < fb.height {
+            let dx: uint32 = 0;
+            while dx < w {
+                let cur_x: uint32 = x + dx;
+                if cur_x < fb.width {
+                    fb_put_pixel(fb, cur_x, cur_y, color);
+                }
+                dx = dx + 1;
+            }
+        }
+        dy = dy + 1;
+    }
+}

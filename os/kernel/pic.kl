@@ -1,0 +1,62 @@
+// os/kernel/pic.kl
+// 8259 Programmable Interrupt Controller (PIC) Driver & IRQ Remapping
+
+extern void outb(int port, int val);
+extern int inb(int port);
+
+struct PICDriver {
+    int master_offset;
+    int slave_offset;
+    int master_mask;
+    int slave_mask;
+}
+
+fn void io_wait() {
+    outb(128, 0);
+}
+
+fn PICDriver pic_init(int master_base, int slave_base) {
+    PICDriver pic;
+    pic.master_offset = master_base;
+    pic.slave_offset = slave_base;
+    pic.master_mask = 252; // 0xFC: Unmask IRQ0 (Timer) and IRQ1 (Keyboard)
+    pic.slave_mask = 255;  // 0xFF: Mask all on slave initially
+    return pic;
+}
+
+fn void pic_remap(PICDriver* pic) {
+    // ICW1: starts the initialization sequence
+    outb(32, 17);
+    io_wait();
+    outb(160, 17);
+    io_wait();
+
+    // ICW2: Master & Slave vector offset
+    outb(33, pic->master_offset);
+    io_wait();
+    outb(161, pic->slave_offset);
+    io_wait();
+
+    // ICW3: Cascade setup
+    outb(33, 4);
+    io_wait();
+    outb(161, 2);
+    io_wait();
+
+    // ICW4: 8086 mode
+    outb(33, 1);
+    io_wait();
+    outb(161, 1);
+    io_wait();
+
+    // Apply masks
+    outb(33, pic->master_mask);
+    outb(161, pic->slave_mask);
+}
+
+fn void pic_send_eoi(int irq) {
+    if (irq >= 8) {
+        outb(160, 32);
+    }
+    outb(32, 32);
+}

@@ -1,0 +1,22 @@
+// Kale Microkernel Entry Point
+import "os/drivers/vga.kl" as vga;
+
+struct KernelInfo {
+    magic: uint32,
+    memory_lower_kb: uint32,
+    memory_upper_kb: uint32,
+}
+
+fn kmain(info: *KernelInfo) -> int32 {
+    let display: vga.VGADriver = vga.vga_init();
+    vga.vga_clear(&display);
+    
+    vga.vga_putc(&display, '[' as uint8);
+    vga.vga_putc(&display, 'K' as uint8);
+    vga.vga_putc(&display, 'A' as uint8);
+    vga.vga_putc(&display, 'L' as uint8);
+    vga.vga_putc(&display, 'E' as uint8);
+    vga.vga_putc(&display, ']' as uint8);
+    
+    return 0;
+}

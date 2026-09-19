@@ -1,0 +1,204 @@
+// os/drivers/kbd.kl
+// PS/2 Keyboard Controller & Scancode Set 1 Decoder
+
+struct KeyEvent {
+    int scancode;
+    int ascii;
+    bool is_release;
+    bool shift;
+    bool ctrl;
+    bool alt;
+}
+
+struct KeyboardState {
+    int data_port;
+    int status_port;
+    bool shift_pressed;
+    bool ctrl_pressed;
+    bool alt_pressed;
+    int count;
+    KeyEvent last_event;
+}
+
+fn KeyboardState kbd_init() {
+    KeyboardState kbd;
+    kbd.data_port = 96;  // 0x60
+    kbd.status_port = 100; // 0x64
+    kbd.shift_pressed = false;
+    kbd.ctrl_pressed = false;
+    kbd.alt_pressed = false;
+    kbd.count = 0;
+    return kbd;
+}
+
+fn int kbd_scancode_to_ascii(int scancode, bool shift) {
+    if (scancode == 30) {
+        if (shift) { return 65; }
+        return 97;
+    }
+    if (scancode == 48) {
+        if (shift) { return 66; }
+        return 98;
+    }
+    if (scancode == 46) {
+        if (shift) { return 67; }
+        return 99;
+    }
+    if (scancode == 32) {
+        if (shift) { return 68; }
+        return 100;
+    }
+    if (scancode == 18) {
+        if (shift) { return 69; }
+        return 101;
+    }
+    if (scancode == 33) {
+        if (shift) { return 70; }
+        return 102;
+    }
+    if (scancode == 34) {
+        if (shift) { return 71; }
+        return 103;
+    }
+    if (scancode == 35) {
+        if (shift) { return 72; }
+        return 104;
+    }
+    if (scancode == 23) {
+        if (shift) { return 73; }
+        return 105;
+    }
+    if (scancode == 36) {
+        if (shift) { return 74; }
+        return 106;
+    }
+    if (scancode == 37) {
+        if (shift) { return 75; }
+        return 107;
+    }
+    if (scancode == 38) {
+        if (shift) { return 76; }
+        return 108;
+    }
+    if (scancode == 50) {
+        if (shift) { return 77; }
+        return 109;
+    }
+    if (scancode == 49) {
+        if (shift) { return 78; }
+        return 110;
+    }
+    if (scancode == 24) {
+        if (shift) { return 79; }
+        return 111;
+    }
+    if (scancode == 25) {
+        if (shift) { return 80; }
+        return 112;
+    }
+    if (scancode == 16) {
+        if (shift) { return 81; }
+        return 113;
+    }
+    if (scancode == 19) {
+        if (shift) { return 82; }
+        return 114;
+    }
+    if (scancode == 31) {
+        if (shift) { return 83; }
+        return 115;
+    }
+    if (scancode == 20) {
+        if (shift) { return 84; }
+        return 116;
+    }
+    if (scancode == 22) {
+        if (shift) { return 85; }
+        return 117;
+    }
+    if (scancode == 47) {
+        if (shift) { return 86; }
+        return 118;
+    }
+    if (scancode == 17) {
+        if (shift) { return 87; }
+        return 119;
+    }
+    if (scancode == 45) {
+        if (shift) { return 88; }
+        return 120;
+    }
+    if (scancode == 21) {
+        if (shift) { return 89; }
+        return 121;
+    }
+    if (scancode == 44) {
+        if (shift) { return 90; }
+        return 122;
+    }
+
+    // Numbers
+    if (scancode == 2) { if (shift) { return 33; } return 49; }
+    if (scancode == 3) { if (shift) { return 64; } return 50; }
+    if (scancode == 4) { if (shift) { return 35; } return 51; }
+    if (scancode == 5) { if (shift) { return 36; } return 52; }
+    if (scancode == 6) { if (shift) { return 37; } return 53; }
+    if (scancode == 7) { if (shift) { return 94; } return 54; }
+    if (scancode == 8) { if (shift) { return 38; } return 55; }
+    if (scancode == 9) { if (shift) { return 42; } return 56; }
+    if (scancode == 10) { if (shift) { return 40; } return 57; }
+    if (scancode == 11) { if (shift) { return 41; } return 48; }
+
+    // Controls
+    if (scancode == 57) { return 32; } // Space
+    if (scancode == 28) { return 10; } // Enter
+    if (scancode == 14) { return 8; }  // Backspace
+    if (scancode == 15) { return 9; }  // Tab
+    return 0;
+}
+
+fn bool kbd_handle_scancode(KeyboardState* kbd, int code) {
+    bool is_release = (code & 128) != 0;
+    int raw_scancode = code & 127;
+
+    if (raw_scancode == 42 || raw_scancode == 54) { // Left/Right Shift
+        kbd->shift_pressed = !is_release;
+        return false;
+    }
+    if (raw_scancode == 29) { // Ctrl
+        kbd->ctrl_pressed = !is_release;
+        return false;
+    }
+    if (raw_scancode == 56) { // Alt
+        kbd->alt_pressed = !is_release;
+        return false;
+    }
+
+    if (is_release) {
+        return false;
+    }
+
+    int ascii_val = kbd_scancode_to_ascii(raw_scancode, kbd->shift_pressed);
+    kbd->last_event.scancode = raw_scancode;
+    kbd->last_event.ascii = ascii_val;
+    kbd->last_event.is_release = false;
+    kbd->last_event.shift = kbd->shift_pressed;
+    kbd->last_event.ctrl = kbd->ctrl_pressed;
+    kbd->last_event.alt = kbd->alt_pressed;
+    kbd->count = kbd->count + 1;
+    return true;
+}
+
+fn bool kbd_read_event(KeyboardState* kbd, KeyEvent* ev) {
+    if (kbd->count == 0) {
+        return false;
+    }
+    ev->scancode = kbd->last_event.scancode;
+    ev->ascii = kbd->last_event.ascii;
+    ev->is_release = kbd->last_event.is_release;
+    ev->shift = kbd->last_event.shift;
+    ev->ctrl = kbd->last_event.ctrl;
+    ev->alt = kbd->last_event.alt;
+    kbd->count = kbd->count - 1;
+    return true;
+}

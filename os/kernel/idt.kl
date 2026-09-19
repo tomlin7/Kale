@@ -1,0 +1,35 @@
+// x86_64 Interrupt Descriptor Table (IDT) Entry
+struct IDTEntry {
+    offset_low: uint16,
+    selector: uint16,
+    ist: uint8,
+    type_attr: uint8,
+    offset_mid: uint16,
+    offset_high: uint32,
+    zero: uint32,
+}
+
+struct IDTPointer {
+    limit: uint16,
+    base: uint64,
+}
+
+struct IDTTable {
+    entries: [IDTEntry; 256],
+    pointer: IDTPointer,
+}
+
+fn idt_set_gate(table: *IDTTable, num: int32, isr_handler: uint64, selector: uint16, flags: uint8) -> void {
+    table.entries[num].offset_low = (isr_handler & 0xFFFF as uint64) as uint16;
+    table.entries[num].selector = selector;
+    table.entries[num].ist = 0 as uint8;
+    table.entries[num].type_attr = flags;
+    table.entries[num].offset_mid = ((isr_handler >> 16) & 0xFFFF as uint64) as uint16;
+    table.entries[num].offset_high = ((isr_handler >> 32) & 0xFFFFFFFF as uint64) as uint32;
+    table.entries[num].zero = 0 as uint32;
+}
+
+fn idt_init(table: *IDTTable) -> void {
+    table.pointer.limit = (256 * 16 - 1) as uint16;
+    table.pointer.base = (&table.entries[0]) as uint64;
+}
