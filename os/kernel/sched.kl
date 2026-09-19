@@ -1,0 +1,178 @@
+// os/kernel/sched.kl
+// Process Control Block (PCB) and CPU Context structures and Process State Management
+
+// Process State Enum
+enum ProcessState {
+    PROCESS_RUNNING,
+    PROCESS_READY,
+    PROCESS_BLOCKED,
+    PROCESS_TERMINATED
+}
+
+// CPU Context (saved on interrupt/switch)
+struct CPUContext {
+    uint64 rax;
+    uint64 rbx;
+    uint64 rcx;
+    uint64 rdx;
+    uint64 rsi;
+    uint64 rdi;
+    uint64 rbp;
+    uint64 rsp;
+    uint64 r8;
+    uint64 r9;
+    uint64 r10;
+    uint64 r11;
+    uint64 r12;
+    uint64 r13;
+    uint64 r14;
+    uint64 r15;
+    uint64 rip;
+    uint64 rflags;
+    uint64 cs;
+    uint64 ss;
+}
+
+// Process Control Block (PCB)
+struct ProcessControlBlock {
+    uint32 id;
+    ProcessState state;
+    uint8 priority;
+    
+    // CPU Context & Stacks
+    CPUContext* registers;
+    uint64 kernel_stack;
+    uint64 user_stack;
+    
+    // Memory Management
+    uint64 page_table;  // Physical address of PML4
+    
+    // Scheduling Metadata
+    uint32 time_slice;
+    uint32 time_used;
+    int exit_code;
+    ProcessControlBlock* next;
+    ProcessControlBlock* prev;
+}
+
+// Global PID counter
+uint32 next_pid_counter = 1 as uint32;
+
+// PID Allocation System
+fn uint32 sched_generate_pid() {
+    uint32 pid = next_pid_counter;
+    next_pid_counter = next_pid_counter + 1;
+    return pid;
+}
+
+fn void sched_reset_pid_counter(uint32 start_pid) {
+    next_pid_counter = start_pid;
+}
+
+// CPU Context Initialization
+fn void cpu_context_init(CPUContext* ctx, uint64 entry_point, uint64 stack_pointer, bool is_user) {
+    ctx->rax = 0;
+    ctx->rbx = 0;
+    ctx->rcx = 0;
+    ctx->rdx = 0;
+    ctx->rsi = 0;
+    ctx->rdi = 0;
+    ctx->rbp = 0;
+    ctx->rsp = stack_pointer;
+    ctx->r8 = 0;
+    ctx->r9 = 0;
+    ctx->r10 = 0;
+    ctx->r11 = 0;
+    ctx->r12 = 0;
+    ctx->r13 = 0;
+    ctx->r14 = 0;
+    ctx->r15 = 0;
+    ctx->rip = entry_point;
+    ctx->rflags = 514; // 0x202 = Interrupt flag (IF) enabled
+    
+    if (is_user) {
+        ctx->cs = 27; // 0x1B = User Code Segment (Ring 3 with RPL 3)
+        ctx->ss = 35; // 0x23 = User Data Segment (Ring 3 with RPL 3)
+    } else {
+        ctx->cs = 8;  // 0x08 = Kernel Code Segment (Ring 0)
+        ctx->ss = 16; // 0x10 = Kernel Data Segment (Ring 0)
+    }
+}
+
+// Process Control Block (PCB) Initialization
+fn void pcb_init(ProcessControlBlock* pcb, uint32 id, uint8 priority, uint32 time_slice, uint64 kernel_stack, uint64 page_table) {
+    pcb->id = id;
+    pcb->state = ProcessState.PROCESS_READY;
+    pcb->priority = priority;
+    pcb->registers = null;
+    pcb->kernel_stack = kernel_stack;
+    pcb->user_stack = 0;
+    pcb->page_table = page_table;
+    pcb->time_slice = time_slice;
+    pcb->time_used = 0;
+    pcb->exit_code = 0;
+    pcb->next = null;
+    pcb->prev = null;
+}
+
+// Process State Management Functions
+fn void pcb_set_state(ProcessControlBlock* pcb, ProcessState state) {
+    pcb->state = state;
+}
+
+fn ProcessState pcb_get_state(ProcessControlBlock* pcb) {
+    return pcb->state;
+}
+
+fn bool pcb_is_running(ProcessControlBlock* pcb) {
+    return pcb->state == ProcessState.PROCESS_RUNNING;
+}
+
+fn bool pcb_is_ready(ProcessControlBlock* pcb) {
+    return pcb->state == ProcessState.PROCESS_READY;
+}
+
+fn bool pcb_is_blocked(ProcessControlBlock* pcb) {
+    return pcb->state == ProcessState.PROCESS_BLOCKED;
+}
+
+fn bool pcb_is_terminated(ProcessControlBlock* pcb) {
+    return pcb->state == ProcessState.PROCESS_TERMINATED;
+}
+
+fn void pcb_set_priority(ProcessControlBlock* pcb, uint8 priority) {
+    pcb->priority = priority;
+}
+
+fn bool pcb_update_time_used(ProcessControlBlock* pcb, uint32 amount) {
+    pcb->time_used = pcb->time_used + amount;
+    if (pcb->time_used >= pcb->time_slice) {
+        return true;
+    }
+    return false;
+}
+
+fn void pcb_reset_time_slice(ProcessControlBlock* pcb) {
+    pcb->time_used = 0;
+}
+
+// PCB Doubly Linked List Operations
+fn void pcb_link_after(ProcessControlBlock* target, ProcessControlBlock* new_node) {
+    new_node->prev = target;
+    new_node->next = target->next;
+    if (target->next != null) {
+        target->next->prev = new_node;
+    }
+    target->next = new_node;
+}
+
+fn void pcb_unlink(ProcessControlBlock* node) {
+    if (node->prev != null) {
+        node->prev->next = node->next;
+    }
+    if (node->next != null) {
+        node->next->prev = node->prev;
+    }
+    node->prev = null;
+    node->next = null;
+}

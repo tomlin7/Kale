@@ -169,6 +169,30 @@ class Parser:
             return None
 
     def _is_function_declaration_start(self) -> bool:
+        if self._cur_token.kind == SyntaxKind.FnKeyword:
+            p1 = self._peek(1).kind
+            if p1 == SyntaxKind.OperatorKeyword:
+                return True
+            if p1 == SyntaxKind.IdentifierToken:
+                p2 = self._peek(2).kind
+                if p2 == SyntaxKind.OpenParenthesisToken:
+                    return True
+                if p2 == SyntaxKind.LessToken:
+                    depth = 1
+                    i = 3
+                    while depth > 0:
+                        k = self._peek(i).kind
+                        if k == SyntaxKind.EndOfFileToken:
+                            break
+                        if k == SyntaxKind.LessToken:
+                            depth += 1
+                        elif k == SyntaxKind.GreaterToken:
+                            depth -= 1
+                        i += 1
+                    if self._peek(i).kind == SyntaxKind.OpenParenthesisToken:
+                        return True
+                if p2 == SyntaxKind.DotToken and self._peek(3).kind == SyntaxKind.IdentifierToken and self._peek(4).kind in (SyntaxKind.OpenParenthesisToken, SyntaxKind.LessToken):
+                    return True
         idx = 0
         if self._cur_token.kind == SyntaxKind.FnKeyword:
             idx = 1
@@ -432,7 +456,7 @@ class Parser:
             self._advance()
         return EnumDeclarationStatement(enum_kw, name_tok, open_brace, members, close_brace)
 
-    def parse_type_token(self) -> SyntaxToken:
+    def parse_type_token(self, is_cast: bool = False) -> SyntaxToken:
         """Parses a type token, which may be a primitive (e.g. 'int'), pointer ('int*', 'Point**'), array ('int[]', 'int[5]'), or function type ('fn(int, int): int')."""
         # Handle function pointer type: fn(T1, T2): RetType
         if self._check(SyntaxKind.FnKeyword):
@@ -489,6 +513,20 @@ class Parser:
                 full_span = TextSpan.from_bounds(base_type_token.span.start, star_tok.span.end)
                 base_type_token = SyntaxToken(base_type_token.kind, full_span, value=comp_text, text=comp_text)
             elif self._check(SyntaxKind.StarToken):
+                if is_cast:
+                    next_tok = self._peek(1)
+                    if next_tok.kind in (
+                        SyntaxKind.NumberToken,
+                        SyntaxKind.StringToken,
+                        SyntaxKind.CharToken,
+                        SyntaxKind.IdentifierToken,
+                        SyntaxKind.TrueKeyword,
+                        SyntaxKind.FalseKeyword,
+                        SyntaxKind.NullKeyword,
+                        SyntaxKind.OpenParenthesisToken,
+                        SyntaxKind.AllocKeyword,
+                    ):
+                        break
                 star_tok = self._advance()
                 comp_text = f"{comp_text}*"
                 full_span = TextSpan.from_bounds(base_type_token.span.start, star_tok.span.end)
@@ -512,9 +550,49 @@ class Parser:
         return base_type_token
 
     def parse_function_declaration(self) -> FunctionDeclarationStatement:
+        has_fn_kw = False
+        fn_tok = None
         if self._check(SyntaxKind.FnKeyword):
-            self._advance()
-        return_type_token = self.parse_type_token()
+            has_fn_kw = True
+            fn_tok = self._advance()
+
+        trailing_return = False
+        if has_fn_kw:
+            if self._check(SyntaxKind.OperatorKeyword):
+                trailing_return = True
+                return_type_token = None
+            elif self._cur_token.kind == SyntaxKind.IdentifierToken:
+                p1 = self._peek(1).kind
+                if p1 == SyntaxKind.OpenParenthesisToken:
+                    trailing_return = True
+                    return_type_token = None
+                elif p1 == SyntaxKind.LessToken:
+                    depth = 1
+                    i = 2
+                    while depth > 0:
+                        k = self._peek(i).kind
+                        if k == SyntaxKind.EndOfFileToken:
+                            break
+                        if k == SyntaxKind.LessToken:
+                            depth += 1
+                        elif k == SyntaxKind.GreaterToken:
+                            depth -= 1
+                        i += 1
+                    if self._peek(i).kind == SyntaxKind.OpenParenthesisToken:
+                        trailing_return = True
+                        return_type_token = None
+                    else:
+                        return_type_token = self.parse_type_token()
+                elif p1 == SyntaxKind.DotToken and self._peek(2).kind == SyntaxKind.IdentifierToken and self._peek(3).kind in (SyntaxKind.OpenParenthesisToken, SyntaxKind.LessToken):
+                    trailing_return = True
+                    return_type_token = None
+                else:
+                    return_type_token = self.parse_type_token()
+            else:
+                return_type_token = self.parse_type_token()
+        else:
+            return_type_token = self.parse_type_token()
+
         struct_name_token = None
         type_parameters = None
         if self._check(SyntaxKind.OperatorKeyword):
@@ -577,6 +655,15 @@ class Parser:
                 parameters.append(ParameterNode(param_type, param_name))
 
         close_paren = self._match(SyntaxKind.CloseParenthesisToken)
+
+        if trailing_return:
+            if self._check(SyntaxKind.ArrowToken) or self._check(SyntaxKind.ColonToken):
+                self._advance()
+                return_type_token = self.parse_type_token()
+            else:
+                default_span = fn_tok.span if fn_tok else identifier_token.span
+                return_type_token = SyntaxToken(SyntaxKind.VoidKeyword, default_span, "void", "void")
+
         body = self.parse_block_statement()
         return FunctionDeclarationStatement(
             return_type_token,
@@ -595,11 +682,24 @@ class Parser:
         if self._check(SyntaxKind.StringToken):
             self._advance()
         # Optional 'fn' keyword (e.g. extern fn puts(...) or extern int puts(...))
+        has_fn_kw = False
+        fn_tok = None
         if self._check(SyntaxKind.FnKeyword):
-            self._advance()
+            has_fn_kw = True
+            fn_tok = self._advance()
 
-        ret_type = self.parse_type_token()
-        name_tok = self._match(SyntaxKind.IdentifierToken)
+        trailing_return = False
+        if has_fn_kw and self._cur_token.kind == SyntaxKind.IdentifierToken and self._peek(1).kind in (
+            SyntaxKind.OpenParenthesisToken,
+            SyntaxKind.LessToken,
+        ):
+            trailing_return = True
+            name_tok = self._match(SyntaxKind.IdentifierToken)
+            ret_type = None
+        else:
+            ret_type = self.parse_type_token()
+            name_tok = self._match(SyntaxKind.IdentifierToken)
+
         open_paren = self._match(SyntaxKind.OpenParenthesisToken)
 
         parameters: list[ParameterNode] = []
@@ -624,6 +724,15 @@ class Parser:
                     parameters.append(ParameterNode(param_type, param_name))
 
         close_paren = self._match(SyntaxKind.CloseParenthesisToken)
+
+        if trailing_return:
+            if self._check(SyntaxKind.ArrowToken) or self._check(SyntaxKind.ColonToken):
+                self._advance()
+                ret_type = self.parse_type_token()
+            else:
+                default_span = fn_tok.span if fn_tok else name_tok.span
+                ret_type = SyntaxToken(SyntaxKind.VoidKeyword, default_span, "void", "void")
+
         semi = None
         if self._check(SyntaxKind.SemicolonToken):
             semi = self._advance()
@@ -651,6 +760,16 @@ class Parser:
     def parse_variable_declaration(self) -> VariableDeclarationStatement:
         type_token = self.parse_type_token() # int, int[], double, let, var, etc.
         identifier = self._match(SyntaxKind.IdentifierToken)
+
+        if self._check(SyntaxKind.OpenBracketToken):
+            open_b = self._advance()
+            sz_str = ""
+            if self._check(SyntaxKind.NumberToken):
+                num_tok = self._advance()
+                sz_str = str(num_tok.value)
+            close_b = self._match(SyntaxKind.CloseBracketToken)
+            comp_text = f"{type_token.text}[{sz_str}]"
+            type_token = SyntaxToken(type_token.kind, TextSpan.from_bounds(type_token.span.start, close_b.span.end), comp_text, comp_text)
 
         equals_token = None
         initializer = None
@@ -859,10 +978,6 @@ class Parser:
                         args.append(self.parse_expression(0))
                 close_p = self._match(SyntaxKind.CloseParenthesisToken)
                 left = CallExpression(left, open_p, args, close_p)
-            elif self._cur_token.kind == SyntaxKind.AsKeyword:
-                as_tok = self._advance()
-                target_type_tok = self.parse_type_token()
-                left = CastExpression(target_type_tok, left, as_token=as_tok)
             else:
                 break
 
@@ -898,6 +1013,15 @@ class Parser:
                     self.diagnostics.report(left.span, "The left-hand side of an assignment must be a variable, array index, struct field, or dereference.")
                     right = self.parse_expression(0)
                     return left
+
+            if self._cur_token.kind == SyntaxKind.AsKeyword:
+                as_prec = 11
+                if as_prec <= parent_precedence:
+                    break
+                as_tok = self._advance()
+                target_type_tok = self.parse_type_token(is_cast=True)
+                left = CastExpression(target_type_tok, left, as_token=as_tok)
+                continue
 
             prec = get_binary_operator_precedence(self._cur_token.kind)
             if prec == 0 or prec <= parent_precedence:

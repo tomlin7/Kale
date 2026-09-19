@@ -328,8 +328,9 @@ fn vmm_mark_page_cow(entry: *PageTableEntry) -> void {
     entry.writable = false;
 }
 
-// Import PMM struct definition
-import "os/kernel/pmm.kl" as pmm_module;
+// External PMM function declarations (avoid circular dependency)
+extern fn pmm_alloc_frame(pmm: *void) -> uint64;
+extern fn pmm_free_frame(pmm: *void, frame_addr: uint64) -> void;
 
 fn vmm_handle_cow_fault(vmm: *VMM, pmm: *void, fault_addr: uint64) -> bool {
     let phys_addr: uint64 = vmm_get_phys_addr(vmm, fault_addr);
@@ -384,7 +385,7 @@ fn vmm_handle_cow_fault(vmm: *VMM, pmm: *void, fault_addr: uint64) -> bool {
 }
 
 // Address space management
-fn vmm_create_address_space(pmm: *PMM) -> *PageTable {
+fn vmm_create_address_space(pmm: *void) -> *PageTable {
     let new_pml4: *PageTable = vmm_alloc_page_table(pmm);
     if new_pml4 == null {
         return null;

@@ -3,6 +3,9 @@ from ..binding.types import (
     TypeSymbol,
     TypeInt,
     TypeInt32,
+    TypeUInt64,
+    TypeUInt32,
+    TypeUInt8,
     TypeFloat,
     TypeDouble,
     TypeBool,
@@ -37,9 +40,11 @@ def to_llvm_type(type_symbol: TypeSymbol, struct_map: dict[str, ir.Type] | None 
     if isinstance(type_symbol, ArrayTypeSymbol):
         elem_t = to_llvm_type(type_symbol.element_type, struct_map)
         return ir.PointerType(elem_t)
-    if type_symbol == TypeInt32:
+    if type_symbol in (TypeInt32, TypeUInt32):
         return ir.IntType(32)
-    if type_symbol == TypeInt or isinstance(type_symbol, EnumTypeSymbol):
+    if type_symbol in (TypeUInt8, TypeChar):
+        return ir.IntType(8)
+    if type_symbol in (TypeInt, TypeUInt64) or isinstance(type_symbol, EnumTypeSymbol):
         return ir.IntType(64)
     if type_symbol == TypeFloat:
         return ir.FloatType()

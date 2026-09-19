@@ -237,6 +237,12 @@ class BoundVariableDeclaration(BoundStatement):
     initializer: BoundExpression | None
 
 @dataclass(frozen=True)
+class BoundGlobalVariable(BoundStatement):
+    variable: VariableSymbol
+    initializer: BoundExpression | None
+    module_name: str | None = None  # If from imported module, the module name
+
+@dataclass(frozen=True)
 class BoundIfStatement(BoundStatement):
     condition: BoundExpression
     then_statement: BoundStatement
@@ -308,6 +314,7 @@ class BoundProgram(BoundNode):
     structs: list[BoundStructDeclaration] = None # type: ignore
     enums: list[BoundEnumDeclaration] = None # type: ignore
     module_symbols: dict[str, ModuleSymbol] = None # type: ignore
+    globals: list[BoundGlobalVariable] = None # type: ignore
 
     def __post_init__(self):
         if self.functions is None:
@@ -318,4 +325,6 @@ class BoundProgram(BoundNode):
             object.__setattr__(self, "enums", [])
         if self.module_symbols is None:
             object.__setattr__(self, "module_symbols", {})
+        if self.globals is None:
+            object.__setattr__(self, "globals", [])
 

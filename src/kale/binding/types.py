@@ -4,6 +4,7 @@ from typing import Any
 @dataclass(frozen=True)
 class TypeSymbol:
     name: str
+    is_unsigned: bool = False
 
     def __repr__(self) -> str:
         return self.name
@@ -123,14 +124,16 @@ class ModuleTypeSymbol(TypeSymbol):
     symbols: dict[str, Any] = None # type: ignore
     structs: dict[str, Any] = None # type: ignore
     enums: dict[str, Any] = None # type: ignore
+    globals: dict[str, Any] = None # type: ignore
 
-    def __init__(self, module_name: str, file_path: str, symbols: dict[str, Any] | None = None, structs: dict[str, Any] | None = None, enums: dict[str, Any] | None = None):
+    def __init__(self, module_name: str, file_path: str, symbols: dict[str, Any] | None = None, structs: dict[str, Any] | None = None, enums: dict[str, Any] | None = None, globals: dict[str, Any] | None = None):
         object.__setattr__(self, "name", f"module {module_name}")
         object.__setattr__(self, "module_name", module_name)
         object.__setattr__(self, "file_path", file_path)
         object.__setattr__(self, "symbols", symbols if symbols is not None else {})
         object.__setattr__(self, "structs", structs if structs is not None else {})
         object.__setattr__(self, "enums", enums if enums is not None else {})
+        object.__setattr__(self, "globals", globals if globals is not None else {})
 
     def get_member_symbol(self, member_name: str) -> Any:
         return self.symbols.get(member_name)
@@ -141,12 +144,18 @@ class ModuleTypeSymbol(TypeSymbol):
     def get_enum_type(self, enum_name: str) -> Any:
         return self.enums.get(enum_name)
 
+    def get_global_variable(self, var_name: str) -> Any:
+        return self.globals.get(var_name)
+
     def __repr__(self) -> str:
         return f"module {self.module_name}"
 
 # Built-in primitive types
 TypeInt = TypeSymbol("int")
 TypeInt32 = TypeSymbol("int32")
+TypeUInt64 = TypeSymbol("uint64", is_unsigned=True)
+TypeUInt32 = TypeSymbol("uint32", is_unsigned=True)
+TypeUInt8 = TypeSymbol("uint8", is_unsigned=True)
 TypeFloat = TypeSymbol("float")
 TypeDouble = TypeSymbol("double")
 TypeBool = TypeSymbol("bool")
@@ -155,10 +164,28 @@ TypeChar = TypeSymbol("char")
 TypeVoid = TypeSymbol("void")
 TypeUnknown = TypeSymbol("<unknown>")
 
+INT_TYPES = (TypeInt, TypeInt32, TypeUInt64, TypeUInt32, TypeUInt8)
+
 TYPE_MAP: dict[str, TypeSymbol] = {
     "int": TypeInt,
+    "int64": TypeInt,
+    "uint64": TypeUInt64,
+    "uintptr": TypeUInt64,
+    "size_t": TypeUInt64,
+    "i64": TypeInt,
+    "u64": TypeUInt64,
     "int32": TypeInt32,
+    "uint32": TypeUInt32,
     "i32": TypeInt32,
+    "u32": TypeUInt32,
+    "int8": TypeInt32,
+    "i8": TypeInt32,
+    "int16": TypeInt32,
+    "i16": TypeInt32,
+    "uint8": TypeUInt8,
+    "u8": TypeUInt8,
+    "uint16": TypeUInt32,
+    "u16": TypeUInt32,
     "float": TypeFloat,
     "float32": TypeFloat,
     "f32": TypeFloat,
@@ -193,7 +220,7 @@ def lookup_type(name: str) -> TypeSymbol | None:
     return None
 
 def is_numeric(t: TypeSymbol) -> bool:
-    return t in (TypeInt, TypeInt32, TypeFloat, TypeDouble, TypeChar)
+    return t in (TypeInt, TypeInt32, TypeUInt64, TypeUInt32, TypeUInt8, TypeFloat, TypeDouble, TypeChar)
 
 
 def can_convert(from_type: TypeSymbol, to_type: TypeSymbol) -> bool:
@@ -216,38 +243,44 @@ def can_convert(from_type: TypeSymbol, to_type: TypeSymbol) -> bool:
     if isinstance(from_type, FunctionTypeSymbol) and isinstance(to_type, PointerTypeSymbol):
         if to_type.base_type == TypeVoid:
             return True
-    # void* (null pointer) converting to function pointer
-    if isinstance(from_type, PointerTypeSymbol) and isinstance(to_type, FunctionTypeSymbol):
-        if from_type.base_type == TypeVoid:
-            return True
-    # Pointer conversions (int* to int*, or array decaying to pointer int[] -> int*)
+    # TypeVoid (null) <-> Pointer type
+    if from_type == TypeVoid and isinstance(to_type, PointerTypeSymbol):
+        return True
+    if isinstance(from_type, PointerTypeSymbol) and to_type == TypeVoid:
+        return True
+    # Pointer conversions (int* to int*, void* to T*, T* to void*, array decaying to pointer int[] -> int*)
     if isinstance(from_type, PointerTypeSymbol) and isinstance(to_type, PointerTypeSymbol):
+        if from_type.base_type == TypeVoid or to_type.base_type == TypeVoid:
+            return True
         return can_convert(from_type.base_type, to_type.base_type)
     if isinstance(from_type, ArrayTypeSymbol) and isinstance(to_type, PointerTypeSymbol):
         return can_convert(from_type.element_type, to_type.base_type)
+    # string converting to char* or void*
+    if from_type == TypeString and isinstance(to_type, PointerTypeSymbol) and to_type.base_type in (TypeChar, TypeVoid):
+        return True
     # Array conversions: int[5] can convert to int[]
     if isinstance(from_type, ArrayTypeSymbol) and isinstance(to_type, ArrayTypeSymbol):
         if can_convert(from_type.element_type, to_type.element_type):
             if to_type.size is None or from_type.size == to_type.size:
                 return True
-    # int <-> int32 conversion
-    if from_type in (TypeInt, TypeInt32) and to_type in (TypeInt, TypeInt32):
+    # int/uint conversion
+    if from_type in INT_TYPES and to_type in INT_TYPES:
         return True
     # Implicit numeric widening
-    if from_type in (TypeInt, TypeInt32) and to_type in (TypeFloat, TypeDouble):
+    if from_type in INT_TYPES and to_type in (TypeFloat, TypeDouble):
         return True
     # Float conversions (f32 <-> f64)
     if from_type in (TypeFloat, TypeDouble) and to_type in (TypeFloat, TypeDouble):
         return True
     # Enum types implicitly convert to int/int32 and vice versa (or same enum)
-    if isinstance(from_type, EnumTypeSymbol) and to_type in (TypeInt, TypeInt32):
+    if isinstance(from_type, EnumTypeSymbol) and to_type in INT_TYPES:
         return True
-    if from_type in (TypeInt, TypeInt32) and isinstance(to_type, EnumTypeSymbol):
+    if from_type in INT_TYPES and isinstance(to_type, EnumTypeSymbol):
         return True
-    # char <-> int/int32 conversion
-    if from_type == TypeChar and to_type in (TypeInt, TypeInt32):
+    # char <-> int/uint conversion
+    if from_type == TypeChar and to_type in INT_TYPES:
         return True
-    if from_type in (TypeInt, TypeInt32) and to_type == TypeChar:
+    if from_type in INT_TYPES and to_type == TypeChar:
         return True
     return False
 
@@ -263,17 +296,17 @@ def can_explicit_cast(from_type: TypeSymbol, to_type: TypeSymbol) -> bool:
     # Enum <-> any numeric
     if (isinstance(from_type, EnumTypeSymbol) or isinstance(to_type, EnumTypeSymbol)):
         return True
-    # Numeric <-> Numeric (int, int32, float, double, bool, char)
-    scalar_types = (TypeInt, TypeInt32, TypeFloat, TypeDouble, TypeBool, TypeChar)
+    # Numeric <-> Numeric (int, uint, float, double, bool, char)
+    scalar_types = (*INT_TYPES, TypeFloat, TypeDouble, TypeBool, TypeChar)
     if from_type in scalar_types and to_type in scalar_types:
         return True
     # Pointer <-> Pointer (any pointer can cast to any pointer, including void*)
     if isinstance(from_type, PointerTypeSymbol) and isinstance(to_type, PointerTypeSymbol):
         return True
-    # Pointer <-> Int/Int32 (e.g. uintptr_t style integer address manipulation)
-    if isinstance(from_type, PointerTypeSymbol) and to_type in (TypeInt, TypeInt32):
+    # Pointer / Array <-> Int/UInt (e.g. uintptr_t style integer address manipulation)
+    if isinstance(from_type, (PointerTypeSymbol, ArrayTypeSymbol)) and to_type in INT_TYPES:
         return True
-    if from_type in (TypeInt, TypeInt32) and isinstance(to_type, PointerTypeSymbol):
+    if from_type in INT_TYPES and isinstance(to_type, (PointerTypeSymbol, ArrayTypeSymbol)):
         return True
     # String <-> char* or void*
     if from_type == TypeString and isinstance(to_type, PointerTypeSymbol) and to_type.base_type in (TypeChar, TypeVoid):
@@ -288,10 +321,10 @@ def can_explicit_cast(from_type: TypeSymbol, to_type: TypeSymbol) -> bool:
         return True
     if isinstance(from_type, PointerTypeSymbol) and isinstance(to_type, FunctionTypeSymbol):
         return True
-    # Function Pointer <-> Int/Int32 (e.g. casting 0 or integer address to function pointer)
-    if isinstance(from_type, FunctionTypeSymbol) and to_type in (TypeInt, TypeInt32):
+    # Function Pointer <-> Int/UInt (e.g. casting 0 or integer address to function pointer)
+    if isinstance(from_type, FunctionTypeSymbol) and to_type in INT_TYPES:
         return True
-    if from_type in (TypeInt, TypeInt32) and isinstance(to_type, FunctionTypeSymbol):
+    if from_type in INT_TYPES and isinstance(to_type, FunctionTypeSymbol):
         return True
     return False
 
@@ -301,6 +334,14 @@ def get_promoted_numeric_type(left: TypeSymbol, right: TypeSymbol) -> TypeSymbol
         return TypeDouble
     if TypeFloat in (left, right):
         return TypeFloat
+    if TypeUInt64 in (left, right):
+        return TypeUInt64
     if TypeInt in (left, right):
         return TypeInt
-    return TypeInt32
+    if TypeUInt32 in (left, right):
+        return TypeUInt32
+    if TypeInt32 in (left, right):
+        return TypeInt32
+    if TypeUInt8 in (left, right):
+        return TypeUInt8
+    return TypeInt

@@ -52,6 +52,9 @@ from ..ast.nodes import (
 from .types import (
     TypeSymbol,
     TypeInt,
+    TypeInt32,
+    TypeUInt64,
+    INT_TYPES,
     TypeFloat,
     TypeDouble,
     TypeBool,
@@ -78,6 +81,7 @@ from .bound_nodes import (
     BoundStatement,
     BoundBlockStatement,
     BoundVariableDeclaration,
+    BoundGlobalVariable,
     BoundFunctionDeclaration,
     BoundStructDeclaration,
     BoundEnumDeclaration,
@@ -131,6 +135,7 @@ class Binder:
         self._imported_functions: list[BoundFunctionDeclaration] = []
         self._imported_structs: list[BoundStructDeclaration] = []
         self._imported_enums: list[BoundEnumDeclaration] = []
+        self._imported_globals: list[BoundGlobalVariable] = []
         self._operator_functions: list[FunctionSymbol] = []
         self._operator_counter: int = 0
         self._generic_struct_templates: dict[str, StructDeclarationStatement] = {}
@@ -139,6 +144,7 @@ class Binder:
         self._bound_specialized_structs: dict[str, StructTypeSymbol] = {}
         self._bound_specialized_functions: list[BoundFunctionDeclaration] = []
         self._current_type_substitutions: dict[str, str] = {}
+        self._module_globals: dict[str, VariableSymbol] = {}
 
     def _substitute_type_name(self, type_name: str) -> str:
         if not self._current_type_substitutions:
@@ -502,10 +508,26 @@ class Binder:
             if existing_sym is not None:
                 object.__setattr__(existing_sym, "fields", tuple(field_list))
                 st_sym = existing_sym
-            else:
-                st_sym = StructTypeSymbol(name=s_name, fields=tuple(field_list))
-                self._struct_types[s_name] = st_sym
             bound_structs.append(BoundStructDeclaration(st_sym))
+
+        # Pass 0.8: Pre-collect top-level variables so functions can reference module globals
+        self._module_globals = {}
+        for stmt in top_level_stmts:
+            if isinstance(stmt, VariableDeclarationStatement):
+                var_name = stmt.identifier_token.text
+                if var_name in self._module_globals:
+                    continue
+                if stmt.type_token.kind in (SyntaxKind.LetKeyword, SyntaxKind.VarKeyword, SyntaxKind.ConstKeyword):
+                    var_type = TypeInt
+                else:
+                    var_type = self._resolve_type(stmt.type_token.text)
+                is_const = (stmt.type_token.kind == SyntaxKind.ConstKeyword)
+                mod_name = os.path.splitext(os.path.basename(self._current_file))[0] if self._current_file else None
+                var_sym = VariableSymbol(name=var_name, type=var_type, is_read_only=is_const)
+                if mod_name:
+                    object.__setattr__(var_sym, "mangled_name", f"kale_{mod_name}_{var_name}")
+                    object.__setattr__(var_sym, "module_name", mod_name)
+                self._module_globals[var_name] = var_sym
 
         # Pass 1: Discover all function declarations (including externs) and register signatures
         for stmt in extern_decls:
@@ -623,10 +645,13 @@ class Binder:
 
         # Pass 2b: Bind top-level statements
         bound_statements: list[BoundStatement] = list(bound_import_statements)
+        local_globals: list[BoundGlobalVariable] = []
         for statement in top_level_stmts:
             bound_stmt = self.bind_statement(statement)
             if bound_stmt is not None:
                 bound_statements.append(bound_stmt)
+                if isinstance(bound_stmt, BoundVariableDeclaration):
+                    local_globals.append(BoundGlobalVariable(bound_stmt.variable, bound_stmt.initializer))
 
         # Combine local structs, imported structs, and monomorphized generic structs
         all_structs = list(self._imported_structs)
@@ -646,11 +671,23 @@ class Binder:
         # Combine local functions, imported functions, and monomorphized generic functions
         all_functions = list(self._imported_functions)
         for fn in bound_functions:
-            if not any(f.symbol.name == fn.symbol.name and f.symbol.mangled_name == fn.symbol.mangled_name for f in all_functions):
+            replaced = False
+            for i, f in enumerate(all_functions):
+                if f.symbol.name == fn.symbol.name and f.symbol.mangled_name == fn.symbol.mangled_name:
+                    if f.body is None and fn.body is not None:
+                        all_functions[i] = fn
+                    replaced = True
+                    break
+            if not replaced:
                 all_functions.append(fn)
         for spec_fn in self._bound_specialized_functions:
             if not any(f.symbol.mangled_name == spec_fn.symbol.mangled_name for f in all_functions):
                 all_functions.append(spec_fn)
+
+        all_globals = list(self._imported_globals)
+        for g in local_globals:
+            if not any(ag.variable.name == g.variable.name for ag in all_globals):
+                all_globals.append(g)
 
         return BoundProgram(
             statements=bound_statements,
@@ -659,6 +696,7 @@ class Binder:
             structs=all_structs,
             enums=all_enums,
             module_symbols=self._module_symbols,
+            globals=all_globals,
         )
 
     def bind_statement(self, statement: Statement) -> BoundStatement | None:
@@ -720,7 +758,7 @@ class Binder:
         finally:
             self._module_loader._binding_chain.pop()
 
-        # Collect imported structs and functions into our own lists (with prefix mangling for uniqueness if needed)
+        # Collect imported structs, functions, and global variables into our own lists (with prefix mangling for uniqueness if needed)
         mod_base_name = os.path.splitext(os.path.basename(norm_path))[0]
         symbols: dict[str, Any] = {}
         structs: dict[str, Any] = {}
@@ -740,6 +778,19 @@ class Binder:
             if not any(s.struct_type.name == st.struct_type.name for s in self._imported_structs):
                 self._imported_structs.append(st)
 
+        # Import global variables
+        for gv in sub_program.globals:
+            var_sym = gv.variable
+            # Mangle global variable name with module prefix
+            mangled_name = f"kale_{mod_base_name}_{var_sym.name}"
+            mangled_var_sym = VariableSymbol(name=var_sym.name, type=var_sym.type, is_read_only=var_sym.is_read_only)
+            # Store the mangled name for code generation
+            object.__setattr__(mangled_var_sym, "mangled_name", mangled_name)
+            object.__setattr__(mangled_var_sym, "module_name", mod_base_name)
+            symbols[var_sym.name] = mangled_var_sym
+            mangled_gv = BoundGlobalVariable(variable=mangled_var_sym, initializer=gv.initializer, module_name=mod_base_name)
+            if not any(g.variable.name == var_sym.name for g in self._imported_globals):
+                self._imported_globals.append(mangled_gv)
 
         for fn in sub_program.functions:
             fn_sym = fn.symbol
@@ -776,7 +827,11 @@ class Binder:
             if fname not in self._generic_func_templates:
                 self._generic_func_templates[fname] = template
 
-        mod_type = ModuleTypeSymbol(module_name=mod_base_name, file_path=norm_path, symbols=symbols, structs=structs, enums=enums)
+        globals_dict: dict[str, Any] = {}
+        for gv in self._imported_globals:
+            globals_dict[gv.variable.name] = gv.variable
+
+        mod_type = ModuleTypeSymbol(module_name=mod_base_name, file_path=norm_path, symbols=symbols, structs=structs, enums=enums, globals=globals_dict)
         self._module_loader._bound_modules[norm_path] = (mod_base_name, mod_type)
         return mod_base_name, mod_type
 
@@ -860,6 +915,21 @@ class Binder:
             self.diagnostics.report_cannot_convert(statement.initializer.span, str(bound_init.type), str(var_type))
 
         variable = VariableSymbol(name=name, type=var_type, is_read_only=is_const)
+        if self._current_file:
+            mod_name = os.path.splitext(os.path.basename(self._current_file))[0]
+            object.__setattr__(variable, "mangled_name", f"kale_{mod_name}_{name}")
+            object.__setattr__(variable, "module_name", mod_name)
+
+        if self._current_function is None and name in self._module_globals:
+            if not self._current_scope.is_declared_locally(name):
+                mod_var = self._module_globals[name]
+                object.__setattr__(mod_var, "type", var_type)
+                object.__setattr__(mod_var, "is_read_only", is_const)
+                if getattr(variable, "mangled_name", None):
+                    object.__setattr__(mod_var, "mangled_name", variable.mangled_name)
+                    object.__setattr__(mod_var, "module_name", variable.module_name)
+                variable = mod_var
+
         if not self._current_scope.try_declare(variable):
             self.diagnostics.report_variable_already_declared(ident.span, name)
 
@@ -1044,6 +1114,9 @@ class Binder:
                 return BoundLiteralExpression(None, TypeUnknown)
             return BoundLiteralExpression(val, target.type)
 
+        if isinstance(target.type, PointerTypeSymbol) and isinstance(target.type.base_type, StructTypeSymbol):
+            target = BoundDereferenceExpression(target, target.type.base_type)
+
         if not isinstance(target.type, StructTypeSymbol):
             self.diagnostics.report(expression.target.span, f"Cannot access member of non-struct type '{target.type}'.")
             return BoundLiteralExpression(None, TypeUnknown)
@@ -1059,6 +1132,20 @@ class Binder:
 
     def _bind_member_assignment_expression(self, expression: MemberAssignmentExpression) -> BoundExpression:
         target = self.bind_expression(expression.target)
+        if isinstance(target.type, ModuleTypeSymbol):
+            m_name = expression.member_token.text
+            sym = target.type.get_member_symbol(m_name)
+            if sym is not None and isinstance(sym, VariableSymbol):
+                value = self.bind_expression(expression.value)
+                if not can_convert(value.type, sym.type):
+                    self.diagnostics.report_cannot_convert(expression.value.span, str(value.type), str(sym.type))
+                return BoundAssignmentExpression(sym, value, expression.operator_token.text)
+            self.diagnostics.report(expression.member_token.span, f"Module '{target.type.module_name}' has no variable named '{m_name}'.")
+            return BoundLiteralExpression(None, TypeUnknown)
+
+        if isinstance(target.type, PointerTypeSymbol) and isinstance(target.type.base_type, StructTypeSymbol):
+            target = BoundDereferenceExpression(target, target.type.base_type)
+
         if not isinstance(target.type, StructTypeSymbol):
             self.diagnostics.report(expression.target.span, f"Cannot access member of non-struct type '{target.type}'.")
             return BoundLiteralExpression(None, TypeUnknown)
@@ -1399,6 +1486,8 @@ class Binder:
         if isinstance(val, bool):
             return BoundLiteralExpression(val, TypeBool)
         if isinstance(val, int):
+            if val > 0x7FFFFFFFFFFFFFFF:
+                return BoundLiteralExpression(val, TypeUInt64)
             return BoundLiteralExpression(val, TypeInt)
         if isinstance(val, float):
             if expression.literal_token.text.endswith(('f', 'F')):
@@ -1413,6 +1502,8 @@ class Binder:
     def _bind_variable_expression(self, expression: VariableExpression) -> BoundExpression:
         name = expression.identifier_token.text
         symbol = self._current_scope.lookup(name)
+        if symbol is None and self._current_function is not None:
+            symbol = self._module_globals.get(name)
         if isinstance(symbol, FunctionSymbol):
             param_types = tuple(p.type for p in symbol.parameters)
             ret_type = symbol.return_type or TypeVoid
@@ -1426,6 +1517,8 @@ class Binder:
     def _bind_assignment_expression(self, expression: AssignmentExpression) -> BoundExpression:
         name = expression.identifier_token.text
         symbol = self._current_scope.lookup(name)
+        if symbol is None and self._current_function is not None:
+            symbol = self._module_globals.get(name)
         if symbol is None or not isinstance(symbol, VariableSymbol):
             self.diagnostics.report_undefined_variable(expression.identifier_token.span, name)
             return BoundLiteralExpression(None, TypeUnknown)
@@ -1492,9 +1585,9 @@ class Binder:
 
         # Bitwise Not
         if op_tok.kind == SyntaxKind.TildeToken:
-            if operand.type != TypeInt:
+            if operand.type not in INT_TYPES:
                 self.diagnostics.report_undefined_unary_operator(op_tok.span, op_tok.text, str(operand.type))
-            op = BoundUnaryOperator("~", TypeInt, TypeInt)
+            op = BoundUnaryOperator("~", operand.type, operand.type)
             return BoundUnaryExpression(op, operand, is_postfix=False)
 
         # Unary + or -
@@ -1579,14 +1672,14 @@ class Binder:
                 return BoundBinaryExpression(left, op, right)
             # Pointer arithmetic: ptr + int, int + ptr, ptr - int
             if op_tok.kind == SyntaxKind.PlusToken:
-                if isinstance(left.type, PointerTypeSymbol) and right.type == TypeInt:
+                if isinstance(left.type, PointerTypeSymbol) and right.type in INT_TYPES:
                     op = BoundBinaryOperator("+", left.type, right.type, left.type)
                     return BoundBinaryExpression(left, op, right)
-                elif left.type == TypeInt and isinstance(right.type, PointerTypeSymbol):
+                elif left.type in INT_TYPES and isinstance(right.type, PointerTypeSymbol):
                     op = BoundBinaryOperator("+", left.type, right.type, right.type)
                     return BoundBinaryExpression(left, op, right)
             elif op_tok.kind == SyntaxKind.MinusToken:
-                if isinstance(left.type, PointerTypeSymbol) and right.type == TypeInt:
+                if isinstance(left.type, PointerTypeSymbol) and right.type in INT_TYPES:
                     op = BoundBinaryOperator("-", left.type, right.type, left.type)
                     return BoundBinaryExpression(left, op, right)
             self.diagnostics.report_undefined_binary_operator(op_tok.span, op_tok.text, str(left.type), str(right.type))
@@ -1630,8 +1723,10 @@ class Binder:
             SyntaxKind.LeftShiftToken,
             SyntaxKind.RightShiftToken,
         ):
-            if left.type == TypeInt and right.type == TypeInt:
-                op = BoundBinaryOperator(op_tok.text, TypeInt, TypeInt, TypeInt)
+            bitwise_types = (*INT_TYPES, TypeChar)
+            if left.type in bitwise_types and right.type in bitwise_types:
+                res_type = get_promoted_numeric_type(left.type, right.type)
+                op = BoundBinaryOperator(op_tok.text, left.type, right.type, res_type)
                 return BoundBinaryExpression(left, op, right)
             self.diagnostics.report_undefined_binary_operator(op_tok.span, op_tok.text, str(left.type), str(right.type))
             return left

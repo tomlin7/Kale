@@ -43,6 +43,10 @@ from ..binding.bound_nodes import (
 from ..binding.types import (
     TypeInt,
     TypeInt32,
+    TypeUInt64,
+    TypeUInt32,
+    TypeUInt8,
+    INT_TYPES,
     TypeFloat,
     TypeDouble,
     TypeBool,
@@ -134,10 +138,18 @@ class LLVMEmitter:
     def _declare_var(self, name: str, alloca_ptr: ir.AllocaInstr):
         self._scopes[-1][name] = alloca_ptr
 
-    def _lookup_var(self, name: str) -> ir.AllocaInstr | None:
+    def _lookup_var(self, name: str) -> ir.Value | None:
         for scope in reversed(self._scopes):
             if name in scope:
                 return scope[name]
+        if hasattr(self, "_globals") and self._globals:
+            current_mod = getattr(getattr(self, "_current_fn_sym", None), "module_name", None)
+            if current_mod:
+                mangled = f"kale_{current_mod}_{name}"
+                if mangled in self._globals:
+                    return self._globals[mangled]
+            if name in self._globals:
+                return self._globals[name]
         return None
 
     def _is_block_terminated(self, block: ir.Block | None = None) -> bool:
@@ -171,6 +183,42 @@ class LLVMEmitter:
             llvm_struct = self._struct_types[st_decl.struct_type.name]
             field_types = [to_llvm_type(ftype, self._struct_types) for _, ftype in st_decl.struct_type.fields]
             llvm_struct.set_body(*field_types)
+
+        # Pass 0.5: Register global variables
+        self._globals = {}
+        for gv in (program.globals or []):
+            v_name = gv.variable.name
+            m_name = getattr(gv.variable, "mangled_name", None) or v_name
+            if m_name in self._globals:
+                continue
+            v_type = gv.variable.type
+            if isinstance(v_type, ArrayTypeSymbol) and v_type.size is not None:
+                elem_llvm_t = to_llvm_type(v_type.element_type, self._struct_types)
+                arr_llvm_t = ir.ArrayType(elem_llvm_t, v_type.size)
+                llvm_gv = ir.GlobalVariable(self.module, arr_llvm_t, name=m_name)
+                llvm_gv.initializer = ir.Constant(arr_llvm_t, None)
+            elif isinstance(v_type, StructTypeSymbol):
+                st_llvm_t = to_llvm_type(v_type, self._struct_types)
+                llvm_gv = ir.GlobalVariable(self.module, st_llvm_t, name=m_name)
+                llvm_gv.initializer = ir.Constant(st_llvm_t, None)
+            else:
+                scalar_llvm_t = to_llvm_type(v_type, self._struct_types)
+                llvm_gv = ir.GlobalVariable(self.module, scalar_llvm_t, name=m_name)
+                init_val = 0
+                if gv.initializer is not None:
+                    if isinstance(gv.initializer, BoundLiteralExpression) and gv.initializer.value is not None:
+                        init_val = gv.initializer.value
+                    elif isinstance(gv.initializer, BoundCastExpression) and isinstance(gv.initializer.expression, BoundLiteralExpression) and gv.initializer.expression.value is not None:
+                        init_val = gv.initializer.expression.value
+                if isinstance(scalar_llvm_t, ir.IntType):
+                    llvm_gv.initializer = ir.Constant(scalar_llvm_t, int(init_val) if isinstance(init_val, (int, float, bool)) else 0)
+                elif isinstance(scalar_llvm_t, (ir.FloatType, ir.DoubleType)):
+                    llvm_gv.initializer = ir.Constant(scalar_llvm_t, float(init_val) if isinstance(init_val, (int, float)) else 0.0)
+                else:
+                    llvm_gv.initializer = ir.Constant(scalar_llvm_t, None)
+
+            self._globals[m_name] = llvm_gv
+            self._globals[v_name] = llvm_gv
 
         # Pass 1: Declare all user and extern functions
         for fn_decl in program.functions:
@@ -214,6 +262,22 @@ class LLVMEmitter:
                 else:
                     self._builder.ret(ir.Constant(to_llvm_type(fn_decl.symbol.return_type, self._struct_types), 0))
 
+        def _emit_dynamic_global_inits():
+            for gv in (program.globals or []):
+                if not getattr(gv.variable, "module_name", None):
+                    continue
+                if gv.initializer is not None:
+                    is_literal = isinstance(gv.initializer, BoundLiteralExpression) or (
+                        isinstance(gv.initializer, BoundCastExpression) and isinstance(gv.initializer.expression, BoundLiteralExpression)
+                    )
+                    if not is_literal:
+                        m_name = getattr(gv.variable, "mangled_name", None) or gv.variable.name
+                        llvm_gv = self._globals.get(m_name)
+                        if llvm_gv is not None:
+                            val = self._emit_expression(gv.initializer)
+                            val = self._coerce_type(val, gv.initializer.type, gv.variable.type)
+                            self._builder.store(val, llvm_gv)
+
         # Pass 3: Create main() function for top-level statements
         if "main" in self._functions:
             self._main_func = self._functions["main"]
@@ -225,8 +289,17 @@ class LLVMEmitter:
                 self._scopes = [{}]
                 self._break_blocks = []
                 self._continue_blocks = []
+                _emit_dynamic_global_inits()
                 for statement in program.statements:
                     self._emit_statement(statement)
+            else:
+                if self._main_func.basic_blocks:
+                    self._entry_block = self._main_func.basic_blocks[0]
+                    self._builder = ir.IRBuilder(self._entry_block)
+                    self._scopes = [{}]
+                    self._break_blocks = []
+                    self._continue_blocks = []
+                    _emit_dynamic_global_inits()
         else:
             func_type = ir.FunctionType(ir.IntType(32), [])
             self._main_func = ir.Function(self.module, func_type, name="main")
@@ -238,6 +311,8 @@ class LLVMEmitter:
             self._scopes = [{}]
             self._break_blocks = []
             self._continue_blocks = []
+
+            _emit_dynamic_global_inits()
 
             for statement in program.statements:
                 self._emit_statement(statement)
@@ -259,7 +334,24 @@ class LLVMEmitter:
             self._pop_scope()
 
         elif isinstance(statement, BoundVariableDeclaration):
+            is_in_main = (self._current_func == self._main_func)
+            m_name = getattr(statement.variable, "mangled_name", None) or statement.variable.name
+            is_global = is_in_main and hasattr(self, "_globals") and (m_name in self._globals or statement.variable.name in self._globals)
+            if is_global:
+                target_ptr = self._globals.get(m_name) or self._globals.get(statement.variable.name)
+                if statement.initializer is not None:
+                    val = self._emit_expression(statement.initializer)
+                    val = self._coerce_type(val, statement.initializer.type, statement.variable.type)
+                    if isinstance(statement.variable.type, StructTypeSymbol) and isinstance(val.type, ir.PointerType) and val.type.pointee == target_ptr.type.pointee:
+                        val = self._builder.load(val)
+                    self._builder.store(val, target_ptr)
+                return
+
             llvm_t = to_llvm_type(statement.variable.type, self._struct_types)
+            if isinstance(statement.variable.type, ArrayTypeSymbol) and statement.variable.type.size is not None:
+                elem_llvm_t = to_llvm_type(statement.variable.type.element_type, self._struct_types)
+                llvm_t = ir.ArrayType(elem_llvm_t, statement.variable.type.size)
+
             # Create alloca in the entry block for efficient stack promotion
             with self._builder.goto_entry_block(): # type: ignore
                 alloca = self._builder.alloca(llvm_t, name=statement.variable.name)
@@ -271,8 +363,8 @@ class LLVMEmitter:
                 if isinstance(statement.variable.type, StructTypeSymbol) and isinstance(val.type, ir.PointerType) and val.type.pointee == llvm_t:
                     val = self._builder.load(val)
                 self._builder.store(val, alloca)
-            elif isinstance(statement.variable.type, StructTypeSymbol):
-                # Structs are cleanly zero-initialized by default
+            elif isinstance(statement.variable.type, (StructTypeSymbol, ArrayTypeSymbol)):
+                # Structs and arrays are cleanly zero-initialized by default
                 self._builder.store(ir.Constant(llvm_t, None), alloca)
 
         elif isinstance(statement, BoundIfStatement):
@@ -500,41 +592,57 @@ class LLVMEmitter:
             self._emit_expression(statement.expression)
 
     def _coerce_type(self, value: ir.Value, from_t, to_t) -> ir.Value:
-        if from_t == to_t:
+        target_llvm_t = to_llvm_type(to_t, self._struct_types)
+        if value.type == target_llvm_t:
             return value
-        if from_t in (TypeInt, TypeInt32) and to_t in (TypeInt, TypeInt32):
-            if to_t == TypeInt32:
-                return self._builder.trunc(value, ir.IntType(32)) if value.type != ir.IntType(32) else value
-            else:
-                return self._builder.sext(value, ir.IntType(64)) if value.type != ir.IntType(64) else value
+        if from_t in INT_TYPES and to_t in INT_TYPES:
+            if isinstance(target_llvm_t, ir.IntType) and isinstance(value.type, ir.IntType):
+                if value.type.width > target_llvm_t.width:
+                    return self._builder.trunc(value, target_llvm_t)
+                elif value.type.width < target_llvm_t.width:
+                    if getattr(from_t, "is_unsigned", False):
+                        return self._builder.zext(value, target_llvm_t)
+                    else:
+                        return self._builder.sext(value, target_llvm_t)
+            return value
         if from_t in (TypeFloat, TypeDouble) and to_t in (TypeFloat, TypeDouble):
             if from_t == TypeFloat and to_t == TypeDouble:
                 return self._builder.fpext(value, ir.DoubleType())
             elif from_t == TypeDouble and to_t == TypeFloat:
                 return self._builder.fptrunc(value, ir.FloatType())
             return value
-        if from_t in (TypeInt, TypeInt32) and to_t in (TypeFloat, TypeDouble):
+        if from_t in INT_TYPES and to_t in (TypeFloat, TypeDouble):
             dest_t = ir.FloatType() if to_t == TypeFloat else ir.DoubleType()
             return self._builder.sitofp(value, dest_t)
-        if from_t in (TypeFloat, TypeDouble) and to_t in (TypeInt, TypeInt32):
-            dest_t = ir.IntType(32 if to_t == TypeInt32 else 64)
+        if from_t in (TypeFloat, TypeDouble) and to_t in INT_TYPES:
+            dest_t = to_llvm_type(to_t, self._struct_types)
             return self._builder.fptosi(value, dest_t)
-        if from_t in (TypeInt, TypeInt32) and to_t == TypeChar:
+        if from_t in INT_TYPES and to_t == TypeChar:
             return self._builder.trunc(value, ir.IntType(8))
-        if from_t == TypeChar and to_t in (TypeInt, TypeInt32):
-            return self._builder.sext(value, ir.IntType(32 if to_t == TypeInt32 else 64))
+        if from_t == TypeChar and to_t in INT_TYPES:
+            dest_t = to_llvm_type(to_t, self._struct_types)
+            return self._builder.zext(value, dest_t)
         if from_t == TypeString and isinstance(to_t, PointerTypeSymbol) and to_t.base_type in (TypeChar, TypeVoid):
             return self._builder.bitcast(value, ir.PointerType(ir.IntType(8)))
         if isinstance(from_t, PointerTypeSymbol) and from_t.base_type in (TypeChar, TypeVoid) and to_t == TypeString:
             return self._builder.bitcast(value, ir.PointerType(ir.IntType(8)))
-        if from_t in (TypeInt, TypeInt32) and isinstance(to_t, (PointerTypeSymbol, FunctionTypeSymbol)):
+        if from_t in INT_TYPES and isinstance(to_t, (PointerTypeSymbol, FunctionTypeSymbol)):
             return self._builder.inttoptr(value, to_llvm_type(to_t, self._struct_types))
-        if isinstance(from_t, (PointerTypeSymbol, FunctionTypeSymbol)) and to_t in (TypeInt, TypeInt32):
-            return self._builder.ptrtoint(value, ir.IntType(32 if to_t == TypeInt32 else 64))
-        if isinstance(from_t, (PointerTypeSymbol, FunctionTypeSymbol)) and isinstance(to_t, (PointerTypeSymbol, FunctionTypeSymbol)):
-            target_llvm_t = to_llvm_type(to_t, self._struct_types)
-            if value.type != target_llvm_t:
+        if isinstance(from_t, (PointerTypeSymbol, FunctionTypeSymbol, ArrayTypeSymbol)) and to_t in INT_TYPES:
+            return self._builder.ptrtoint(value, to_llvm_type(to_t, self._struct_types))
+        target_llvm_t = to_llvm_type(to_t, self._struct_types)
+        if value.type != target_llvm_t:
+            if isinstance(value.type, ir.IntType) and isinstance(target_llvm_t, ir.IntType):
+                if value.type.width > target_llvm_t.width:
+                    return self._builder.trunc(value, target_llvm_t)
+                elif value.type.width < target_llvm_t.width:
+                    return self._builder.sext(value, target_llvm_t)
+            elif isinstance(value.type, ir.PointerType) and isinstance(target_llvm_t, ir.PointerType):
                 return self._builder.bitcast(value, target_llvm_t)
+            elif isinstance(value.type, ir.IntType) and isinstance(target_llvm_t, ir.PointerType):
+                return self._builder.inttoptr(value, target_llvm_t)
+            elif isinstance(value.type, ir.PointerType) and isinstance(target_llvm_t, ir.IntType):
+                return self._builder.ptrtoint(value, target_llvm_t)
         return value
 
     def _apply_compound_op(self, op: str, old_val: ir.Value, rhs_val: ir.Value, target_t: Any) -> ir.Value:
@@ -569,9 +677,17 @@ class LLVMEmitter:
 
     def _get_lvalue_ptr(self, expr: BoundExpression) -> ir.Value:
         if isinstance(expr, BoundVariableExpression):
-            ptr = self._lookup_var(expr.variable.name)
+            m_name = getattr(expr.variable, "mangled_name", None) or expr.variable.name
+            ptr = self._lookup_var(m_name) or self._lookup_var(expr.variable.name)
             if ptr is None:
                 raise RuntimeError(f"Undefined variable '{expr.variable.name}'")
+            if isinstance(ptr.type.pointee, ir.ArrayType):
+                return self._builder.gep(
+                    ptr,
+                    [ir.Constant(ir.IntType(32), 0), ir.Constant(ir.IntType(32), 0)],
+                    inbounds=True,
+                    name=f"{expr.variable.name}_decay"
+                )
             return ptr
         if isinstance(expr, BoundIndexExpression):
             target_ptr = self._emit_expression(expr.target)
@@ -611,9 +727,19 @@ class LLVMEmitter:
             return ir.Constant(ir.IntType(64), 0)
 
         if isinstance(expr, BoundVariableExpression):
-            alloca = self._lookup_var(expr.variable.name)
+            m_name = getattr(expr.variable, "mangled_name", None) or expr.variable.name
+            alloca = self._lookup_var(m_name) or self._lookup_var(expr.variable.name)
             if alloca is None:
                 return ir.Constant(ir.IntType(64), 0)
+            if isinstance(alloca.type.pointee, ir.ArrayType):
+                return self._builder.gep(
+                    alloca,
+                    [ir.Constant(ir.IntType(32), 0), ir.Constant(ir.IntType(32), 0)],
+                    inbounds=True,
+                    name=f"{expr.variable.name}_decay"
+                )
+            if isinstance(expr.type, StructTypeSymbol):
+                return alloca
             return self._builder.load(alloca, name=expr.variable.name)
 
         if isinstance(expr, BoundCallExpression):
@@ -707,6 +833,8 @@ class LLVMEmitter:
             if idx_val.type != ir.IntType(64):
                 idx_val = self._builder.sext(idx_val, ir.IntType(64)) if idx_val.type.width < 64 else self._builder.trunc(idx_val, ir.IntType(64))
             elem_ptr = self._builder.gep(target_ptr, [idx_val], inbounds=True, name="idx_ptr")
+            if isinstance(expr.type, StructTypeSymbol):
+                return elem_ptr
             return self._builder.load(elem_ptr, name="idx_val")
 
         if isinstance(expr, BoundIndexAssignmentExpression):
@@ -724,6 +852,9 @@ class LLVMEmitter:
             if op != "=":
                 old_val = self._builder.load(elem_ptr, name="old_elem_val")
                 val = self._apply_compound_op(op, old_val, val, elem_t)
+
+            if isinstance(elem_t, StructTypeSymbol) and isinstance(val.type, ir.PointerType) and val.type.pointee == elem_ptr.type.pointee:
+                val = self._builder.load(val)
 
             self._builder.store(val, elem_ptr)
             return val
@@ -772,6 +903,9 @@ class LLVMEmitter:
                 old_val = self._builder.load(ptr_val, name="old_deref_val")
                 val = self._apply_compound_op(op, old_val, val, elem_t)
 
+            if isinstance(elem_t, StructTypeSymbol) and isinstance(val.type, ir.PointerType) and val.type.pointee == ptr_val.type.pointee:
+                val = self._builder.load(val)
+
             self._builder.store(val, ptr_val)
             return val
 
@@ -811,40 +945,48 @@ class LLVMEmitter:
                     return self._builder.fptrunc(inner_val, dest_llvm_t)
                 return inner_val
 
-            # Int/Int32 <-> Float/Double
-            if from_t in (TypeInt, TypeInt32) and to_t in (TypeFloat, TypeDouble):
+            # Int <-> Float/Double
+            if from_t in INT_TYPES and to_t in (TypeFloat, TypeDouble):
                 return self._builder.sitofp(inner_val, dest_llvm_t)
-            if from_t in (TypeFloat, TypeDouble) and to_t in (TypeInt, TypeInt32):
+            if from_t in (TypeFloat, TypeDouble) and to_t in INT_TYPES:
                 return self._builder.fptosi(inner_val, dest_llvm_t)
 
-            # Int <-> Int32
-            if from_t in (TypeInt, TypeInt32) and to_t in (TypeInt, TypeInt32):
-                if to_t == TypeInt32:
-                    return self._builder.trunc(inner_val, dest_llvm_t) if inner_val.type != dest_llvm_t else inner_val
-                else:
-                    return self._builder.sext(inner_val, dest_llvm_t) if inner_val.type != dest_llvm_t else inner_val
+            # Int <-> Int
+            if from_t in INT_TYPES and to_t in INT_TYPES:
+                if isinstance(dest_llvm_t, ir.IntType) and isinstance(inner_val.type, ir.IntType):
+                    if inner_val.type.width > dest_llvm_t.width:
+                        return self._builder.trunc(inner_val, dest_llvm_t)
+                    elif inner_val.type.width < dest_llvm_t.width:
+                        if getattr(from_t, "is_unsigned", False):
+                            return self._builder.zext(inner_val, dest_llvm_t)
+                        else:
+                            return self._builder.sext(inner_val, dest_llvm_t)
+                return inner_val
 
             # Pointer <-> Pointer
             if isinstance(from_t, PointerTypeSymbol) and isinstance(to_t, PointerTypeSymbol):
                 return self._builder.bitcast(inner_val, dest_llvm_t)
 
-            # Pointer <-> Int/Int32
-            if isinstance(from_t, PointerTypeSymbol) and to_t in (TypeInt, TypeInt32):
-                return self._builder.ptrtoint(inner_val, dest_llvm_t)
-            if from_t in (TypeInt, TypeInt32) and isinstance(to_t, PointerTypeSymbol):
+            # Pointer / Array <-> Int/UInt
+            if isinstance(from_t, (PointerTypeSymbol, ArrayTypeSymbol)) and to_t in INT_TYPES:
+                if isinstance(inner_val.type, ir.PointerType):
+                    return self._builder.ptrtoint(inner_val, dest_llvm_t)
+                elif isinstance(inner_val.type, ir.IntType):
+                    return self._coerce_type(inner_val, from_t, to_t)
+            if from_t in INT_TYPES and isinstance(to_t, PointerTypeSymbol):
                 return self._builder.inttoptr(inner_val, dest_llvm_t)
 
-            # Int/Int32 <-> Char
-            if from_t in (TypeInt, TypeInt32) and to_t == TypeChar:
+            # Int/UInt <-> Char
+            if from_t in INT_TYPES and to_t == TypeChar:
                 return self._builder.trunc(inner_val, dest_llvm_t)
-            if from_t == TypeChar and to_t in (TypeInt, TypeInt32):
-                return self._builder.sext(inner_val, dest_llvm_t)
+            if from_t == TypeChar and to_t in INT_TYPES:
+                return self._builder.zext(inner_val, dest_llvm_t)
 
-            # Int/Int32 <-> Bool
-            if from_t in (TypeInt, TypeInt32) and to_t == TypeBool:
+            # Int/UInt <-> Bool
+            if from_t in INT_TYPES and to_t == TypeBool:
                 zero_c = ir.Constant(inner_val.type, 0)
                 return self._builder.icmp_signed("!=", inner_val, zero_c)
-            if from_t == TypeBool and to_t in (TypeInt, TypeInt32):
+            if from_t == TypeBool and to_t in INT_TYPES:
                 return self._builder.zext(inner_val, dest_llvm_t)
 
             # Array <-> Pointer
@@ -866,7 +1008,8 @@ class LLVMEmitter:
                 return inner_val
 
         if isinstance(expr, BoundAssignmentExpression):
-            alloca = self._lookup_var(expr.variable.name)
+            m_name = getattr(expr.variable, "mangled_name", None) or expr.variable.name
+            alloca = self._lookup_var(m_name) or self._lookup_var(expr.variable.name)
             if alloca is None:
                 return ir.Constant(ir.IntType(64), 0)
 
@@ -930,14 +1073,33 @@ class LLVMEmitter:
             elif left_val.type == ir.DoubleType() and right_val.type == ir.FloatType():
                 right_val = self._builder.fpext(right_val, ir.DoubleType())
 
-            # If both are integers but have different bit widths: sign-extend to larger bit width
+            # If both are integers but have different bit widths: extend to larger bit width
             if isinstance(left_val.type, ir.IntType) and isinstance(right_val.type, ir.IntType):
                 if left_val.type.width < right_val.type.width:
-                    left_val = self._builder.sext(left_val, right_val.type)
+                    left_val = self._builder.zext(left_val, right_val.type) if getattr(expr.left.type, "is_unsigned", False) else self._builder.sext(left_val, right_val.type)
                 elif right_val.type.width < left_val.type.width:
-                    right_val = self._builder.sext(right_val, left_val.type)
+                    right_val = self._builder.zext(right_val, left_val.type) if getattr(expr.right.type, "is_unsigned", False) else self._builder.sext(right_val, left_val.type)
+
+            # Pointer comparisons and coercions (only for comparisons, NOT arithmetic)
+            if op in ("==", "!=", "<", "<=", ">", ">="):
+                if isinstance(left_val.type, ir.PointerType) or isinstance(right_val.type, ir.PointerType):
+                    if isinstance(left_val.type, ir.PointerType) and isinstance(right_val.type, ir.IntType):
+                        right_val = self._builder.inttoptr(right_val, left_val.type)
+                    elif isinstance(right_val.type, ir.PointerType) and isinstance(left_val.type, ir.IntType):
+                        left_val = self._builder.inttoptr(left_val, right_val.type)
+                    elif isinstance(left_val.type, ir.PointerType) and isinstance(right_val.type, ir.PointerType) and left_val.type != right_val.type:
+                        right_val = self._builder.bitcast(right_val, left_val.type)
 
             is_flt = isinstance(left_val.type, (ir.FloatType, ir.DoubleType))
+            use_unsigned = (
+                getattr(expr.left.type, "is_unsigned", False)
+                or getattr(expr.right.type, "is_unsigned", False)
+                or isinstance(expr.left.type, (PointerTypeSymbol, ArrayTypeSymbol))
+                or isinstance(expr.right.type, (PointerTypeSymbol, ArrayTypeSymbol))
+                or isinstance(left_val.type, ir.PointerType)
+                or isinstance(right_val.type, ir.PointerType)
+            )
+            icmp_fn = self._builder.icmp_unsigned if use_unsigned else self._builder.icmp_signed
 
             # Pointer arithmetic
             if isinstance(left_val.type, ir.PointerType) and isinstance(right_val.type, ir.IntType):
@@ -957,9 +1119,13 @@ class LLVMEmitter:
             if op == "*":
                 return self._builder.fmul(left_val, right_val) if is_flt else self._builder.mul(left_val, right_val)
             if op == "/":
-                return self._builder.fdiv(left_val, right_val) if is_flt else self._builder.sdiv(left_val, right_val)
+                if is_flt:
+                    return self._builder.fdiv(left_val, right_val)
+                return self._builder.udiv(left_val, right_val) if use_unsigned else self._builder.sdiv(left_val, right_val)
             if op == "%":
-                return self._builder.frem(left_val, right_val) if is_flt else self._builder.srem(left_val, right_val)
+                if is_flt:
+                    return self._builder.frem(left_val, right_val)
+                return self._builder.urem(left_val, right_val) if use_unsigned else self._builder.srem(left_val, right_val)
             if op == "**":
                 if not is_flt:
                     left_val = self._builder.sitofp(left_val, ir.DoubleType())
@@ -968,17 +1134,17 @@ class LLVMEmitter:
 
             # Relational
             if op == "<":
-                return self._builder.fcmp_ordered("<", left_val, right_val) if is_flt else self._builder.icmp_signed("<", left_val, right_val)
+                return self._builder.fcmp_ordered("<", left_val, right_val) if is_flt else icmp_fn("<", left_val, right_val)
             if op == "<=":
-                return self._builder.fcmp_ordered("<=", left_val, right_val) if is_flt else self._builder.icmp_signed("<=", left_val, right_val)
+                return self._builder.fcmp_ordered("<=", left_val, right_val) if is_flt else icmp_fn("<=", left_val, right_val)
             if op == ">":
-                return self._builder.fcmp_ordered(">", left_val, right_val) if is_flt else self._builder.icmp_signed(">", left_val, right_val)
+                return self._builder.fcmp_ordered(">", left_val, right_val) if is_flt else icmp_fn(">", left_val, right_val)
             if op == ">=":
-                return self._builder.fcmp_ordered(">=", left_val, right_val) if is_flt else self._builder.icmp_signed(">=", left_val, right_val)
+                return self._builder.fcmp_ordered(">=", left_val, right_val) if is_flt else icmp_fn(">=", left_val, right_val)
             if op == "==":
-                return self._builder.fcmp_ordered("==", left_val, right_val) if is_flt else self._builder.icmp_signed("==", left_val, right_val)
+                return self._builder.fcmp_ordered("==", left_val, right_val) if is_flt else icmp_fn("==", left_val, right_val)
             if op == "!=":
-                return self._builder.fcmp_ordered("!=", left_val, right_val) if is_flt else self._builder.icmp_signed("!=", left_val, right_val)
+                return self._builder.fcmp_ordered("!=", left_val, right_val) if is_flt else icmp_fn("!=", left_val, right_val)
 
             # Logical
             if op in ("&&", "||"):
@@ -998,6 +1164,6 @@ class LLVMEmitter:
             if op == "<<":
                 return self._builder.shl(left_val, right_val)
             if op == ">>":
-                return self._builder.ashr(left_val, right_val)
+                return self._builder.lshr(left_val, right_val) if use_unsigned else self._builder.ashr(left_val, right_val)
 
         return ir.Constant(ir.IntType(64), 0)

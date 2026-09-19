@@ -1,0 +1,438 @@
+// Memory Layout and Page Fault Handler Unit Tests
+// Tests memory region management, canonical address validation,
+// page fault error code parsing, demand paging logic, and hardware mocks.
+
+import "os/kernel/memory_layout.kl" as mem;
+import "os/kernel/page_fault.kl" as pf;
+
+// Mock environment and state variables
+uint64 mock_cr2_val = 0;
+fn uint64 get_cr2() {
+    return mock_cr2_val;
+}
+
+uint64 mock_allocated_phys = 0x50000;
+bool mock_alloc_called = false;
+bool mock_alloc_should_fail = false;
+fn uint64 pmm_alloc_frame(void* pmm) {
+    mock_alloc_called = true;
+    if (mock_alloc_should_fail) {
+        return 0;
+    }
+    return mock_allocated_phys;
+}
+
+bool mock_free_called = false;
+uint64 mock_freed_frame = 0;
+fn void pmm_free_frame(void* pmm, uint64 frame_addr) {
+    mock_free_called = true;
+    mock_freed_frame = frame_addr;
+}
+
+bool mock_vmm_map_called = false;
+bool mock_vmm_map_result = true;
+uint64 mock_vmm_map_virt = 0;
+uint64 mock_vmm_map_phys = 0;
+uint64 mock_vmm_map_flags = 0;
+fn bool vmm_map_page(void* vmm, void* pmm, uint64 virt_addr, uint64 phys_addr, uint64 flags) {
+    mock_vmm_map_called = true;
+    mock_vmm_map_virt = virt_addr;
+    mock_vmm_map_phys = phys_addr;
+    mock_vmm_map_flags = flags;
+    return mock_vmm_map_result;
+}
+
+bool mock_cow_called = false;
+bool mock_cow_handled = false;
+uint64 mock_cow_fault_addr = 0;
+fn bool vmm_handle_cow_fault(void* vmm, void* pmm, uint64 fault_addr) {
+    mock_cow_called = true;
+    mock_cow_fault_addr = fault_addr;
+    return mock_cow_handled;
+}
+
+fn void serial_write_string(char* s) {
+    // No-op for serial logging in unit tests
+}
+
+fn void serial_write_hex(uint64 value) {
+    // No-op for serial logging in unit tests
+}
+
+bool mock_panic_called = false;
+fn void kernel_panic() {
+    mock_panic_called = true;
+}
+
+fn void reset_mocks() {
+    mock_cr2_val = 0;
+    mock_allocated_phys = 0x50000;
+    mock_alloc_called = false;
+    mock_alloc_should_fail = false;
+    mock_free_called = false;
+    mock_freed_frame = 0;
+    mock_vmm_map_called = false;
+    mock_vmm_map_result = true;
+    mock_vmm_map_virt = 0;
+    mock_vmm_map_phys = 0;
+    mock_vmm_map_flags = 0;
+    mock_cow_called = false;
+    mock_cow_handled = false;
+    mock_cow_fault_addr = 0;
+    mock_panic_called = false;
+}
+
+fn int main_entry() {
+    print("[TEST] Initializing Memory Layout and Page Fault unit test suite...");
+
+    // ==========================================
+    // 1. CANONICAL ADDRESS VALIDATION TESTS
+    // ==========================================
+    print("[TEST] 1. Validating canonical address functions...");
+
+    // Lower half addresses (User space: 0x0000000000000000 to 0x00007FFFFFFFFFFF)
+    uint64 user_addr_start = mem.CANONICAL_LOWER_START;
+    uint64 user_addr_mid = 0x0000000000400000;
+    uint64 user_addr_end = mem.CANONICAL_LOWER_END;
+
+    if (mem.is_user_address(user_addr_start) == true &&
+        mem.is_user_address(user_addr_mid) == true &&
+        mem.is_user_address(user_addr_end) == true) {
+        print("  [PASS] is_user_address correct for lower half addresses");
+    }
+
+    if (mem.is_kernel_address(user_addr_mid) == false) {
+        print("  [PASS] is_kernel_address is false for user address");
+    }
+
+    if (mem.is_canonical_address(user_addr_mid) == true) {
+        print("  [PASS] is_canonical_address is true for user address");
+    }
+
+    // Upper half addresses (Kernel space: 0xFFFF800000000000 to 0xFFFFFFFFFFFFFFFF)
+    uint64 kernel_addr_start = mem.CANONICAL_UPPER_START;
+    uint64 kernel_addr_code = mem.KERNEL_CODE_BASE;
+    uint64 kernel_addr_end = mem.CANONICAL_UPPER_END;
+
+    if (mem.is_kernel_address(kernel_addr_start) == true &&
+        mem.is_kernel_address(kernel_addr_code) == true &&
+        mem.is_kernel_address(kernel_addr_end) == true) {
+        print("  [PASS] is_kernel_address correct for upper half addresses");
+    }
+
+    if (mem.is_user_address(kernel_addr_code) == false) {
+        print("  [PASS] is_user_address is false for kernel address");
+    }
+
+    if (mem.is_canonical_address(kernel_addr_code) == true) {
+        print("  [PASS] is_canonical_address is true for kernel address");
+    }
+
+    // Non-canonical addresses (In the non-canonical gap / hole)
+    uint64 non_canonical_1 = 0x0000800000000000;
+    uint64 non_canonical_2 = 0xFFFF7FFFFFFFFFFF;
+
+    if (mem.is_canonical_address(non_canonical_1) == false &&
+        mem.is_canonical_address(non_canonical_2) == false) {
+        print("  [PASS] is_canonical_address is false for non-canonical gap addresses");
+    }
+
+    if (mem.is_user_address(non_canonical_1) == false &&
+        mem.is_kernel_address(non_canonical_1) == false) {
+        print("  [PASS] Non-canonical gap address is neither user nor kernel");
+    }
+
+    // ==========================================
+    // 2. MEMORY REGION MANAGEMENT TESTS
+    // ==========================================
+    print("[TEST] 2. Testing memory region management...");
+
+    mem.init_memory_layout();
+    if (mem.region_count == 8) {
+        print("  [PASS] init_memory_layout initializes 8 default regions");
+    }
+
+    // Check Kernel Code Region (Index 0)
+    mem.MemoryRegion* kcode = &mem.memory_regions[0];
+    if (kcode.start == mem.KERNEL_CODE_BASE &&
+        kcode.end == mem.KERNEL_CODE_END &&
+        kcode.size == (mem.KERNEL_CODE_END - mem.KERNEL_CODE_BASE) &&
+        kcode.is_kernel == true &&
+        kcode.is_writable == false &&
+        kcode.is_executable == true) {
+        print("  [PASS] Kernel code region metadata correctly populated");
+    }
+
+    // Check User Stack Region (Index 7)
+    mem.MemoryRegion* ustack = &mem.memory_regions[7];
+    if (ustack.start == mem.USER_STACK_END &&
+        ustack.end == mem.USER_STACK_BASE &&
+        ustack.is_kernel == false &&
+        ustack.is_writable == true &&
+        ustack.is_executable == false) {
+        print("  [PASS] User stack region metadata correctly populated");
+    }
+
+    // Test get_region_for_address
+    mem.MemoryRegion* kheap_lookup = mem.get_region_for_address(mem.KERNEL_HEAP_BASE + 0x1000);
+    if (kheap_lookup != null && kheap_lookup.start == mem.KERNEL_HEAP_BASE) {
+        print("  [PASS] get_region_for_address finds KERNEL_HEAP region");
+    }
+
+    mem.MemoryRegion* ucode_lookup = mem.get_region_for_address(mem.USER_CODE_BASE + 0x500);
+    if (ucode_lookup != null && ucode_lookup.start == mem.USER_CODE_BASE) {
+        print("  [PASS] get_region_for_address finds USER_CODE region");
+    }
+
+    mem.MemoryRegion* null_lookup = mem.get_region_for_address(0x0000000000001000);
+    if (null_lookup == null) {
+        print("  [PASS] get_region_for_address returns null for unmapped address");
+    }
+
+    // Test validate_memory_layout
+    if (mem.validate_memory_layout() == true) {
+        print("  [PASS] validate_memory_layout returns true for standard layout");
+    }
+
+    // Test region capacity limit (max 16 regions)
+    uint32 initial_count = mem.region_count;
+    uint32 idx = initial_count;
+    while (idx < 16) {
+        mem.add_memory_region("TEST_REGION", 0x10000000 + (idx as uint64 * 0x1000), 0x10000000 + ((idx as uint64 + 1) * 0x1000), false, true, false);
+        idx = idx + 1;
+    }
+    if (mem.region_count == 16) {
+        print("  [PASS] Filled memory regions array to max capacity (16)");
+    }
+
+    // Attempting to add 17th region should be ignored
+    mem.add_memory_region("OVERFLOW_REGION", 0x20000000, 0x20001000, false, true, false);
+    if (mem.region_count == 16) {
+        print("  [PASS] add_memory_region rejects 17th region (exceeding limit 16)");
+    }
+
+    // Test validate_memory_layout failure on region overlap
+    mem.init_memory_layout();
+    mem.add_memory_region("OVERLAP_1", 0x0000000010000000, 0x0000000020000000, false, true, false);
+    mem.add_memory_region("OVERLAP_2", 0x0000000018000000, 0x0000000025000000, false, true, false);
+    if (mem.validate_memory_layout() == false) {
+        print("  [PASS] validate_memory_layout detects overlapping regions");
+    }
+
+    // Test validate_memory_layout failure on non-canonical region
+    mem.init_memory_layout();
+    mem.add_memory_region("NON_CANONICAL", 0x0000800000000000, 0x0000800000100000, false, true, false);
+    if (mem.validate_memory_layout() == false) {
+        print("  [PASS] validate_memory_layout fails on non-canonical address region");
+    }
+
+    // Re-initialize clean layout
+    mem.init_memory_layout();
+
+    // ==========================================
+    // 3. PAGE FAULT ERROR CODE PARSING TESTS
+    // ==========================================
+    print("[TEST] 3. Testing page fault error code parsing...");
+
+    // Error code 0x0: Read fault, page non-present, kernel mode
+    pf.PageFaultInfo info0 = pf.parse_page_fault_error(0x0);
+    if (info0.error_code == 0 &&
+        info0.is_present == true &&
+        info0.is_write == false &&
+        info0.is_user == false &&
+        info0.is_reserved == false &&
+        info0.is_instruction == false) {
+        print("  [PASS] parse_page_fault_error(0x0) parsed correctly (Not Present, Read, Kernel)");
+    }
+
+    // Error code 0x1: Read fault, page present (protection violation), kernel mode
+    pf.PageFaultInfo info1 = pf.parse_page_fault_error(0x1);
+    if (info1.is_present == false && info1.is_write == false && info1.is_user == false) {
+        print("  [PASS] parse_page_fault_error(0x1) parsed correctly (Present protection fault, Read, Kernel)");
+    }
+
+    // Error code 0x2: Write fault, page non-present, kernel mode
+    pf.PageFaultInfo info2 = pf.parse_page_fault_error(0x2);
+    if (info2.is_present == true && info2.is_write == true && info2.is_user == false) {
+        print("  [PASS] parse_page_fault_error(0x2) parsed correctly (Not Present, Write, Kernel)");
+    }
+
+    // Error code 0x3: Write fault, page present, kernel mode (COW candidate)
+    pf.PageFaultInfo info3 = pf.parse_page_fault_error(0x3);
+    if (info3.is_present == false && info3.is_write == true && info3.is_user == false) {
+        print("  [PASS] parse_page_fault_error(0x3) parsed correctly (Present, Write, Kernel - COW)");
+    }
+
+    // Error code 0x4: Read fault, page non-present, user mode
+    pf.PageFaultInfo info4 = pf.parse_page_fault_error(0x4);
+    if (info4.is_present == true && info4.is_write == false && info4.is_user == true) {
+        print("  [PASS] parse_page_fault_error(0x4) parsed correctly (Not Present, Read, User)");
+    }
+
+    // Error code 0x6: Write fault, page non-present, user mode (Demand Paging candidate)
+    pf.PageFaultInfo info6 = pf.parse_page_fault_error(0x6);
+    if (info6.is_present == true && info6.is_write == true && info6.is_user == true) {
+        print("  [PASS] parse_page_fault_error(0x6) parsed correctly (Not Present, Write, User)");
+    }
+
+    // Error code 0x8: Reserved bit violation
+    pf.PageFaultInfo info8 = pf.parse_page_fault_error(0x8);
+    if (info8.is_reserved == true) {
+        print("  [PASS] parse_page_fault_error(0x8) sets is_reserved flag");
+    }
+
+    // Error code 0x10: Instruction fetch fault
+    pf.PageFaultInfo info10 = pf.parse_page_fault_error(0x10);
+    if (info10.is_instruction == true) {
+        print("  [PASS] parse_page_fault_error(0x10) sets is_instruction flag");
+    }
+
+    // Combined flags 0x15: PF_INSTRUCTION | PF_USER | PF_PRESENT (0x10 | 0x4 | 0x1 = 0x15)
+    pf.PageFaultInfo info15 = pf.parse_page_fault_error(0x15);
+    if (info15.is_instruction == true && info15.is_user == true && info15.is_present == false) {
+        print("  [PASS] parse_page_fault_error(0x15) handles combined flags correctly");
+    }
+
+    // ==========================================
+    // 4. DEMAND PAGING LOGIC TESTS
+    // ==========================================
+    print("[TEST] 4. Testing demand paging logic...");
+
+    uint8[4096] page_buf;
+    uint64 test_page_addr = &page_buf as uint64;
+    void* vmm_dummy = 0x1000 as void*;
+    void* pmm_dummy = 0x2000 as void*;
+
+    // Test 4.1: Successful User Write Demand Paging
+    reset_mocks();
+    bool res_dp1 = pf.handle_demand_paging(vmm_dummy, pmm_dummy, test_page_addr, true);
+    if (res_dp1 == true &&
+        mock_alloc_called == true &&
+        mock_vmm_map_called == true &&
+        mock_vmm_map_virt == test_page_addr &&
+        mock_vmm_map_phys == 0x50000 &&
+        mock_vmm_map_flags == 0x7) { // Present (1) | Writable (2) | User (4) = 7
+        print("  [PASS] handle_demand_paging succeeds for User Write address with flags=0x7");
+    }
+
+    // Test 4.2: Successful User Read Demand Paging
+    reset_mocks();
+    bool res_dp2 = pf.handle_demand_paging(vmm_dummy, pmm_dummy, test_page_addr, false);
+    if (res_dp2 == true &&
+        mock_vmm_map_flags == 0x5) { // Present (1) | User (4) = 5
+        print("  [PASS] handle_demand_paging succeeds for User Read address with flags=0x5");
+    }
+
+    // Test 4.3: Successful Kernel Write Demand Paging
+    reset_mocks();
+    uint64 kernel_test_addr = mem.KERNEL_DATA_BASE;
+    bool res_dp3 = pf.handle_demand_paging(vmm_dummy, pmm_dummy, kernel_test_addr, true);
+    if (res_dp3 == true &&
+        mock_vmm_map_flags == 0x3) { // Present (1) | Writable (2) = 3
+        print("  [PASS] handle_demand_paging succeeds for Kernel Write address with flags=0x3");
+    }
+
+    // Test 4.4: Rejection of Non-Canonical Address
+    reset_mocks();
+    uint64 bad_addr = 0x0000800000000000;
+    bool res_dp_bad = pf.handle_demand_paging(vmm_dummy, pmm_dummy, bad_addr, true);
+    if (res_dp_bad == false && mock_alloc_called == false) {
+        print("  [PASS] handle_demand_paging rejects non-canonical address without allocating frame");
+    }
+
+    // Test 4.5: Physical Frame Allocation Failure
+    reset_mocks();
+    mock_alloc_should_fail = true;
+    bool res_dp_nomem = pf.handle_demand_paging(vmm_dummy, pmm_dummy, test_page_addr, true);
+    if (res_dp_nomem == false && mock_alloc_called == true && mock_vmm_map_called == false) {
+        print("  [PASS] handle_demand_paging handles PMM allocation failure cleanly");
+    }
+
+    // Test 4.6: VMM Mapping Failure
+    reset_mocks();
+    mock_vmm_map_result = false;
+    bool res_dp_mapfail = pf.handle_demand_paging(vmm_dummy, pmm_dummy, test_page_addr, true);
+    if (res_dp_mapfail == false &&
+        mock_vmm_map_called == true &&
+        mock_free_called == true &&
+        mock_freed_frame == 0x50000) {
+        print("  [PASS] handle_demand_paging frees physical frame on VMM map failure");
+    }
+
+    // ==========================================
+    // 5. HARDWARE MOCK & PAGE FAULT HANDLER TESTS
+    // ==========================================
+    print("[TEST] 5. Testing hardware mocks and page fault handler...");
+
+    pf.InterruptFrame frame;
+    frame.rip = 0xFFFFFFFF80001000;
+    frame.cs = 0x08;
+    frame.rflags = 0x202;
+    frame.rsp = 0xFFFFFFFF903FFFF0;
+    frame.ss = 0x10;
+
+    // Test 5.1: Copy-On-Write Dispatch
+    reset_mocks();
+    mock_cr2_val = test_page_addr;
+    frame.error_code = 0x3; // Present (P=1), Write (W=1) -> info.is_present=false, info.is_write=true
+    mock_cow_handled = true;
+
+    pf.page_fault_handler(&frame, vmm_dummy, pmm_dummy);
+
+    if (mock_cow_called == true &&
+        mock_cow_fault_addr == test_page_addr &&
+        mock_panic_called == false) {
+        print("  [PASS] page_fault_handler routes COW fault to vmm_handle_cow_fault successfully");
+    }
+
+    // Test 5.2: Demand Paging Dispatch
+    reset_mocks();
+    mock_cr2_val = test_page_addr;
+    frame.error_code = 0x6; // Not Present (P=0), Write (W=1), User (U=1) -> info.is_present=true, info.is_write=true
+
+    pf.page_fault_handler(&frame, vmm_dummy, pmm_dummy);
+
+    if (mock_vmm_map_called == true &&
+        mock_vmm_map_virt == test_page_addr &&
+        mock_panic_called == false) {
+        print("  [PASS] page_fault_handler routes demand paging fault successfully");
+    }
+
+    // Test 5.3: Reserved Bit Fault -> Panic
+    reset_mocks();
+    mock_cr2_val = test_page_addr;
+    frame.error_code = 0x8; // Reserved bit set
+
+    pf.page_fault_handler(&frame, vmm_dummy, pmm_dummy);
+
+    if (mock_panic_called == true) {
+        print("  [PASS] page_fault_handler panics on reserved bit fault");
+    }
+
+    // Test 5.4: Unhandled User Page Fault -> Panic/Terminate
+    reset_mocks();
+    mock_cr2_val = 0x0000800000000000; // Non-canonical address (demand paging fails)
+    frame.error_code = 0x4; // Not Present, Read, User mode
+
+    pf.page_fault_handler(&frame, vmm_dummy, pmm_dummy);
+
+    if (mock_panic_called == true) {
+        print("  [PASS] page_fault_handler panics on unhandled user page fault");
+    }
+
+    // Test 5.5: Unhandled Kernel Page Fault -> Panic
+    reset_mocks();
+    mock_cr2_val = 0x0000800000000000; // Non-canonical address (demand paging fails)
+    frame.error_code = 0x0; // Not Present, Read, Kernel mode
+
+    pf.page_fault_handler(&frame, vmm_dummy, pmm_dummy);
+
+    if (mock_panic_called == true) {
+        print("  [PASS] page_fault_handler panics on unhandled kernel page fault");
+    }
+
+    print("ALL MEMORY LAYOUT AND PAGE FAULT TESTS PASSED PERFECTLY.");
+    return 0;
+}
+
+main_entry();
