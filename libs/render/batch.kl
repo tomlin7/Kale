@@ -29,7 +29,7 @@ struct BatchRenderer {
     int vertex_count;
     int max_vertices;
 
-    int* index_buffer;
+    int32* index_buffer;
     int index_count;
     int max_indices;
 
@@ -45,19 +45,19 @@ fn int BatchRenderer.init(glloader.GLContext* gl_ctx, int max_quads) {
     this->index_count = 0;
 
     this->vertex_buffer = alloc(Vertex2D, this->max_vertices);
-    this->index_buffer = alloc(int, this->max_indices);
+    this->index_buffer = alloc(int32, this->max_indices);
 
     // Pre-fill index buffer pattern: 0, 1, 2, 2, 3, 0 offset by (i * 4)
     int i = 0;
     int offset = 0;
     while (i < max_quads) {
         int base_idx = i * 6;
-        this->index_buffer[base_idx + 0] = offset + 0;
-        this->index_buffer[base_idx + 1] = offset + 1;
-        this->index_buffer[base_idx + 2] = offset + 2;
-        this->index_buffer[base_idx + 3] = offset + 2;
-        this->index_buffer[base_idx + 4] = offset + 3;
-        this->index_buffer[base_idx + 5] = offset + 0;
+        this->index_buffer[base_idx + 0] = (int32)(offset + 0);
+        this->index_buffer[base_idx + 1] = (int32)(offset + 1);
+        this->index_buffer[base_idx + 2] = (int32)(offset + 2);
+        this->index_buffer[base_idx + 3] = (int32)(offset + 2);
+        this->index_buffer[base_idx + 4] = (int32)(offset + 3);
+        this->index_buffer[base_idx + 5] = (int32)(offset + 0);
         offset = offset + 4;
         i = i + 1;
     }
@@ -160,13 +160,15 @@ fn void BatchRenderer.flush(glloader.GLContext* gl_ctx) {
 }
 
 fn void BatchRenderer.push_textured_quad(glloader.GLContext* gl_ctx, float x, float y, float w, float h, float u0, float v0, float u1, float v1, rmath.Color color, int texture_id) {
-    if (texture_id != this->current_texture && this->vertex_count > 0) {
-        this->flush(gl_ctx);
-        this->current_texture = texture_id;
-    }
-
     if (this->vertex_count + 4 > this->max_vertices) {
         this->flush(gl_ctx);
+    }
+
+    if (texture_id != this->current_texture) {
+        if (this->vertex_count > 0) {
+            this->flush(gl_ctx);
+        }
+        this->current_texture = texture_id;
     }
 
     int idx = this->vertex_count;
@@ -217,4 +219,34 @@ fn void BatchRenderer.push_textured_quad(glloader.GLContext* gl_ctx, float x, fl
 
 fn void BatchRenderer.push_quad(glloader.GLContext* gl_ctx, float x, float y, float w, float h, rmath.Color color) {
     this->push_textured_quad(gl_ctx, x, y, w, h, 0.0f, 0.0f, 1.0f, 1.0f, color, this->white_texture);
+}
+
+fn void BatchRenderer.push_rect_outline(glloader.GLContext* gl_ctx, float x, float y, float w, float h, float thickness, rmath.Color color) {
+    if (w <= 0.0f || h <= 0.0f || thickness <= 0.0f) {
+        return;
+    }
+    // Top bar
+    this->push_quad(gl_ctx, x, y, w, thickness, color);
+    // Bottom bar
+    this->push_quad(gl_ctx, x, y + h - thickness, w, thickness, color);
+    // Left bar
+    this->push_quad(gl_ctx, x, y + thickness, thickness, h - (thickness * 2.0f), color);
+    // Right bar
+    this->push_quad(gl_ctx, x + w - thickness, y + thickness, thickness, h - (thickness * 2.0f), color);
+}
+
+fn void BatchRenderer.set_clip_rect(glloader.GLContext* gl_ctx, float x, float y, float w, float h) {
+    this->flush(gl_ctx);
+    gl.glEnable(kgl.GL_SCISSOR_TEST());
+    int sx = (int)x;
+    int sy = this->height - ((int)y + (int)h);
+    if (sy < 0) {
+        sy = 0;
+    }
+    gl.glScissor(sx, sy, (int)w, (int)h);
+}
+
+fn void BatchRenderer.reset_clip(glloader.GLContext* gl_ctx) {
+    this->flush(gl_ctx);
+    gl.glDisable(kgl.GL_SCISSOR_TEST());
 }

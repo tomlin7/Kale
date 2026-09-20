@@ -553,7 +553,9 @@ class LLVMEmitter:
         elif isinstance(statement, BoundPrintStatement):
             for i, arg in enumerate(statement.arguments):
                 val = self._emit_expression(arg)
-                if arg.type == TypeInt or isinstance(arg.type, EnumTypeSymbol):
+                if arg.type in (TypeInt, TypeInt32, TypeUInt32, TypeUInt64, TypeUInt8) or isinstance(arg.type, EnumTypeSymbol):
+                    if arg.type in (TypeInt32, TypeUInt32, TypeUInt8):
+                        val = self._builder.sext(val, ir.IntType(64))
                     fmt = self._get_string_constant("%lld")
                     self._builder.call(self._printf, [fmt, val])
                 elif arg.type in (TypeFloat, TypeDouble):

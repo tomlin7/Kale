@@ -11,6 +11,11 @@ fn void ui_panel(ui.UIContext* ctx, float x, float y, float w, float h, rmath.Co
     ctx->renderer.push_quad(ctx->gl_ctx, x, y, w, h, color);
 }
 
+fn void ui_panel_bordered(ui.UIContext* ctx, float x, float y, float w, float h, rmath.Color bg_color, rmath.Color border_color, float border_w) {
+    ctx->renderer.push_quad(ctx->gl_ctx, x, y, w, h, bg_color);
+    ctx->renderer.push_rect_outline(ctx->gl_ctx, x, y, w, h, border_w, border_color);
+}
+
 fn void ui_label(ui.UIContext* ctx, string text, float x, float y, rmath.Color color) {
     ctx->font.draw_text(&ctx->renderer, ctx->gl_ctx, text, x, y, color);
 }
@@ -45,8 +50,7 @@ fn int ui_button(ui.UIContext* ctx, int id, string text, float x, float y, float
     ctx->renderer.push_quad(ctx->gl_ctx, x, y, w, h, btn_col);
 
     // Center text label within button bounds
-    int len = strlen(text);
-    float text_w = (float)len * 11.0f; // Approximate character width for monospace
+    float text_w = ctx->font.measure_text(text);
     float tx = x + (w - text_w) * 0.5f;
     if (tx < x + 8.0f) {
         tx = x + 8.0f;
@@ -225,7 +229,7 @@ fn int ui_text_input(ui.UIContext* ctx, int id, string text, float x, float y, f
 
     // Blinking cursor if focused
     if (is_focused) {
-        float text_len = (float)strlen(text) * 11.0f;
+        float text_len = ctx->font.measure_text(text);
         float caret_x = x + 8.0f + text_len;
         ctx->renderer.push_quad(ctx->gl_ctx, caret_x, y + 4.0f, 2.0f, h - 8.0f, ctx->theme.cursor);
     }

@@ -45,7 +45,7 @@ fn int FontAtlas.init(glloader.GLContext* gl_ctx, string font_path, float font_s
 
     // Allocate single-channel atlas buffer (512x512)
     int total_pixels = this->atlas_width * this->atlas_height;
-    int* atlas_pixels = alloc(int, total_pixels);
+    int32* atlas_pixels = alloc(int32, total_pixels);
     int p_idx = 0;
     while (p_idx < total_pixels) {
         atlas_pixels[p_idx] = 0;
@@ -83,7 +83,7 @@ fn int FontAtlas.init(glloader.GLContext* gl_ctx, string font_path, float font_s
                     int alpha = (int)src_bytes[row * bmp.width + col] & 0xFF;
                     int dest_idx = (cur_y + row) * this->atlas_width + (cur_x + col);
                     // Store as RGBA: white color with alpha (alpha << 24 | 0x00FFFFFF)
-                    atlas_pixels[dest_idx] = (alpha << 24) | 0x00FFFFFF;
+                    atlas_pixels[dest_idx] = (int32)((alpha << 24) | 0x00FFFFFF);
                     col = col + 1;
                 }
                 row = row + 1;
@@ -119,6 +119,20 @@ fn int FontAtlas.init(glloader.GLContext* gl_ctx, string font_path, float font_s
     return 1;
 }
 
+fn float FontAtlas.measure_text(string text) {
+    int len = strlen(text);
+    float width = 0.0f;
+    int i = 0;
+    while (i < len) {
+        int ch = (int)text[i];
+        if (ch >= 32 && ch < 127) {
+            width = width + (float)this->glyphs[ch].xadvance;
+        }
+        i = i + 1;
+    }
+    return width;
+}
+
 fn void FontAtlas.draw_text(rbatch.BatchRenderer* renderer, glloader.GLContext* gl_ctx, string text, float x, float y, rmath.Color color) {
     int len = strlen(text);
     float pen_x = x;
@@ -138,4 +152,17 @@ fn void FontAtlas.draw_text(rbatch.BatchRenderer* renderer, glloader.GLContext* 
         }
         i = i + 1;
     }
+}
+
+fn void FontAtlas.destroy() {
+    if (this->glyphs != (GlyphInfo*)0) {
+        free(this->glyphs);
+        this->glyphs = (GlyphInfo*)0;
+    }
+    if (this->texture_id != 0) {
+        int t = this->texture_id;
+        gl.glDeleteTextures(1, &t);
+        this->texture_id = 0;
+    }
+    this->font.destroy();
 }

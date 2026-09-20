@@ -140,6 +140,7 @@ cython_debug/
 
 # Builds & Artifacts
 *.c
+!libs/stb/vendor/*.c
 *.exe
 *.ll
 *.bc
@@ -158,3 +159,6 @@ zig-out/
 
 # Jetbrains
 .idea/
+
+# Scratch
+scratch/

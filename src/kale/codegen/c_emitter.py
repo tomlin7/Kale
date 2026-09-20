@@ -36,6 +36,10 @@ from ..binding.bound_nodes import (
 )
 from ..binding.types import (
     TypeInt,
+    TypeInt32,
+    TypeUInt64,
+    TypeUInt32,
+    TypeUInt8,
     TypeFloat,
     TypeDouble,
     TypeBool,
@@ -74,6 +78,12 @@ class CEmitter:
             return f"{self._map_type(t.element_type)}*"
         if t == TypeInt:
             return "long long"
+        if t in (TypeInt32, TypeUInt32):
+            return "int"
+        if t in (TypeUInt8,):
+            return "unsigned char"
+        if t in (TypeUInt64,):
+            return "unsigned long long"
         if t in (TypeFloat, TypeDouble):
             return "double"
         if t == TypeBool:
@@ -254,7 +264,7 @@ class CEmitter:
         elif isinstance(statement, BoundPrintStatement):
             for i, arg in enumerate(statement.arguments):
                 arg_expr = self._emit_expression(arg)
-                if arg.type == TypeInt or isinstance(arg.type, EnumTypeSymbol):
+                if arg.type in (TypeInt, TypeInt32, TypeUInt32, TypeUInt64, TypeUInt8) or isinstance(arg.type, EnumTypeSymbol):
                     self._write_line(f"_kale_print_int({arg_expr});")
                 elif arg.type in (TypeFloat, TypeDouble):
                     self._write_line(f"_kale_print_double({arg_expr});")
