@@ -1,0 +1,42 @@
+// os/kernel/timer.kl
+// Timer IRQ Driver & Uptime Tracking
+
+struct TimerState {
+    uint64 ticks;
+    uint64 frequency_hz;
+    uint64 milliseconds;
+    uint32 quantum_ticks;
+}
+
+fn void timer_state_init(TimerState* timer, uint64 frequency_hz, uint32 quantum_ticks) {
+    timer->ticks = 0 as uint64;
+    timer->frequency_hz = frequency_hz;
+    timer->milliseconds = 0 as uint64;
+    timer->quantum_ticks = quantum_ticks;
+}
+
+fn bool timer_handle_irq(TimerState* timer) {
+    timer->ticks = timer->ticks + 1 as uint64;
+    if (timer->frequency_hz > 0 as uint64) {
+        timer->milliseconds = (timer->ticks * 1000 as uint64) / timer->frequency_hz;
+    }
+    // Check quantum expiration for preemptive scheduling
+    if (timer->quantum_ticks > 0 as uint32) {
+        uint64 mod = timer->ticks % (timer->quantum_ticks as uint64);
+        if (mod == 0 as uint64) {
+            return true; // Quantum expired, preempt current task
+        }
+    }
+    return false;
+}
+
+fn uint64 timer_get_uptime_ms(TimerState* timer) {
+    return timer->milliseconds;
+}
+
+fn uint64 timer_ticks_to_ms(TimerState* timer, uint64 ticks) {
+    if (timer->frequency_hz == 0 as uint64) {
+        return 0 as uint64;
+    }
+    return (ticks * 1000 as uint64) / timer->frequency_hz;
+}

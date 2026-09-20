@@ -1,0 +1,67 @@
+// os/kernel/keyboard.kl
+// Interrupt-Driven Keyboard Driver & Ring Buffer
+
+import "os/drivers/kbd.kl" as kbd;
+
+struct KeyboardBuffer {
+    uint8[256] buffer;
+    uint32 head;
+    uint32 tail;
+    uint32 count;
+    bool shift_pressed;
+}
+
+fn void keyboard_buffer_init(KeyboardBuffer* kb) {
+    kb->head = 0 as uint32;
+    kb->tail = 0 as uint32;
+    kb->count = 0 as uint32;
+    kb->shift_pressed = false;
+    int i = 0;
+    while (i < 256) {
+        kb->buffer[i] = 0 as uint8;
+        i = i + 1;
+    }
+}
+
+fn bool keyboard_buffer_push(KeyboardBuffer* kb, uint8 ascii_char) {
+    if (kb->count >= 256 as uint32) {
+        return false; // Buffer overflow
+    }
+    kb->buffer[kb->head] = ascii_char;
+    kb->head = (kb->head + 1 as uint32) & 255 as uint32;
+    kb->count = kb->count + 1 as uint32;
+    return true;
+}
+
+fn bool keyboard_buffer_pop(KeyboardBuffer* kb, uint8* out_char) {
+    if (kb->count == 0 as uint32) {
+        return false;
+    }
+    *out_char = kb->buffer[kb->tail];
+    kb->tail = (kb->tail + 1 as uint32) & 255 as uint32;
+    kb->count = kb->count - 1 as uint32;
+    return true;
+}
+
+fn bool keyboard_handle_irq(KeyboardBuffer* kb, uint8 scancode) {
+    bool is_release = (scancode & 0x80 as uint8) != 0 as uint8;
+    int raw_scancode = (scancode & 0x7F as uint8) as int;
+
+    // Shift tracking
+    if (raw_scancode == 42 || raw_scancode == 54) {
+        kb->shift_pressed = !is_release;
+        return false;
+    }
+
+    // Ignore key releases for character queue
+    if (is_release) {
+        return false;
+    }
+
+    int ascii = kbd.kbd_scancode_to_ascii(raw_scancode, kb->shift_pressed);
+    if (ascii == 0) {
+        return false;
+    }
+
+    return keyboard_buffer_push(kb, ascii as uint8);
+}

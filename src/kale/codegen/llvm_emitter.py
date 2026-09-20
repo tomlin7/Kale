@@ -863,6 +863,13 @@ class LLVMEmitter:
             field_ptr = self._get_lvalue_ptr(expr)
             if isinstance(expr.type, StructTypeSymbol):
                 return field_ptr
+            if isinstance(field_ptr.type.pointee, ir.ArrayType):
+                return self._builder.gep(
+                    field_ptr,
+                    [ir.Constant(ir.IntType(32), 0), ir.Constant(ir.IntType(32), 0)],
+                    inbounds=True,
+                    name=f"{expr.member_name}_decay"
+                )
             return self._builder.load(field_ptr, name=f"field_{expr.member_name}_val")
 
         if isinstance(expr, BoundMemberAssignmentExpression):

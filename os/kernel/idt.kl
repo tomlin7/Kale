@@ -1,35 +1,112 @@
-// x86_64 Interrupt Descriptor Table (IDT) Entry
+// os/kernel/idt.kl
+// 64-Bit Interrupt Descriptor Table (IDT) & Frame Layout
+
 struct IDTEntry {
-    offset_low: uint16,
-    selector: uint16,
-    ist: uint8,
-    type_attr: uint8,
-    offset_mid: uint16,
-    offset_high: uint32,
-    zero: uint32,
+    uint16 offset_low;
+    uint16 selector;
+    uint8 ist;
+    uint8 type_attr;
+    uint16 offset_mid;
+    uint32 offset_high;
+    uint32 zero;
 }
 
 struct IDTPointer {
-    limit: uint16,
-    base: uint64,
+    uint16 limit;
+    uint64 base;
 }
 
 struct IDTTable {
-    entries: [IDTEntry; 256],
-    pointer: IDTPointer,
+    IDTEntry[256] entries;
+    IDTPointer pointer;
 }
 
-fn idt_set_gate(table: *IDTTable, num: int32, isr_handler: uint64, selector: uint16, flags: uint8) -> void {
-    table.entries[num].offset_low = (isr_handler & 0xFFFF as uint64) as uint16;
-    table.entries[num].selector = selector;
-    table.entries[num].ist = 0 as uint8;
-    table.entries[num].type_attr = flags;
-    table.entries[num].offset_mid = ((isr_handler >> 16) & 0xFFFF as uint64) as uint16;
-    table.entries[num].offset_high = ((isr_handler >> 32) & 0xFFFFFFFF as uint64) as uint32;
-    table.entries[num].zero = 0 as uint32;
+// 64-bit Interrupt Stack Frame pushed by CPU and ISR stubs
+// Stack layout matches isr_common_stub and irq_common_stub
+struct InterruptFrame {
+    uint64 ds;
+    uint64 r15;
+    uint64 r14;
+    uint64 r13;
+    uint64 r12;
+    uint64 r11;
+    uint64 r10;
+    uint64 r9;
+    uint64 r8;
+    uint64 rbp;
+    uint64 rdi;
+    uint64 rsi;
+    uint64 rdx;
+    uint64 rcx;
+    uint64 rbx;
+    uint64 rax;
+    uint64 interrupt_number;
+    uint64 error_code;
+    uint64 rip;
+    uint64 cs;
+    uint64 rflags;
+    uint64 rsp;
+    uint64 ss;
 }
 
-fn idt_init(table: *IDTTable) -> void {
-    table.pointer.limit = (256 * 16 - 1) as uint16;
-    table.pointer.base = (&table.entries[0]) as uint64;
+// IDT Gate Flags & Constants
+uint8 IDT_FLAG_PRESENT = 0x80 as uint8;
+uint8 IDT_FLAG_RING0 = 0x00 as uint8;
+uint8 IDT_FLAG_RING3 = 0x60 as uint8;
+uint8 IDT_GATE_INTERRUPT = 0x8E as uint8; // 64-bit Interrupt Gate (Ring 0)
+uint8 IDT_GATE_TRAP = 0x8F as uint8;      // 64-bit Trap Gate (Ring 0)
+uint8 IDT_GATE_USER = 0xEE as uint8;      // 64-bit Interrupt Gate (Ring 3 callable, e.g. INT 0x80)
+
+fn IDTEntry idt_encode_entry(uint64 handler, uint16 selector, uint8 flags) {
+    IDTEntry entry;
+    entry.offset_low = (handler & 0xFFFF as uint64) as uint16;
+    entry.selector = selector;
+    entry.ist = 0 as uint8;
+    entry.type_attr = flags;
+    entry.offset_mid = ((handler >> 16) & 0xFFFF as uint64) as uint16;
+    entry.offset_high = ((handler >> 32) & 0xFFFFFFFF as uint64) as uint32;
+    entry.zero = 0 as uint32;
+    return entry;
+}
+
+fn void idt_set_gate(IDTTable* table, int num, uint64 handler, uint16 selector, uint8 flags) {
+    if (num < 0 || num >= 256) {
+        return;
+    }
+    table->entries[num] = idt_encode_entry(handler, selector, flags);
+}
+
+fn IDTEntry idt_get_gate(IDTTable* table, int num) {
+    if (num < 0 || num >= 256) {
+        IDTEntry empty;
+        return empty;
+    }
+    return table->entries[num];
+}
+
+fn uint64 idt_get_handler_address(IDTTable* table, int num) {
+    if (num < 0 || num >= 256) {
+        return 0 as uint64;
+    }
+    uint64 low = table->entries[num].offset_low as uint64;
+    uint64 mid = (table->entries[num].offset_mid as uint64) << 16;
+    uint64 high = (table->entries[num].offset_high as uint64) << 32;
+    return low | mid | high;
+}
+
+fn bool idt_is_entry_present(IDTTable* table, int num) {
+    if (num < 0 || num >= 256) {
+        return false;
+    }
+    return (table->entries[num].type_attr & IDT_FLAG_PRESENT) != 0 as uint8;
+}
+
+fn void idt_init(IDTTable* table) {
+    table->pointer.limit = (256 * 16 - 1) as uint16;
+    table->pointer.base = (&table->entries[0]) as uint64;
+    int i = 0;
+    while (i < 256) {
+        table->entries[i] = idt_encode_entry(0 as uint64, 0 as uint16, 0 as uint8);
+        i = i + 1;
+    }
 }

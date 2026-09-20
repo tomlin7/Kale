@@ -39,6 +39,8 @@ def to_llvm_type(type_symbol: TypeSymbol, struct_map: dict[str, ir.Type] | None 
         return ir.LiteralStructType(field_types)
     if isinstance(type_symbol, ArrayTypeSymbol):
         elem_t = to_llvm_type(type_symbol.element_type, struct_map)
+        if type_symbol.size is not None:
+            return ir.ArrayType(elem_t, type_symbol.size)
         return ir.PointerType(elem_t)
     if type_symbol in (TypeInt32, TypeUInt32):
         return ir.IntType(32)

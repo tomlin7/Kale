@@ -1,0 +1,117 @@
+// os/kernel/isr.kl
+// Interrupt Service Routine (ISR) Dispatcher & Exception Classification
+
+import "os/kernel/idt.kl" as idt;
+
+enum ExceptionSeverity {
+    SEVERITY_BENIGN,
+    SEVERITY_RECOVERABLE,
+    SEVERITY_FATAL
+}
+
+enum SyscallNumber {
+    SYS_READ = 0,
+    SYS_WRITE = 1,
+    SYS_OPEN = 2,
+    SYS_CLOSE = 3,
+    SYS_YIELD = 24,
+    SYS_GETPID = 39,
+    SYS_EXIT = 60
+}
+
+struct SyscallResult {
+    int64 return_value;
+    bool success;
+    int32 error_code;
+}
+
+struct InterruptState {
+    uint32 depth;
+    uint8 current_vector;
+    uint64 total_interrupts;
+    uint64 total_exceptions;
+    uint64 total_irqs;
+    uint64 total_syscalls;
+}
+
+fn void isr_state_init(InterruptState* state) {
+    state->depth = 0 as uint32;
+    state->current_vector = 0 as uint8;
+    state->total_interrupts = 0 as uint64;
+    state->total_exceptions = 0 as uint64;
+    state->total_irqs = 0 as uint64;
+    state->total_syscalls = 0 as uint64;
+}
+
+fn void interrupt_enter(InterruptState* state, uint8 vector) {
+    state->depth = state->depth + 1 as uint32;
+    state->current_vector = vector;
+    state->total_interrupts = state->total_interrupts + 1 as uint64;
+
+    if (vector < 32 as uint8) {
+        state->total_exceptions = state->total_exceptions + 1 as uint64;
+    } else if (vector == 128 as uint8) {
+        state->total_syscalls = state->total_syscalls + 1 as uint64;
+    } else {
+        state->total_irqs = state->total_irqs + 1 as uint64;
+    }
+}
+
+fn void interrupt_exit(InterruptState* state) {
+    if (state->depth > 0 as uint32) {
+        state->depth = state->depth - 1 as uint32;
+    }
+    if (state->depth == 0 as uint32) {
+        state->current_vector = 0 as uint8;
+    }
+}
+
+fn bool interrupt_is_nested(InterruptState* state) {
+    return state->depth > 1 as uint32;
+}
+
+fn ExceptionSeverity isr_get_exception_severity(uint8 vector) {
+    if (vector == 1 as uint8 || vector == 3 as uint8) {
+        return ExceptionSeverity.SEVERITY_BENIGN;
+    }
+    if (vector == 14 as uint8) {
+        return ExceptionSeverity.SEVERITY_RECOVERABLE;
+    }
+    return ExceptionSeverity.SEVERITY_FATAL;
+}
+
+fn SyscallResult syscall_dispatch(uint64 num, uint64 arg1, uint64 arg2, uint64 arg3, uint32 current_pid) {
+    SyscallResult res;
+    res.return_value = 0 as int64;
+    res.success = true;
+    res.error_code = 0;
+
+    if (num == 0 as uint64) { // SYS_READ
+        res.return_value = arg3 as int64;
+    } else if (num == 1 as uint64) { // SYS_WRITE
+        res.return_value = arg3 as int64;
+    } else if (num == 24 as uint64) { // SYS_YIELD
+        res.return_value = 0 as int64;
+    } else if (num == 39 as uint64) { // SYS_GETPID
+        res.return_value = current_pid as int64;
+    } else if (num == 60 as uint64) { // SYS_EXIT
+        res.return_value = arg1 as int64;
+    } else {
+        res.return_value = 0 - 1 as int64;
+        res.success = false;
+        res.error_code = 38; // ENOSYS
+    }
+    return res;
+}
+
+fn void isr_dispatch_interrupt(idt.InterruptFrame* frame, InterruptState* state, uint32 current_pid) {
+    uint8 vector = (frame->interrupt_number & 0xFF as uint64) as uint8;
+    interrupt_enter(state, vector);
+
+    if (vector == 128 as uint8) {
+        SyscallResult sres = syscall_dispatch(frame->rax, frame->rdi, frame->rsi, frame->rdx, current_pid);
+        frame->rax = sres.return_value as uint64;
+    }
+
+    interrupt_exit(state);
+}
