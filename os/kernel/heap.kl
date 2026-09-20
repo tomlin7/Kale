@@ -1,0 +1,635 @@
+// os/kernel/heap.kl
+// 64-Bit Microkernel Dynamic Heap Allocator for Kale OS
+// Features: First-fit allocation, 16-byte alignment, block splitting,
+// bi-directional coalescing, realloc/calloc, segregated size classes,
+// heap corruption detection, memory leak tracking, and large-block VMM mapping.
+
+// Magic number for valid block headers ("HEAP" = 0x48454150)
+uint32 BLOCK_MAGIC = 0x48454150 as uint32;
+
+// Exact size of BlockHeader struct in 64-bit LLVM memory layout (32 bytes)
+uint64 BLOCK_HEADER_SIZE = 32 as uint64;
+
+// Minimum allocation payload size (16 bytes)
+uint64 MIN_ALLOC_SIZE = 16 as uint64;
+
+// Large allocation threshold (allocations larger than 64KB use VMM direct mapping)
+uint64 VMM_ALLOC_THRESHOLD = 65536 as uint64;
+
+// Memory Block Header (32 bytes in memory)
+struct BlockHeader {
+    uint64 size;        // Usable payload size in bytes (excluding header)
+    bool is_free;       // True if block is free for allocation
+    uint32 magic;       // Header validation magic (BLOCK_MAGIC)
+    BlockHeader* prev;  // Pointer to previous contiguous block in heap
+    BlockHeader* next;  // Pointer to next contiguous block in heap
+}
+
+// Allocation performance and tracking statistics
+struct HeapStats {
+    uint64 total_allocations;
+    uint64 total_frees;
+    uint64 current_allocations;
+    uint64 total_allocated;
+    uint64 total_freed;
+    uint64 peak_usage;
+    uint64 fragmentation_ratio;
+}
+
+// Kernel Heap Descriptor
+struct Heap {
+    uint64 start;           // Heap virtual base address
+    uint64 end;             // Heap virtual end address
+    uint64 max_size;        // Maximum heap capacity in bytes
+    uint64 used;            // Currently allocated payload + header bytes
+    BlockHeader* free_list; // Pointer to the head of the block list
+    HeapStats stats;        // Allocation statistics
+}
+
+// Fixed-size class bucket for segregated free lists
+struct SizeClass {
+    uint64 size;
+    BlockHeader* free_list;
+}
+
+// Advanced Heap with segregated free lists for fast small allocations
+struct AdvancedHeap {
+    Heap base;
+    SizeClass[8] size_classes;  // Sizes: 16, 32, 64, 128, 256, 512, 1024, 2048
+    BlockHeader* large_free_list;
+}
+
+// ==============================================================================
+// Phase 1: Basic Heap Allocator & Block Operations
+// ==============================================================================
+
+fn void heap_stats_init(HeapStats* stats) {
+    stats->total_allocations = 0 as uint64;
+    stats->total_frees = 0 as uint64;
+    stats->current_allocations = 0 as uint64;
+    stats->total_allocated = 0 as uint64;
+    stats->total_freed = 0 as uint64;
+    stats->peak_usage = 0 as uint64;
+    stats->fragmentation_ratio = 0 as uint64;
+}
+
+fn bool heap_init(Heap* heap, uint64 start, uint64 size) {
+    if (size <= BLOCK_HEADER_SIZE + MIN_ALLOC_SIZE) {
+        return false;
+    }
+
+    heap->start = start;
+    heap->end = start + size;
+    heap->max_size = size;
+    heap->used = 0 as uint64;
+    heap_stats_init(&heap->stats);
+
+    // Initialize initial monolithic free block spanning the whole heap
+    BlockHeader* initial_block = start as BlockHeader*;
+    initial_block->size = size - BLOCK_HEADER_SIZE;
+    initial_block->is_free = true;
+    initial_block->magic = BLOCK_MAGIC;
+    initial_block->prev = null;
+    initial_block->next = null;
+
+    heap->free_list = initial_block;
+    return true;
+}
+
+fn uint64 heap_align_size(uint64 size) {
+    if (size < MIN_ALLOC_SIZE) {
+        size = MIN_ALLOC_SIZE;
+    }
+    // 16-byte alignment
+    return (size + 15 as uint64) & (~15 as uint64);
+}
+
+fn uint8* heap_alloc(Heap* heap, uint64 size) {
+    if (size == 0 as uint64) {
+        return null;
+    }
+
+    uint64 aligned_size = heap_align_size(size);
+
+    // First-fit search across contiguous block chain
+    BlockHeader* block = heap->free_list;
+    while (block != null) {
+        if (block->magic != BLOCK_MAGIC) {
+            // Memory corruption detected in chain
+            return null;
+        }
+        if (block->is_free && block->size >= aligned_size) {
+            break;
+        }
+        block = block->next;
+    }
+
+    if (block == null) {
+        // Out of memory: no suitable free block found
+        return null;
+    }
+
+    // Check if block should be split
+    uint64 remaining_size = block->size - aligned_size;
+    if (remaining_size >= BLOCK_HEADER_SIZE + MIN_ALLOC_SIZE) {
+        // Split block: create a new free block for the remaining space
+        uint64 new_block_addr = (block as uint64) + BLOCK_HEADER_SIZE + aligned_size;
+        BlockHeader* new_block = new_block_addr as BlockHeader*;
+        new_block->size = remaining_size - BLOCK_HEADER_SIZE;
+        new_block->is_free = true;
+        new_block->magic = BLOCK_MAGIC;
+        new_block->prev = block;
+        new_block->next = block->next;
+
+        if (block->next != null) {
+            block->next->prev = new_block;
+        }
+
+        block->next = new_block;
+        block->size = aligned_size;
+    }
+
+    // Mark block as allocated
+    block->is_free = false;
+
+    // Update heap usage and allocation statistics
+    heap->used = heap->used + block->size + BLOCK_HEADER_SIZE;
+    heap->stats.total_allocations = heap->stats.total_allocations + 1 as uint64;
+    heap->stats.current_allocations = heap->stats.current_allocations + 1 as uint64;
+    heap->stats.total_allocated = heap->stats.total_allocated + block->size;
+    if (heap->used > heap->stats.peak_usage) {
+        heap->stats.peak_usage = heap->used;
+    }
+
+    // Return pointer to usable payload immediately following block header
+    return ((block as uint64) + BLOCK_HEADER_SIZE) as uint8*;
+}
+
+fn bool heap_free(Heap* heap, uint8* ptr) {
+    if (ptr == null) {
+        return false;
+    }
+
+    // Recover block header
+    uint64 block_addr = (ptr as uint64) - BLOCK_HEADER_SIZE;
+    if (block_addr < heap->start || block_addr >= heap->end) {
+        // Pointer outside heap bounds
+        return false;
+    }
+
+    BlockHeader* block = block_addr as BlockHeader*;
+    if (block->magic != BLOCK_MAGIC) {
+        // Invalid or corrupted block header
+        return false;
+    }
+
+    if (block->is_free) {
+        // Double-free detected
+        return false;
+    }
+
+    // Mark block as free
+    block->is_free = true;
+
+    // Update heap metrics
+    heap->used = heap->used - (block->size + BLOCK_HEADER_SIZE);
+    heap->stats.total_frees = heap->stats.total_frees + 1 as uint64;
+    if (heap->stats.current_allocations > 0 as uint64) {
+        heap->stats.current_allocations = heap->stats.current_allocations - 1 as uint64;
+    }
+    heap->stats.total_freed = heap->stats.total_freed + block->size;
+
+    // 1. Immediate coalescing with right neighbor (next block)
+    if (block->next != null && block->next->is_free && block->next->magic == BLOCK_MAGIC) {
+        BlockHeader* next_block = block->next;
+        // Verify adjacency
+        if ((block as uint64) + BLOCK_HEADER_SIZE + block->size == (next_block as uint64)) {
+            block->size = block->size + BLOCK_HEADER_SIZE + next_block->size;
+            block->next = next_block->next;
+            if (next_block->next != null) {
+                next_block->next->prev = block;
+            }
+            next_block->magic = 0 as uint32; // Invalidate merged header
+        }
+    }
+
+    // 2. Immediate coalescing with left neighbor (prev block)
+    if (block->prev != null && block->prev->is_free && block->prev->magic == BLOCK_MAGIC) {
+        BlockHeader* prev_block = block->prev;
+        // Verify adjacency
+        if ((prev_block as uint64) + BLOCK_HEADER_SIZE + prev_block->size == (block as uint64)) {
+            prev_block->size = prev_block->size + BLOCK_HEADER_SIZE + block->size;
+            prev_block->next = block->next;
+            if (block->next != null) {
+                block->next->prev = prev_block;
+            }
+            block->magic = 0 as uint32; // Invalidate merged header
+            block = prev_block;
+        }
+    }
+
+    return true;
+}
+
+fn uint8* heap_realloc(Heap* heap, uint8* ptr, uint64 new_size) {
+    if (ptr == null) {
+        return heap_alloc(heap, new_size);
+    }
+    if (new_size == 0 as uint64) {
+        heap_free(heap, ptr);
+        return null;
+    }
+
+    uint64 block_addr = (ptr as uint64) - BLOCK_HEADER_SIZE;
+    if (block_addr < heap->start || block_addr >= heap->end) {
+        return null;
+    }
+
+    BlockHeader* block = block_addr as BlockHeader*;
+    if (block->magic != BLOCK_MAGIC || block->is_free) {
+        return null;
+    }
+
+    uint64 aligned_size = heap_align_size(new_size);
+
+    // Case 1: Shrinking or identical size
+    if (aligned_size <= block->size) {
+        uint64 excess = block->size - aligned_size;
+        if (excess >= BLOCK_HEADER_SIZE + MIN_ALLOC_SIZE) {
+            // Split off excess
+            uint64 new_block_addr = (block as uint64) + BLOCK_HEADER_SIZE + aligned_size;
+            BlockHeader* new_block = new_block_addr as BlockHeader*;
+            new_block->size = excess - BLOCK_HEADER_SIZE;
+            new_block->is_free = true;
+            new_block->magic = BLOCK_MAGIC;
+            new_block->prev = block;
+            new_block->next = block->next;
+
+            if (block->next != null) {
+                block->next->prev = new_block;
+            }
+            block->next = new_block;
+            block->size = aligned_size;
+
+            heap->used = heap->used - excess;
+
+            // Coalesce excess with following block if free
+            if (new_block->next != null && new_block->next->is_free && new_block->next->magic == BLOCK_MAGIC) {
+                BlockHeader* next_b = new_block->next;
+                new_block->size = new_block->size + BLOCK_HEADER_SIZE + next_b->size;
+                new_block->next = next_b->next;
+                if (next_b->next != null) {
+                    next_b->next->prev = new_block;
+                }
+                next_b->magic = 0 as uint32;
+            }
+        }
+        return ptr;
+    }
+
+    // Case 2: In-place growth into right neighbor
+    if (block->next != null && block->next->is_free && block->next->magic == BLOCK_MAGIC) {
+        BlockHeader* next_b = block->next;
+        uint64 combined = block->size + BLOCK_HEADER_SIZE + next_b->size;
+        if (combined >= aligned_size) {
+            uint64 remainder = combined - aligned_size;
+            if (remainder >= BLOCK_HEADER_SIZE + MIN_ALLOC_SIZE) {
+                uint64 rem_addr = (block as uint64) + BLOCK_HEADER_SIZE + aligned_size;
+                BlockHeader* rem_b = rem_addr as BlockHeader*;
+                rem_b->size = remainder - BLOCK_HEADER_SIZE;
+                rem_b->is_free = true;
+                rem_b->magic = BLOCK_MAGIC;
+                rem_b->prev = block;
+                rem_b->next = next_b->next;
+                if (next_b->next != null) {
+                    next_b->next->prev = rem_b;
+                }
+                block->next = rem_b;
+                block->size = aligned_size;
+            } else {
+                block->next = next_b->next;
+                if (next_b->next != null) {
+                    next_b->next->prev = block;
+                }
+                block->size = combined;
+            }
+            next_b->magic = 0 as uint32;
+            heap->used = heap->used + (block->size - aligned_size);
+            return ptr;
+        }
+    }
+
+    // Case 3: Out-of-place reallocation
+    uint8* new_ptr = heap_alloc(heap, new_size);
+    if (new_ptr == null) {
+        return null;
+    }
+
+    // Copy contents from old block
+    uint64 copy_len = block->size;
+    if (new_size < copy_len) {
+        copy_len = new_size;
+    }
+    uint64 i = 0 as uint64;
+    while (i < copy_len) {
+        new_ptr[i] = ptr[i];
+        i = i + 1 as uint64;
+    }
+
+    heap_free(heap, ptr);
+    return new_ptr;
+}
+
+fn uint8* heap_calloc(Heap* heap, uint64 num, uint64 size) {
+    uint64 total_size = num * size;
+    uint8* ptr = heap_alloc(heap, total_size);
+    if (ptr == null) {
+        return null;
+    }
+
+    uint64 i = 0 as uint64;
+    while (i < total_size) {
+        ptr[i] = 0 as uint8;
+        i = i + 1 as uint64;
+    }
+    return ptr;
+}
+
+// ==============================================================================
+// Phase 2: Advanced Allocator Features (Segregated Size Classes)
+// ==============================================================================
+
+fn bool advanced_heap_init(AdvancedHeap* aheap, uint64 start, uint64 size) {
+    if (!heap_init(&aheap->base, start, size)) {
+        return false;
+    }
+
+    // Initialize 8 power-of-two size classes: 16, 32, 64, 128, 256, 512, 1024, 2048
+    aheap->size_classes[0].size = 16 as uint64;
+    aheap->size_classes[0].free_list = null;
+
+    aheap->size_classes[1].size = 32 as uint64;
+    aheap->size_classes[1].free_list = null;
+
+    aheap->size_classes[2].size = 64 as uint64;
+    aheap->size_classes[2].free_list = null;
+
+    aheap->size_classes[3].size = 128 as uint64;
+    aheap->size_classes[3].free_list = null;
+
+    aheap->size_classes[4].size = 256 as uint64;
+    aheap->size_classes[4].free_list = null;
+
+    aheap->size_classes[5].size = 512 as uint64;
+    aheap->size_classes[5].free_list = null;
+
+    aheap->size_classes[6].size = 1024 as uint64;
+    aheap->size_classes[6].free_list = null;
+
+    aheap->size_classes[7].size = 2048 as uint64;
+    aheap->size_classes[7].free_list = null;
+
+    aheap->large_free_list = aheap->base.free_list;
+    return true;
+}
+
+fn int32 advanced_heap_find_class(uint64 size) {
+    if (size <= 16 as uint64) { return 0; }
+    if (size <= 32 as uint64) { return 1; }
+    if (size <= 64 as uint64) { return 2; }
+    if (size <= 128 as uint64) { return 3; }
+    if (size <= 256 as uint64) { return 4; }
+    if (size <= 512 as uint64) { return 5; }
+    if (size <= 1024 as uint64) { return 6; }
+    if (size <= 2048 as uint64) { return 7; }
+    return -1;
+}
+
+fn uint8* advanced_heap_alloc(AdvancedHeap* aheap, uint64 size) {
+    uint64 aligned_size = heap_align_size(size);
+    int32 class_idx = advanced_heap_find_class(aligned_size);
+
+    // Fast-path: Check segregated size class
+    if (class_idx >= 0 && class_idx < 8) {
+        BlockHeader* block = aheap->size_classes[class_idx].free_list;
+        if (block != null) {
+            // Pop from segregated bucket
+            aheap->size_classes[class_idx].free_list = block->next;
+            block->is_free = false;
+            block->magic = BLOCK_MAGIC;
+            aheap->base.used = aheap->base.used + block->size + BLOCK_HEADER_SIZE;
+            aheap->base.stats.total_allocations = aheap->base.stats.total_allocations + 1 as uint64;
+            aheap->base.stats.current_allocations = aheap->base.stats.current_allocations + 1 as uint64;
+            aheap->base.stats.total_allocated = aheap->base.stats.total_allocated + block->size;
+            if (aheap->base.used > aheap->base.stats.peak_usage) {
+                aheap->base.stats.peak_usage = aheap->base.used;
+            }
+            return ((block as uint64) + BLOCK_HEADER_SIZE) as uint8*;
+        }
+        // If class bucket empty, allocate from base heap with the class bucket size
+        return heap_alloc(&aheap->base, aheap->size_classes[class_idx].size);
+    }
+
+    // Fallback: large allocator from base heap
+    return heap_alloc(&aheap->base, size);
+}
+
+fn bool advanced_heap_free(AdvancedHeap* aheap, uint8* ptr) {
+    if (ptr == null) {
+        return false;
+    }
+
+    uint64 block_addr = (ptr as uint64) - BLOCK_HEADER_SIZE;
+    if (block_addr < aheap->base.start || block_addr >= aheap->base.end) {
+        return false;
+    }
+
+    BlockHeader* block = block_addr as BlockHeader*;
+    if (block->magic != BLOCK_MAGIC || block->is_free) {
+        return false;
+    }
+
+    int32 class_idx = advanced_heap_find_class(block->size);
+    if (class_idx >= 0 && class_idx < 8 && block->size == aheap->size_classes[class_idx].size) {
+        // Fast-path: push to segregated bucket
+        block->is_free = true;
+        block->next = aheap->size_classes[class_idx].free_list;
+        aheap->size_classes[class_idx].free_list = block;
+
+        aheap->base.used = aheap->base.used - (block->size + BLOCK_HEADER_SIZE);
+        aheap->base.stats.total_frees = aheap->base.stats.total_frees + 1 as uint64;
+        if (aheap->base.stats.current_allocations > 0 as uint64) {
+            aheap->base.stats.current_allocations = aheap->base.stats.current_allocations - 1 as uint64;
+        }
+        aheap->base.stats.total_freed = aheap->base.stats.total_freed + block->size;
+        return true;
+    }
+
+    // Regular coalescing free on base heap
+    return heap_free(&aheap->base, ptr);
+}
+
+// ==============================================================================
+// Phase 4: Memory Debugging & Corruption Detection
+// ==============================================================================
+
+fn bool heap_detect_corruption(Heap* heap) {
+    BlockHeader* block = heap->free_list;
+
+    while (block != null) {
+        uint64 b_addr = block as uint64;
+        // Verify block address is within heap range
+        if (b_addr < heap->start || b_addr >= heap->end) {
+            return true; // Corrupted pointer
+        }
+
+        // Verify magic number
+        if (block->magic != BLOCK_MAGIC) {
+            return true; // Header corrupted
+        }
+
+        // Verify previous pointer linkage
+        if (block->prev != null) {
+            uint64 prev_addr = block->prev as uint64;
+            if (prev_addr < heap->start || prev_addr >= heap->end || block->prev->next != block) {
+                return true; // Broken double-linked list
+            }
+        }
+
+        // Verify next pointer linkage
+        if (block->next != null) {
+            uint64 next_addr = block->next as uint64;
+            if (next_addr < heap->start || next_addr >= heap->end || block->next->prev != block) {
+                return true; // Broken double-linked list
+            }
+
+            // Verify that adjacent free blocks were coalesced (never two consecutive free blocks)
+            if (block->is_free && block->next->is_free) {
+                return true; // Coalescing failure: adjacent free blocks
+            }
+        }
+
+        block = block->next;
+    }
+
+    return false; // No corruption detected
+}
+
+fn uint64 heap_check_leaks(Heap* heap) {
+    uint64 leak_count = 0 as uint64;
+    BlockHeader* block = heap->free_list;
+
+    while (block != null) {
+        if (block->magic == BLOCK_MAGIC && !block->is_free) {
+            leak_count = leak_count + 1 as uint64;
+        }
+        block = block->next;
+    }
+
+    return leak_count;
+}
+
+// ==============================================================================
+// Phase 5: Heap Statistics & Fragmentation Ratio
+// ==============================================================================
+
+fn HeapStats heap_get_stats(Heap* heap) {
+    HeapStats s = heap->stats;
+
+    // Calculate fragmentation ratio: (free_blocks * 100) / max(1, total_free_blocks + 1)
+    uint64 free_blocks = 0 as uint64;
+    uint64 free_space = 0 as uint64;
+    BlockHeader* block = heap->free_list;
+
+    while (block != null) {
+        if (block->is_free) {
+            free_blocks = free_blocks + 1 as uint64;
+            free_space = free_space + block->size;
+        }
+        block = block->next;
+    }
+
+    if (free_blocks > 1 as uint64 && free_space > 0 as uint64) {
+        s.fragmentation_ratio = (free_blocks * 100 as uint64) / (free_space / 64 as uint64 + 1 as uint64);
+    } else {
+        s.fragmentation_ratio = 0 as uint64;
+    }
+
+    return s;
+}
+
+// ==============================================================================
+// Phase 6: VMM Integration (Large Allocations)
+// ==============================================================================
+
+struct PageMapper {
+    uint64[512] page_directory;
+    uint64 next_free_frame;
+    uint64 mapped_count;
+}
+
+fn void page_mapper_init(PageMapper* mapper, uint64 start_frame) {
+    mapper->next_free_frame = start_frame;
+    mapper->mapped_count = 0 as uint64;
+    int i = 0;
+    while (i < 512) {
+        mapper->page_directory[i] = 0 as uint64;
+        i = i + 1;
+    }
+}
+
+fn uint64 page_mapper_map_page(PageMapper* mapper, uint64 virt_addr, uint64 flags) {
+    uint64 pte_idx = (virt_addr / 4096 as uint64) & (511 as uint64);
+    uint64 phys_frame = mapper->next_free_frame;
+    mapper->next_free_frame = mapper->next_free_frame + (4096 as uint64);
+    mapper->page_directory[pte_idx as int] = phys_frame | flags;
+    mapper->mapped_count = mapper->mapped_count + (1 as uint64);
+    return phys_frame;
+}
+
+fn void page_mapper_unmap_page(PageMapper* mapper, uint64 virt_addr) {
+    uint64 pte_idx = (virt_addr / 4096 as uint64) & (511 as uint64);
+    if (mapper->page_directory[pte_idx as int] != (0 as uint64)) {
+        mapper->page_directory[pte_idx as int] = 0 as uint64;
+        if (mapper->mapped_count > (0 as uint64)) {
+            mapper->mapped_count = mapper->mapped_count - (1 as uint64);
+        }
+    }
+}
+
+fn uint8* heap_alloc_large(Heap* heap, PageMapper* mapper, uint64 size, uint64 virt_base) {
+    // For large allocations (> 64KB), map direct physical frames via PageMapper
+    if (size >= VMM_ALLOC_THRESHOLD) {
+        uint64 pages = (size + (4095 as uint64)) / (4096 as uint64);
+        uint64 p = 0 as uint64;
+        while (p < pages) {
+            uint64 vaddr = virt_base + (p * (4096 as uint64));
+            page_mapper_map_page(mapper, vaddr, 3 as uint64); // Present | Writable (0x3)
+            p = p + (1 as uint64);
+        }
+        return virt_base as uint8*;
+    }
+
+    // Fall back to standard heap allocator
+    return heap_alloc(heap, size);
+}
+
+fn bool heap_free_large(Heap* heap, PageMapper* mapper, uint8* ptr, uint64 size) {
+    if (ptr == null) {
+        return false;
+    }
+
+    if (size >= VMM_ALLOC_THRESHOLD) {
+        uint64 pages = (size + (4095 as uint64)) / (4096 as uint64);
+        uint64 virt_base = ptr as uint64;
+        uint64 p = 0 as uint64;
+        while (p < pages) {
+            uint64 vaddr = virt_base + (p * (4096 as uint64));
+            page_mapper_unmap_page(mapper, vaddr);
+            p = p + (1 as uint64);
+        }
+        return true;
+    }
+
+    return heap_free(heap, ptr);
+}

@@ -192,6 +192,13 @@ fn bool elf_validate_header(ElfHeader* header) {
     if (header->phnum > 0 as uint16 && header->phentsize < 56 as uint16) {
         return false;
     }
+    // 8. Validate Program Header Table Offset & Canonical Virtual Entry Point
+    if (header->phnum > 0 as uint16 && header->phoff < 64 as uint64) {
+        return false;
+    }
+    if (header->entry >= 0x0000800000000000 as uint64) {
+        return false;
+    }
     return true;
 }
 
@@ -315,11 +322,19 @@ fn bool elf_calculate_memory_bounds(uint8* elf_base, ElfHeader* header, uint64* 
     while (i < header->phnum) {
         ElfProgramHeader* ph = elf_get_program_header(elf_base, header, i);
         if (ph != null && ph->type == PT_LOAD) {
+            // Validate segment consistency: memsz cannot be smaller than filesz
+            if (ph->memsz < ph->filesz) {
+                return false;
+            }
+            uint64 segment_end = ph->vaddr + ph->memsz;
+            // Check for 64-bit integer overflow or non-canonical/kernel addresses
+            if (segment_end < ph->vaddr || segment_end >= 0x0000800000000000 as uint64) {
+                return false;
+            }
             found_loadable = true;
             if (ph->vaddr < min_v) {
                 min_v = ph->vaddr;
             }
-            uint64 segment_end = ph->vaddr + ph->memsz;
             if (segment_end > max_v) {
                 max_v = segment_end;
             }
@@ -351,6 +366,12 @@ fn bool elf_load_segment(uint8* elf_base, ElfProgramHeader* ph, uint8* dest_mem,
     if (ph->vaddr < base_vaddr) {
         return false;
     }
+    if (ph->memsz < ph->filesz) {
+        return false;
+    }
+    if (ph->vaddr + ph->memsz < ph->vaddr) {
+        return false;
+    }
 
     uint64 dest_offset = ph->vaddr - base_vaddr;
     uint8* src = elf_base + ph->offset;
@@ -377,10 +398,12 @@ fn bool elf_load_all_segments(uint8* elf_base, ElfHeader* header, uint8* dest_me
         return false;
     }
 
+    bool found_loadable = false;
     uint16 i = 0 as uint16;
     while (i < header->phnum) {
         ElfProgramHeader* ph = elf_get_program_header(elf_base, header, i);
         if (ph != null && ph->type == PT_LOAD) {
+            found_loadable = true;
             bool ok = elf_load_segment(elf_base, ph, dest_mem, base_vaddr);
             if (!ok) {
                 return false;
@@ -388,7 +411,7 @@ fn bool elf_load_all_segments(uint8* elf_base, ElfHeader* header, uint8* dest_me
         }
         i = i + 1 as uint16;
     }
-    return true;
+    return found_loadable;
 }
 
 // -----------------------------------------------------------------------------

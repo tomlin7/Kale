@@ -91,6 +91,10 @@ fn bool create_user_address_space(uint64* user_pml4_entries, uint64* kernel_pml4
 // [...]: NULL (uint64)
 // [...]: auxv entries (AT_ENTRY, AT_PHDR, AT_PHENT, AT_PHNUM, AT_PAGESZ, AT_NULL)
 fn uint64 setup_user_stack(uint64* stack_buffer, uint64 buffer_capacity_words, uint64 stack_top_vaddr, int32 argc, uint64* argv_ptrs, int32 envc, uint64* envp_ptrs, uint64 entry_point, uint64 phdr_addr, uint16 phnum, uint16 phentsize, UserStackInfo* out_info) {
+    if (stack_buffer == null || stack_top_vaddr == 0 as uint64 || argc < 0 || envc < 0) {
+        return 0 as uint64;
+    }
+
     // Total words required:
     // argc (1) + argv (argc + 1) + envp (envc + 1) + auxv (6 * 2) = 1 + argc + 1 + envc + 1 + 12 = argc + envc + 15 words
     uint64 total_words = (argc as uint64) + (envc as uint64) + 15 as uint64;
@@ -195,6 +199,9 @@ fn bool create_user_process(sched.Scheduler* scheduler, UserProcess* proc, uint8
     if (scheduler == null || proc == null || elf_data == null || elf_size < 64 as uint64) {
         return false;
     }
+    if (argc < 0 || envc < 0) {
+        return false;
+    }
 
     elf.ElfHeader* header = elf_data as elf.ElfHeader*;
     if (!elf.elf_validate_header(header)) {
@@ -206,6 +213,15 @@ fn bool create_user_process(sched.Scheduler* scheduler, UserProcess* proc, uint8
     uint64 total_size = 0 as uint64;
     bool bounds_ok = elf.elf_calculate_memory_bounds(elf_data, header, &min_vaddr, &max_vaddr, &total_size);
     if (!bounds_ok) {
+        return false;
+    }
+
+    // Verify memory bounds stay inside user space and do not collide with user stack
+    if (min_vaddr < USER_SPACE_MIN || max_vaddr >= USER_STACK_BASE) {
+        return false;
+    }
+    // Verify entry point is within loaded image bounds
+    if (header->entry < min_vaddr || header->entry > max_vaddr) {
         return false;
     }
 
@@ -240,6 +256,9 @@ fn bool create_user_process(sched.Scheduler* scheduler, UserProcess* proc, uint8
     // Initialize user process heap right above the loaded binary image
     uint64 heap_start = (max_vaddr + 4095 as uint64) & (~4095 as uint64);
     uint64 heap_max = heap_start + 268435456 as uint64; // 256 MB user heap limit
+    if (heap_max > USER_STACK_BASE) {
+        heap_max = USER_STACK_BASE;
+    }
     sys.process_heap_init(&proc->heap, heap_start, heap_max);
 
     // Initialize CPU context for Ring 3 user mode execution:
@@ -270,4 +289,22 @@ fn void terminate_user_process(sched.Scheduler* scheduler, UserProcess* proc, in
     }
     sched.sched_terminate_process(scheduler, &proc->pcb, exit_code);
     proc->is_alive = false;
+}
+
+// Phase 8: User Space Initialization - Creates PID 1 init process
+fn bool init_userspace(sched.Scheduler* scheduler, UserProcess* proc, uint8* elf_data, uint64 elf_size, uint64 kernel_stack, uint64 page_table_phys, uint64* stack_scratch_buf, uint64 stack_scratch_words) {
+    return create_user_process(
+        scheduler,
+        proc,
+        elf_data,
+        elf_size,
+        kernel_stack,
+        page_table_phys,
+        0,
+        null,
+        0,
+        null,
+        stack_scratch_buf,
+        stack_scratch_words
+    );
 }

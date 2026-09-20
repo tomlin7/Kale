@@ -65,6 +65,24 @@ fn GDTEntry gdt_create_entry(int base, int limit, int access, int gran) {
     return entry;
 }
 
+// Encodes a GDTEntry into standard 8-byte x86 descriptor format:
+// Bits 0..15: Limit 15:0
+// Bits 16..31: Base 15:0
+// Bits 32..39: Base 23:16
+// Bits 40..47: Access Byte
+// Bits 48..51: Limit 19:16
+// Bits 52..55: Granularity/Flags
+// Bits 56..63: Base 31:24
+fn uint64 gdt_encode_entry(GDTEntry* entry) {
+    uint64 desc = (entry->limit_low as uint64) & 65535 as uint64;
+    desc = desc | (((entry->base_low as uint64) & 65535 as uint64) << 16 as uint64);
+    desc = desc | (((entry->base_mid as uint64) & 255 as uint64) << 32 as uint64);
+    desc = desc | (((entry->access as uint64) & 255 as uint64) << 40 as uint64);
+    desc = desc | (((entry->granularity as uint64) & 255 as uint64) << 48 as uint64);
+    desc = desc | (((entry->base_high as uint64) & 255 as uint64) << 56 as uint64);
+    return desc;
+}
+
 fn void tss_init(TSS64* tss, uint64 kernel_rsp0) {
     tss->reserved0 = 0 as uint32;
     tss->rsp0 = kernel_rsp0;

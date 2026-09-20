@@ -79,3 +79,41 @@ fn uint8* malloc(uint64 size, sys.SyscallStatsTable* stats, sys.ProcessHeap* hea
 fn void mem_free(uint8* ptr) {
     // Simple bump allocator; heap reclaim deferred to munmap / brk reduction
 }
+
+fn uint8* calloc(uint64 num, uint64 size, sys.SyscallStatsTable* stats, sys.ProcessHeap* heap, uint32 pid) {
+    uint64 total = num * size;
+    uint8* ptr = malloc(total, stats, heap, pid);
+    if (ptr == null) {
+        return null;
+    }
+    uint64 i = 0 as uint64;
+    while (i < total) {
+        ptr[i] = 0 as uint8;
+        i = i + 1 as uint64;
+    }
+    return ptr;
+}
+
+fn uint8* realloc(uint8* ptr, uint64 new_size, uint64 old_size, sys.SyscallStatsTable* stats, sys.ProcessHeap* heap, uint32 pid) {
+    if (ptr == null) {
+        return malloc(new_size, stats, heap, pid);
+    }
+    if (new_size == 0 as uint64) {
+        mem_free(ptr);
+        return null;
+    }
+    if (new_size <= old_size) {
+        return ptr;
+    }
+    uint8* new_ptr = malloc(new_size, stats, heap, pid);
+    if (new_ptr == null) {
+        return null;
+    }
+    uint64 i = 0 as uint64;
+    while (i < old_size) {
+        new_ptr[i] = ptr[i];
+        i = i + 1 as uint64;
+    }
+    mem_free(ptr);
+    return new_ptr;
+}

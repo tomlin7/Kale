@@ -31,10 +31,10 @@ start:
     mov dl, [boot_drive]
     int 0x13
 
-    ; Read sectors 2..33 (32 sectors = 16KB) from boot disk to 0x0000:0x8000
+    ; Read sectors 2..49 (48 sectors = 24KB) from boot disk to 0x0000:0x8000
     mov di, 3                   ; Retry counter
 .disk_read_loop:
-    mov ax, 0x0220              ; AH=0x02 (read), AL=32 sectors (0x20)
+    mov ax, 0x0230              ; AH=0x02 (read), AL=48 sectors (0x30)
     mov cx, 0x0002              ; CH=0 (Cylinder 0), CL=2 (Sector 2)
     mov dh, 0                   ; Head 0
     mov dl, [boot_drive]

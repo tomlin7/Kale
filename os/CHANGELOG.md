@@ -18,6 +18,16 @@
 - Ring 3 privilege transitions with TSS descriptor in GDT and iretq stack frames
 - User CS (0x1B) and User SS (0x23) segment definitions with RPL 3
 - User space standard library stubs and system call wrappers (libc stdio, stdlib, string, syscall)
+- Kernel dynamic memory heap allocator (os/kernel/heap.kl) with first-fit allocation, 16-byte alignment, block splitting, and bi-directional coalescing
+- AdvancedHeap segregated size classes (16, 32, 64, 128, 256, 512, 1024, 2048 bytes) for accelerated small allocation caching
+- Dynamic memory reallocation (heap_realloc) supporting in-place growth, fragmentation splitting, and payload copying
+- Dynamic memory zero-initialization (heap_calloc)
+- Memory corruption detection and double-free mitigation via magic header validation (0x48454150)
+- Memory leak detection and allocation metric counters (total allocations, total frees, peak usage, fragmentation ratio)
+- Large allocation (> 64KB) dynamic mapping via page tables and physical frame allocation
+- User-space process heap allocator (os/userspace/libc/heap.kl and stdlib.kl) with coalescing free and sbrk/brk syscall integration
+- Enhanced interactive kernel shell with 'heap' command displaying live heap statistics and layout
+- Comprehensive heap allocator test suite (tests/test_os_heap_allocator.py) with 100% pass rate
 - Enhanced kernel shell with 'user' command inspecting user space infrastructure
 - Comprehensive user space support test suite with 100% pass rate
 

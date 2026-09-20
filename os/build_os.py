@@ -48,6 +48,13 @@ def build_image():
     kernel_size = os.path.getsize(KERNEL_BIN)
     print(f"[+] 64-bit Kernel: {kernel_size} bytes")
 
+    # 3. Assemble user space init program
+    init_src = os.path.join(OS_DIR, "kernel", "init_program.asm")
+    init_bin = os.path.join(BIN_DIR, "init.elf")
+    assemble(init_src, init_bin)
+    init_size = os.path.getsize(init_bin)
+    print(f"[+] User-space init ELF: {init_size} bytes (OK)")
+
     # 3. Read both parts
     with open(BOOT_BIN, "rb") as f:
         boot_bytes = f.read()
@@ -55,8 +62,8 @@ def build_image():
     with open(KERNEL_BIN, "rb") as f:
         kernel_bytes = f.read()
 
-    # 4. Pad kernel to 32 sectors (16,384 bytes)
-    target_sectors = 32
+    # 4. Pad kernel to 48 sectors (24,576 bytes)
+    target_sectors = 48
     target_kernel_size = target_sectors * 512
     if len(kernel_bytes) > target_kernel_size:
         print(f"[!] Error: Kernel size {len(kernel_bytes)} exceeds {target_kernel_size} bytes")
@@ -91,9 +98,11 @@ def run_qemu(headless=False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Kale OS Build and Run tool")
     parser.add_argument("--run", action="store_true", help="Launch QEMU after build")
+    parser.add_argument("--run_only", action="store_true", help="Skip rebuild and run only")
     parser.add_argument("--headless", action="store_true", help="Run QEMU headlessly with serial stdio")
     args = parser.parse_args()
 
-    build_image()
+    if not args.run_only:
+        build_image()
     if args.run:
         run_qemu(headless=args.headless)

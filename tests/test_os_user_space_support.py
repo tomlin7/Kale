@@ -529,5 +529,278 @@ class TestOSUserSpaceSupport(unittest.TestCase):
         res = self.run_kale_jit(code)
         self.assertEqual(res, 42)
 
+    def test_elf_edge_cases_and_malformed_segment_rejection(self):
+        code = """
+        import "os/kernel/elf.kl" as elf;
+
+        uint8[256] elf_buf;
+        int k = 0;
+        while (k < 256) {
+            elf_buf[k] = 0 as uint8;
+            k = k + 1;
+        }
+
+        elf.ElfHeader* hdr = (&elf_buf[0]) as elf.ElfHeader*;
+        elf.elf_header_init(hdr, 0x00401000 as uint64, 1 as uint16);
+
+        // 1. Malformed segment: memsz (100) < filesz (200) -> MUST FAIL
+        elf.ElfProgramHeader* ph = elf.elf_get_program_header(&elf_buf[0], hdr, 0 as uint16);
+        elf.elf_program_header_init(ph, elf.PT_LOAD, elf.PF_R | elf.PF_W, 128 as uint64, 0x00400000 as uint64, 200 as uint64, 100 as uint64, 4096 as uint64);
+
+        uint64 min_v = 0 as uint64;
+        uint64 max_v = 0 as uint64;
+        uint64 total_sz = 0 as uint64;
+        bool bounds_ok = elf.elf_calculate_memory_bounds(&elf_buf[0], hdr, &min_v, &max_v, &total_sz);
+        if (bounds_ok) {
+            return 1; // Expected failure on memsz < filesz
+        }
+
+        uint8[256] dest_mem;
+        bool load_ok = elf.elf_load_segment(&elf_buf[0], ph, &dest_mem[0], 0x00400000 as uint64);
+        if (load_ok) {
+            return 2; // Expected failure on load
+        }
+
+        // 2. Wrap-around overflow: vaddr + memsz wraps past 2^64-1 -> MUST FAIL
+        elf.elf_program_header_init(ph, elf.PT_LOAD, elf.PF_R, 128 as uint64, 18446744073709547520 as uint64, 4096 as uint64, 8192 as uint64, 4096 as uint64);
+        bounds_ok = elf.elf_calculate_memory_bounds(&elf_buf[0], hdr, &min_v, &max_v, &total_sz);
+        if (bounds_ok) {
+            return 3; // Expected failure on overflow
+        }
+
+        // 3. Segment in kernel virtual space (>= 0x0000800000000000) -> MUST FAIL
+        elf.elf_program_header_init(ph, elf.PT_LOAD, elf.PF_R, 128 as uint64, 0xFFFF800000000000 as uint64, 4096 as uint64, 4096 as uint64, 4096 as uint64);
+        bounds_ok = elf.elf_calculate_memory_bounds(&elf_buf[0], hdr, &min_v, &max_v, &total_sz);
+        if (bounds_ok) {
+            return 4; // Expected failure on kernel address
+        }
+
+        // 4. Binary with 0 loadable segments -> elf_load_all_segments MUST FAIL
+        elf.elf_program_header_init(ph, elf.PT_NOTE, 0 as uint32, 128 as uint64, 0x00400000 as uint64, 16 as uint64, 16 as uint64, 8 as uint64);
+        bool load_all = elf.elf_load_all_segments(&elf_buf[0], hdr, &dest_mem[0], 0x00400000 as uint64);
+        if (load_all) {
+            return 5; // Expected failure when no PT_LOAD segments exist
+        }
+
+        // 5. Test Dynamic Table Parsing (elf_parse_dynamic)
+        uint8[256] dyn_buf;
+        int d = 0;
+        while (d < 256) {
+            dyn_buf[d] = 0 as uint8;
+            d = d + 1;
+        }
+        elf.ElfDynamicEntry* dyn_entries = (&dyn_buf[64]) as elf.ElfDynamicEntry*;
+        dyn_entries[0].tag = elf.DT_STRTAB;
+        dyn_entries[0].val = 0x00402000 as uint64;
+        dyn_entries[1].tag = elf.DT_SYMTAB;
+        dyn_entries[1].val = 0x00403000 as uint64;
+        dyn_entries[2].tag = elf.DT_STRSZ;
+        dyn_entries[2].val = 512 as uint64;
+        dyn_entries[3].tag = elf.DT_NULL;
+        dyn_entries[3].val = 0 as uint64;
+
+        elf.ElfProgramHeader dyn_ph;
+        elf.elf_program_header_init(&dyn_ph, elf.PT_DYNAMIC, elf.PF_R, 64 as uint64, 0x00401000 as uint64, 64 as uint64, 64 as uint64, 8 as uint64);
+
+        uint64 strtab = 0 as uint64;
+        uint64 symtab = 0 as uint64;
+        uint64 strsz = 0 as uint64;
+        bool dyn_ok = elf.elf_parse_dynamic(&dyn_buf[0], &dyn_ph, &strtab, &symtab, &strsz);
+        if (!dyn_ok || strtab != 0x00402000 as uint64 || symtab != 0x00403000 as uint64 || strsz != 512 as uint64) {
+            return 6;
+        }
+
+        return 42;
+        """
+        res = self.run_kale_jit(code)
+        self.assertEqual(res, 42)
+
+    def test_user_process_security_and_boundary_enforcement(self):
+        code = """
+        import "os/kernel/sched.kl" as sched;
+        import "os/kernel/elf.kl" as elf;
+        import "os/kernel/process.kl" as proc;
+
+        sched.Scheduler scheduler;
+        sched.scheduler_init(&scheduler, 10 as uint32);
+
+        uint8[256] elf_buf;
+        int i = 0;
+        while (i < 256) {
+            elf_buf[i] = 0 as uint8;
+            i = i + 1;
+        }
+
+        elf.ElfHeader* hdr = (&elf_buf[0]) as elf.ElfHeader*;
+        elf.elf_header_init(hdr, 0x00401000 as uint64, 1 as uint16);
+        elf.ElfProgramHeader* ph = elf.elf_get_program_header(&elf_buf[0], hdr, 0 as uint16);
+
+        uint64[64] stack_buf;
+        proc.UserProcess user_proc;
+
+        // 1. Reject low virtual address (< USER_SPACE_MIN = 4MB) to protect null page
+        elf.elf_program_header_init(ph, elf.PT_LOAD, elf.PF_R | elf.PF_X, 128 as uint64, 0x00010000 as uint64, 4096 as uint64, 4096 as uint64, 4096 as uint64);
+        hdr->entry = 0x00010000 as uint64;
+        bool ok = proc.create_user_process(&scheduler, &user_proc, &elf_buf[0], 256 as uint64, 0x00200000 as uint64, 0x1000 as uint64, 0, null, 0, null, &stack_buf[0], 64 as uint64);
+        if (ok) {
+            return 1; // Expected failure on low memory
+        }
+
+        // 2. Reject segment colliding with user stack (>= USER_STACK_BASE)
+        elf.elf_program_header_init(ph, elf.PT_LOAD, elf.PF_R | elf.PF_X, 128 as uint64, proc.USER_STACK_BASE, 4096 as uint64, 4096 as uint64, 4096 as uint64);
+        hdr->entry = proc.USER_STACK_BASE;
+        ok = proc.create_user_process(&scheduler, &user_proc, &elf_buf[0], 256 as uint64, 0x00200000 as uint64, 0x1000 as uint64, 0, null, 0, null, &stack_buf[0], 64 as uint64);
+        if (ok) {
+            return 2; // Expected failure on stack collision
+        }
+
+        // 3. Reject out-of-bounds entry point
+        elf.elf_program_header_init(ph, elf.PT_LOAD, elf.PF_R | elf.PF_X, 128 as uint64, 0x00400000 as uint64, 4096 as uint64, 4096 as uint64, 4096 as uint64);
+        hdr->entry = 0x00500000 as uint64; // Outside [0x00400000, 0x00401000]
+        ok = proc.create_user_process(&scheduler, &user_proc, &elf_buf[0], 256 as uint64, 0x00200000 as uint64, 0x1000 as uint64, 0, null, 0, null, &stack_buf[0], 64 as uint64);
+        if (ok) {
+            return 3; // Expected failure on entry outside segment
+        }
+
+        // 4. Reject negative argc or envc
+        hdr->entry = 0x00400100 as uint64;
+        ok = proc.create_user_process(&scheduler, &user_proc, &elf_buf[0], 256 as uint64, 0x00200000 as uint64, 0x1000 as uint64, -1, null, 0, null, &stack_buf[0], 64 as uint64);
+        if (ok) {
+            return 4; // Expected failure on negative argc
+        }
+
+        // 5. Test Phase 8 init_userspace helper
+        bool init_ok = proc.init_userspace(&scheduler, &user_proc, &elf_buf[0], 256 as uint64, 0x00200000 as uint64, 0x1000 as uint64, &stack_buf[0], 64 as uint64);
+        if (!init_ok || !user_proc.is_alive) {
+            return 5;
+        }
+
+        return 42;
+        """
+        res = self.run_kale_jit(code)
+        self.assertEqual(res, 42)
+
+    def test_real_assembled_init_elf_binary(self):
+        # Load the actual assembled ELF64 binary from bin/init.elf
+        init_path = os.path.join(os.path.dirname(__file__), "..", "bin", "init.elf")
+        if not os.path.exists(init_path):
+            import subprocess
+            subprocess.run(["nasm", "-f", "bin", "os/kernel/init_program.asm", "-o", "bin/init.elf"], check=True)
+
+        with open(init_path, "rb") as f:
+            elf_bytes = f.read()
+
+        assigns = "\n        ".join(f"raw_elf[{idx}] = {b} as uint8;" for idx, b in enumerate(elf_bytes))
+
+        code = f"""
+        import "os/kernel/sched.kl" as sched;
+        import "os/kernel/elf.kl" as elf;
+        import "os/kernel/process.kl" as proc;
+
+        uint8[{len(elf_bytes)}] raw_elf;
+        {assigns}
+
+        elf.ElfHeader* hdr = (&raw_elf[0]) as elf.ElfHeader*;
+        if (hdr->ident.magic[0] != 127 as uint8) return 101;
+        if (hdr->ident.magic[1] != 69 as uint8) return 102;
+        if (hdr->ident.magic[2] != 76 as uint8) return 103;
+        if (hdr->ident.magic[3] != 70 as uint8) return 104;
+        if (hdr->ident.class_type != elf.ELF_CLASS_64) return 105;
+        if (hdr->ident.endianness != elf.ELF_DATA_LITTLE) return 106;
+        if (hdr->ident.version != 1 as uint8) return 107;
+        if (hdr->version != elf.ELF_VERSION_CURRENT) return 108;
+        if (hdr->machine != elf.ELF_MACHINE_X86_64) return 109;
+        if (hdr->type != elf.ELF_TYPE_EXEC && hdr->type != elf.ELF_TYPE_DYN) return 110;
+        if (hdr->ehsize < 64 as uint16) return 111;
+        if (hdr->phnum > 0 as uint16 && hdr->phentsize < 56 as uint16) return 112;
+        if (hdr->phnum > 0 as uint16 && hdr->phoff < 64 as uint64) return 113;
+        if (hdr->entry >= 0x0000800000000000 as uint64) return 114;
+        if (!elf.elf_validate_header(hdr)) {{
+            return 1;
+        }}
+        if (hdr->ident.class_type != elf.ELF_CLASS_64 || hdr->ident.endianness != elf.ELF_DATA_LITTLE) {{
+            return 2;
+        }}
+        if (hdr->type != elf.ELF_TYPE_EXEC || hdr->machine != elf.ELF_MACHINE_X86_64) {{
+            return 3;
+        }}
+
+        uint64 min_v = 0 as uint64;
+        uint64 max_v = 0 as uint64;
+        uint64 total_sz = 0 as uint64;
+        bool bounds_ok = elf.elf_calculate_memory_bounds(&raw_elf[0], hdr, &min_v, &max_v, &total_sz);
+        if (!bounds_ok || min_v != 0x00400000 as uint64) {{
+            return 4;
+        }}
+
+        // Verify init_userspace creates process from real disk binary
+        sched.Scheduler scheduler;
+        sched.scheduler_init(&scheduler, 10 as uint32);
+
+        proc.UserProcess init_proc;
+        uint64[64] stack_buf;
+        bool created = proc.init_userspace(
+            &scheduler,
+            &init_proc,
+            &raw_elf[0],
+            {len(elf_bytes)} as uint64,
+            0x00200000 as uint64,
+            0x00001000 as uint64,
+            &stack_buf[0],
+            64 as uint64
+        );
+
+        if (!created || !init_proc.is_alive) {{
+            return 5;
+        }}
+        if (init_proc.context.cs != 27 as uint64 || init_proc.context.ss != 35 as uint64) {{
+            return 6;
+        }}
+        if (init_proc.context.rflags != 514 as uint64) {{
+            return 7;
+        }}
+
+        return 42;
+        """
+        res = self.run_kale_jit(code)
+        self.assertEqual(res, 42)
+
+    def test_gdt_raw_descriptor_encoding(self):
+        code = """
+        import "os/kernel/gdt.kl" as gdt;
+
+        gdt.GDTTable table;
+        gdt.gdt_init(&table);
+
+        // Kernel Code 64-bit descriptor:
+        // Access 0x9A = 154, Granularity 0x20 = 32, Base 0, Limit 0xFFFFF
+        uint64 kcode = gdt.gdt_encode_entry(&table.kernel_code);
+        // Expect access byte at bits 40..47 = 0x9A, flags at bits 48..55 = 0x2F
+        uint64 access = (kcode >> 40 as uint64) & 255 as uint64;
+        if (access != 154 as uint64) {
+            return 1;
+        }
+
+        // User Code 64-bit descriptor:
+        // Access 0xFA = 250 (DPL 3)
+        uint64 ucode = gdt.gdt_encode_entry(&table.user_code);
+        uint64 u_access = (ucode >> 40 as uint64) & 255 as uint64;
+        if (u_access != 250 as uint64) {
+            return 2;
+        }
+
+        // User Data 64-bit descriptor:
+        // Access 0xF2 = 242 (DPL 3)
+        uint64 udata = gdt.gdt_encode_entry(&table.user_data);
+        uint64 ud_access = (udata >> 40 as uint64) & 255 as uint64;
+        if (ud_access != 242 as uint64) {
+            return 3;
+        }
+
+        return 42;
+        """
+        res = self.run_kale_jit(code)
+        self.assertEqual(res, 42)
+
 if __name__ == "__main__":
     unittest.main()

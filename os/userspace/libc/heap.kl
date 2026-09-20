@@ -1,0 +1,290 @@
+// os/userspace/libc/heap.kl
+// User-Space Dynamic Memory Management for Kale OS (libc)
+// Implements first-fit malloc, coalescing free, realloc, and calloc backed by sys_brk.
+
+import "os/kernel/syscall.kl" as sys;
+import "os/userspace/libc/syscall.kl" as libc_sys;
+
+uint32 USER_BLOCK_MAGIC = 0x55485031 as uint32; // "UHP1"
+uint64 USER_BLOCK_HEADER_SIZE = 32 as uint64;
+uint64 USER_MIN_ALLOC_SIZE = 16 as uint64;
+
+// User Memory Block Header (32 bytes)
+struct UserBlockHeader {
+    uint64 size;            // Usable payload size in bytes
+    bool is_free;           // Allocation state
+    uint32 magic;           // Magic integrity identifier
+    UserBlockHeader* prev;  // Contiguous previous block
+    UserBlockHeader* next;  // Contiguous next block
+}
+
+// User Process Heap Descriptor
+struct UserHeap {
+    uint64 heap_start;
+    uint64 heap_end;
+    uint64 current_break;
+    uint64 max_break;
+    UserBlockHeader* free_list;
+}
+
+fn void user_heap_init(UserHeap* uheap, uint64 initial_break, uint64 max_limit) {
+    uheap->heap_start = initial_break;
+    uheap->heap_end = initial_break;
+    uheap->current_break = initial_break;
+    uheap->max_break = max_limit;
+    uheap->free_list = null;
+}
+
+fn uint64 user_sbrk(UserHeap* uheap, int64 increment, sys.SyscallStatsTable* stats, sys.ProcessHeap* pheap, uint32 pid) {
+    uint64 old_break = uheap->current_break;
+    if (increment == 0 as int64) {
+        return old_break;
+    }
+
+    uint64 new_break = old_break + (increment as uint64);
+    if (new_break > uheap->max_break || new_break < uheap->heap_start) {
+        return 0 as uint64; // Limit exceeded
+    }
+
+    sys.SyscallContext ctx;
+    libc_sys.user_syscall_context_init(&ctx, libc_sys.SYS_BRK, new_break, 0 as uint64, 0 as uint64, 0 as uint64, 0 as uint64, 0 as uint64);
+    int32 exit_code = 0;
+    bool term = false;
+    bool yielded = false;
+    int64 res = libc_sys.user_syscall(&ctx, stats, pheap, pid, 1 as uint32, 0 as uint64, 0 as uint64, 0 as uint64, &exit_code, &term, &yielded);
+    if (res < 0 as int64) {
+        return 0 as uint64;
+    }
+
+    if (ctx.return_value == new_break) {
+        uheap->current_break = new_break;
+        if (new_break > uheap->heap_end) {
+            uheap->heap_end = new_break;
+        }
+        return old_break;
+    }
+
+    return 0 as uint64;
+}
+
+fn uint64 user_align_size(uint64 size) {
+    if (size < USER_MIN_ALLOC_SIZE) {
+        size = USER_MIN_ALLOC_SIZE;
+    }
+    return (size + 15 as uint64) & (~15 as uint64);
+}
+
+fn uint8* user_malloc(UserHeap* uheap, uint64 size, sys.SyscallStatsTable* stats, sys.ProcessHeap* pheap, uint32 pid) {
+    if (size == 0 as uint64) {
+        return null;
+    }
+
+    uint64 aligned_size = user_align_size(size);
+
+    // 1. Search existing free list for first-fit block
+    UserBlockHeader* block = uheap->free_list;
+    while (block != null) {
+        if (block->magic == USER_BLOCK_MAGIC && block->is_free && block->size >= aligned_size) {
+            break;
+        }
+        block = block->next;
+    }
+
+    if (block != null) {
+        // Suitable block found in free list
+        uint64 remaining_size = block->size - aligned_size;
+        if (remaining_size >= USER_BLOCK_HEADER_SIZE + USER_MIN_ALLOC_SIZE) {
+            // Split block
+            uint64 new_block_addr = (block as uint64) + USER_BLOCK_HEADER_SIZE + aligned_size;
+            UserBlockHeader* new_block = new_block_addr as UserBlockHeader*;
+            new_block->size = remaining_size - USER_BLOCK_HEADER_SIZE;
+            new_block->is_free = true;
+            new_block->magic = USER_BLOCK_MAGIC;
+            new_block->prev = block;
+            new_block->next = block->next;
+
+            if (block->next != null) {
+                block->next->prev = new_block;
+            }
+            block->next = new_block;
+            block->size = aligned_size;
+        }
+        block->is_free = false;
+        return ((block as uint64) + USER_BLOCK_HEADER_SIZE) as uint8*;
+    }
+
+    // 2. Free list exhausted: expand process heap via sbrk
+    uint64 chunk_size = aligned_size + USER_BLOCK_HEADER_SIZE;
+    // Request at least 4KB page chunk from OS kernel
+    uint64 sbrk_increment = chunk_size;
+    if (sbrk_increment < 4096 as uint64) {
+        sbrk_increment = 4096 as uint64;
+    }
+
+    uint64 alloc_base = user_sbrk(uheap, sbrk_increment as int64, stats, pheap, pid);
+    if (alloc_base == 0 as uint64) {
+        return null; // Out of memory
+    }
+
+    UserBlockHeader* new_chunk = alloc_base as UserBlockHeader*;
+    new_chunk->size = sbrk_increment - USER_BLOCK_HEADER_SIZE;
+    new_chunk->is_free = true;
+    new_chunk->magic = USER_BLOCK_MAGIC;
+    new_chunk->prev = null;
+    new_chunk->next = null;
+
+    // Append to end of heap block chain
+    if (uheap->free_list == null) {
+        uheap->free_list = new_chunk;
+    } else {
+        UserBlockHeader* tail = uheap->free_list;
+        while (tail->next != null) {
+            tail = tail->next;
+        }
+        tail->next = new_chunk;
+        new_chunk->prev = tail;
+    }
+
+    // Now carve allocation from new_chunk
+    uint64 rem = new_chunk->size - aligned_size;
+    if (rem >= USER_BLOCK_HEADER_SIZE + USER_MIN_ALLOC_SIZE) {
+        uint64 split_addr = (new_chunk as uint64) + USER_BLOCK_HEADER_SIZE + aligned_size;
+        UserBlockHeader* split_b = split_addr as UserBlockHeader*;
+        split_b->size = rem - USER_BLOCK_HEADER_SIZE;
+        split_b->is_free = true;
+        split_b->magic = USER_BLOCK_MAGIC;
+        split_b->prev = new_chunk;
+        split_b->next = new_chunk->next;
+
+        if (new_chunk->next != null) {
+            new_chunk->next->prev = split_b;
+        }
+        new_chunk->next = split_b;
+        new_chunk->size = aligned_size;
+    }
+
+    new_chunk->is_free = false;
+    return ((new_chunk as uint64) + USER_BLOCK_HEADER_SIZE) as uint8*;
+}
+
+fn bool user_free(UserHeap* uheap, uint8* ptr) {
+    if (ptr == null) {
+        return false;
+    }
+
+    uint64 block_addr = (ptr as uint64) - USER_BLOCK_HEADER_SIZE;
+    if (block_addr < uheap->heap_start || block_addr >= uheap->current_break) {
+        return false;
+    }
+
+    UserBlockHeader* block = block_addr as UserBlockHeader*;
+    if (block->magic != USER_BLOCK_MAGIC || block->is_free) {
+        return false;
+    }
+
+    block->is_free = true;
+
+    // Coalesce right
+    if (block->next != null && block->next->is_free && block->next->magic == USER_BLOCK_MAGIC) {
+        UserBlockHeader* next_b = block->next;
+        if ((block as uint64) + USER_BLOCK_HEADER_SIZE + block->size == (next_b as uint64)) {
+            block->size = block->size + USER_BLOCK_HEADER_SIZE + next_b->size;
+            block->next = next_b->next;
+            if (next_b->next != null) {
+                next_b->next->prev = block;
+            }
+            next_b->magic = 0 as uint32;
+        }
+    }
+
+    // Coalesce left
+    if (block->prev != null && block->prev->is_free && block->prev->magic == USER_BLOCK_MAGIC) {
+        UserBlockHeader* prev_b = block->prev;
+        if ((prev_b as uint64) + USER_BLOCK_HEADER_SIZE + prev_b->size == (block as uint64)) {
+            prev_b->size = prev_b->size + USER_BLOCK_HEADER_SIZE + block->size;
+            prev_b->next = block->next;
+            if (block->next != null) {
+                block->next->prev = prev_b;
+            }
+            block->magic = 0 as uint32;
+        }
+    }
+
+    return true;
+}
+
+fn uint8* user_realloc(UserHeap* uheap, uint8* ptr, uint64 new_size, sys.SyscallStatsTable* stats, sys.ProcessHeap* pheap, uint32 pid) {
+    if (ptr == null) {
+        return user_malloc(uheap, new_size, stats, pheap, pid);
+    }
+    if (new_size == 0 as uint64) {
+        user_free(uheap, ptr);
+        return null;
+    }
+
+    uint64 block_addr = (ptr as uint64) - USER_BLOCK_HEADER_SIZE;
+    if (block_addr < uheap->heap_start || block_addr >= uheap->current_break) {
+        return null;
+    }
+
+    UserBlockHeader* block = block_addr as UserBlockHeader*;
+    if (block->magic != USER_BLOCK_MAGIC || block->is_free) {
+        return null;
+    }
+
+    uint64 aligned_size = user_align_size(new_size);
+
+    // Shrink
+    if (aligned_size <= block->size) {
+        return ptr;
+    }
+
+    // In-place growth into right neighbor
+    if (block->next != null && block->next->is_free && block->next->magic == USER_BLOCK_MAGIC) {
+        UserBlockHeader* next_b = block->next;
+        uint64 combined = block->size + USER_BLOCK_HEADER_SIZE + next_b->size;
+        if (combined >= aligned_size) {
+            block->next = next_b->next;
+            if (next_b->next != null) {
+                next_b->next->prev = block;
+            }
+            block->size = combined;
+            next_b->magic = 0 as uint32;
+            return ptr;
+        }
+    }
+
+    // Out-of-place realloc
+    uint8* new_ptr = user_malloc(uheap, new_size, stats, pheap, pid);
+    if (new_ptr == null) {
+        return null;
+    }
+
+    uint64 copy_len = block->size;
+    if (new_size < copy_len) {
+        copy_len = new_size;
+    }
+    uint64 i = 0 as uint64;
+    while (i < copy_len) {
+        new_ptr[i] = ptr[i];
+        i = i + 1 as uint64;
+    }
+
+    user_free(uheap, ptr);
+    return new_ptr;
+}
+
+fn uint8* user_calloc(UserHeap* uheap, uint64 num, uint64 size, sys.SyscallStatsTable* stats, sys.ProcessHeap* pheap, uint32 pid) {
+    uint64 total_size = num * size;
+    uint8* ptr = user_malloc(uheap, total_size, stats, pheap, pid);
+    if (ptr == null) {
+        return null;
+    }
+
+    uint64 i = 0 as uint64;
+    while (i < total_size) {
+        ptr[i] = 0 as uint8;
+        i = i + 1 as uint64;
+    }
+    return ptr;
+}
