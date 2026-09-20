@@ -1,0 +1,77 @@
+// os/kernel/pit.kl
+// Intel 8254 Programmable Interval Timer (PIT) Driver
+// Generates periodic timer interrupts for kernel preemptive multitasking
+
+uint32 PIT_BASE_FREQUENCY = 1193182 as uint32;
+uint16 PIT_CHANNEL0_DATA = 64 as uint16;  // 0x40
+uint16 PIT_COMMAND_PORT = 67 as uint16;   // 0x43
+uint8 PIT_MODE_SQUARE_WAVE = 54 as uint8; // 0x36: Channel 0, LSB/MSB, Mode 3 (square wave), 16-bit binary
+
+struct PITDriver {
+    uint32 frequency;
+    uint32 divisor;
+    uint64 ticks;
+    bool is_initialized;
+};
+
+fn PITDriver pit_init(uint32 frequency) {
+    PITDriver drv;
+    uint32 freq = frequency;
+    if (freq == 0) {
+        freq = 100 as uint32; // Default 100 Hz (10ms tick)
+    }
+    uint32 div = PIT_BASE_FREQUENCY / freq;
+    if (div == 0) {
+        div = 1 as uint32;
+    }
+    if (div > 65535) {
+        div = 65535 as uint32;
+    }
+    
+    drv.frequency = freq;
+    drv.divisor = div;
+    drv.ticks = 0 as uint64;
+    drv.is_initialized = true;
+    return drv;
+}
+
+fn void pit_set_frequency(PITDriver* pit, uint32 frequency) {
+    uint32 freq = frequency;
+    if (freq == 0) {
+        freq = 100 as uint32;
+    }
+    uint32 div = PIT_BASE_FREQUENCY / freq;
+    if (div == 0) {
+        div = 1 as uint32;
+    }
+    if (div > 65535) {
+        div = 65535 as uint32;
+    }
+    pit->frequency = freq;
+    pit->divisor = div;
+}
+
+fn uint64 pit_on_tick(PITDriver* pit) {
+    pit->ticks = pit->ticks + 1 as uint64;
+    return pit->ticks;
+}
+
+fn uint64 pit_ticks_to_ms(PITDriver* pit, uint64 ticks) {
+    if (pit->frequency == 0) {
+        return 0 as uint64;
+    }
+    return (ticks * 1000 as uint64) / (pit->frequency as uint64);
+}
+
+fn uint64 pit_ms_to_ticks(PITDriver* pit, uint64 ms) {
+    return (ms * (pit->frequency as uint64)) / 1000 as uint64;
+}
+
+fn uint64 pit_get_uptime_ms(PITDriver* pit) {
+    return pit_ticks_to_ms(pit, pit->ticks);
+}
+
+fn bool pit_is_quantum_expired(PITDriver* pit, uint64 last_tick, uint32 quantum_ms) {
+    uint64 elapsed_ms = pit_ticks_to_ms(pit, pit->ticks - last_tick);
+    return elapsed_ms >= (quantum_ms as uint64);
+}

@@ -176,3 +176,163 @@ fn void pcb_unlink(ProcessControlBlock* node) {
     node->prev = null;
     node->next = null;
 }
+
+// Round-Robin Scheduler State
+struct Scheduler {
+    ProcessControlBlock* ready_queue;
+    ProcessControlBlock* current_process;
+    ProcessControlBlock* idle_process;
+    uint32 ready_count;
+    uint32 total_processes;
+    uint32 default_time_slice;
+    bool is_active;
+}
+
+// Scheduler Lifecycle & Queue Management
+fn void scheduler_init(Scheduler* sched, uint32 default_slice) {
+    sched->ready_queue = null;
+    sched->current_process = null;
+    sched->idle_process = null;
+    sched->ready_count = 0;
+    sched->total_processes = 0;
+    sched->default_time_slice = default_slice;
+    sched->is_active = false;
+}
+
+fn void sched_add_ready(Scheduler* sched, ProcessControlBlock* pcb) {
+    pcb->state = ProcessState.PROCESS_READY;
+    pcb->next = null;
+    pcb->prev = null;
+    
+    if (sched->ready_queue == null) {
+        sched->ready_queue = pcb;
+    } else {
+        ProcessControlBlock* curr = sched->ready_queue;
+        while (curr->next != null) {
+            curr = curr->next;
+        }
+        pcb_link_after(curr, pcb);
+    }
+    sched->ready_count = sched->ready_count + 1;
+}
+
+fn void sched_remove_ready(Scheduler* sched, ProcessControlBlock* pcb) {
+    if (pcb == null || sched->ready_queue == null) {
+        return;
+    }
+    if (pcb == sched->ready_queue) {
+        sched->ready_queue = pcb->next;
+    }
+    pcb_unlink(pcb);
+    if (sched->ready_count > 0) {
+        sched->ready_count = sched->ready_count - 1;
+    }
+}
+
+fn ProcessControlBlock* sched_pick_next(Scheduler* sched) {
+    if (sched->ready_queue != null) {
+        return sched->ready_queue;
+    }
+    return sched->idle_process;
+}
+
+fn void switch_to_process(ProcessControlBlock* prev, ProcessControlBlock* next) {
+    if (prev != null && prev->state == ProcessState.PROCESS_RUNNING) {
+        prev->state = ProcessState.PROCESS_READY;
+    }
+    if (next != null) {
+        next->state = ProcessState.PROCESS_RUNNING;
+        next->time_used = 0;
+    }
+}
+
+fn ProcessControlBlock* sched_schedule(Scheduler* sched) {
+    ProcessControlBlock* current = sched->current_process;
+    
+    // If current process has exhausted its time slice or is ready to be preempted
+    if (current != null && current->state == ProcessState.PROCESS_RUNNING) {
+        if (current->time_used >= current->time_slice && sched->ready_count > 1) {
+            // Rotate ready queue: move head to tail
+            if (sched->ready_queue != null && sched->ready_queue->next != null) {
+                ProcessControlBlock* head = sched->ready_queue;
+                sched->ready_queue = head->next;
+                pcb_unlink(head);
+                
+                ProcessControlBlock* tail = sched->ready_queue;
+                while (tail->next != null) {
+                    tail = tail->next;
+                }
+                pcb_link_after(tail, head);
+            }
+        }
+    }
+
+    ProcessControlBlock* next = sched_pick_next(sched);
+    if (next != current) {
+        switch_to_process(current, next);
+        sched->current_process = next;
+    }
+    return sched->current_process;
+}
+
+fn ProcessControlBlock* sched_yield(Scheduler* sched) {
+    if (sched->current_process != null) {
+        sched->current_process->time_used = sched->current_process->time_slice;
+    }
+    return sched_schedule(sched);
+}
+
+fn bool sched_tick(Scheduler* sched, uint32 elapsed_ms) {
+    if (sched->current_process != null) {
+        bool expired = pcb_update_time_used(sched->current_process, elapsed_ms);
+        return expired;
+    }
+    return false;
+}
+
+fn ProcessControlBlock* sched_create_process(Scheduler* sched, ProcessControlBlock* pcb, CPUContext* ctx, uint64 entry_point, uint64 kernel_stack, uint64 user_stack, uint64 page_table, bool is_user, uint8 priority, uint32 time_slice) {
+    uint32 pid = sched_generate_pid();
+    uint32 slice = time_slice;
+    if (slice == 0) {
+        slice = sched->default_time_slice;
+    }
+    pcb_init(pcb, pid, priority, slice, kernel_stack, page_table);
+    pcb->user_stack = user_stack;
+    
+    uint64 sp = kernel_stack;
+    if (is_user && user_stack != 0) {
+        sp = user_stack;
+    }
+    cpu_context_init(ctx, entry_point, sp, is_user);
+    pcb->registers = ctx;
+    
+    sched_add_ready(sched, pcb);
+    sched->total_processes = sched->total_processes + 1;
+    return pcb;
+}
+
+fn ProcessControlBlock* sched_create_idle_process(Scheduler* sched, ProcessControlBlock* pcb, CPUContext* ctx, uint64 idle_entry, uint64 kernel_stack, uint64 page_table) {
+    pcb_init(pcb, 0 as uint32, 0 as uint8, 1 as uint32, kernel_stack, page_table);
+    cpu_context_init(ctx, idle_entry, kernel_stack, false);
+    pcb->registers = ctx;
+    pcb->state = ProcessState.PROCESS_READY;
+    sched->idle_process = pcb;
+    return pcb;
+}
+
+fn void sched_terminate_process(Scheduler* sched, ProcessControlBlock* pcb, int exit_code) {
+    if (pcb == null) {
+        return;
+    }
+    pcb->state = ProcessState.PROCESS_TERMINATED;
+    pcb->exit_code = exit_code;
+    sched_remove_ready(sched, pcb);
+    if (sched->total_processes > 0) {
+        sched->total_processes = sched->total_processes - 1;
+    }
+    if (pcb == sched->current_process) {
+        sched->current_process = null;
+        sched_schedule(sched);
+    }
+}
+
