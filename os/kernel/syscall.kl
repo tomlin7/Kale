@@ -1,0 +1,425 @@
+// os/kernel/syscall.kl
+// Complete 64-Bit System Call Interface & ABI
+
+enum SyscallNumber {
+    SYS_READ = 0,
+    SYS_WRITE = 1,
+    SYS_OPEN = 2,
+    SYS_CLOSE = 3,
+    SYS_STAT = 4,
+    SYS_MMAP = 9,
+    SYS_MPROTECT = 10,
+    SYS_MUNMAP = 11,
+    SYS_BRK = 12,
+    SYS_SCHED_YIELD = 24,
+    SYS_GETPID = 39,
+    SYS_EXECVE = 59,
+    SYS_EXIT = 60,
+    SYS_KILL = 62,
+    SYS_UNAME = 63,
+    SYS_GETTIMEOFDAY = 96,
+    SYS_SYSINFO = 99,
+    SYS_GETPPID = 110
+}
+
+// POSIX / Linux Compatible Error Codes
+int32 EPERM = 1;
+int32 ENOENT = 2;
+int32 ESRCH = 3;
+int32 EINTR = 4;
+int32 EBADF = 9;
+int32 ENOMEM = 12;
+int32 EACCES = 13;
+int32 EFAULT = 14;
+int32 EINVAL = 22;
+int32 ENOSYS = 38;
+
+// System Call Calling Convention Context
+struct SyscallContext {
+    uint64 number;
+    uint64 arg1;
+    uint64 arg2;
+    uint64 arg3;
+    uint64 arg4;
+    uint64 arg5;
+    uint64 arg6;
+    uint64 return_value;
+    int32 error;
+}
+
+// System Information Structures
+struct Utsname {
+    uint8[65] sysname;
+    uint8[65] nodename;
+    uint8[65] release;
+    uint8[65] version;
+    uint8[65] machine;
+    uint8[65] domainname;
+}
+
+struct Sysinfo {
+    uint64 uptime;
+    uint64[3] loads;
+    uint64 totalram;
+    uint64 freeram;
+    uint64 sharedram;
+    uint64 bufferram;
+    uint64 totalswap;
+    uint64 freeswap;
+    uint16 procs;
+    uint64 totalhigh;
+    uint64 freehigh;
+    uint32 mem_unit;
+}
+
+struct TimeVal {
+    uint64 tv_sec;
+    uint64 tv_usec;
+}
+
+// Process Heap & Memory Range
+struct ProcessHeap {
+    uint64 heap_start;
+    uint64 heap_break;
+    uint64 heap_max;
+    uint64 mmap_base;
+    uint64 mmap_current;
+}
+
+// Syscall Performance and Profiling Statistics
+struct SyscallStats {
+    uint64 count;
+    uint64 total_time_ticks;
+    uint64 min_time_ticks;
+    uint64 max_time_ticks;
+}
+
+struct SyscallStatsTable {
+    SyscallStats[128] stats;
+    uint64 total_invocations;
+    uint64 total_errors;
+}
+
+fn void syscall_stats_init(SyscallStatsTable* table) {
+    table->total_invocations = 0 as uint64;
+    table->total_errors = 0 as uint64;
+    int i = 0;
+    while (i < 128) {
+        table->stats[i].count = 0 as uint64;
+        table->stats[i].total_time_ticks = 0 as uint64;
+        table->stats[i].min_time_ticks = 0 as uint64;
+        table->stats[i].max_time_ticks = 0 as uint64;
+        i = i + 1;
+    }
+}
+
+fn void syscall_stats_record(SyscallStatsTable* table, uint64 num, uint64 elapsed_ticks, bool is_error) {
+    table->total_invocations = table->total_invocations + 1 as uint64;
+    if (is_error) {
+        table->total_errors = table->total_errors + 1 as uint64;
+    }
+    if (num < 128 as uint64) {
+        int idx = num as int;
+        table->stats[idx].count = table->stats[idx].count + 1 as uint64;
+        table->stats[idx].total_time_ticks = table->stats[idx].total_time_ticks + elapsed_ticks;
+        if (table->stats[idx].min_time_ticks == 0 as uint64 || elapsed_ticks < table->stats[idx].min_time_ticks) {
+            table->stats[idx].min_time_ticks = elapsed_ticks;
+        }
+        if (elapsed_ticks > table->stats[idx].max_time_ticks) {
+            table->stats[idx].max_time_ticks = elapsed_ticks;
+        }
+    }
+}
+
+fn void process_heap_init(ProcessHeap* heap, uint64 start_addr, uint64 max_size) {
+    heap->heap_start = start_addr;
+    heap->heap_break = start_addr;
+    heap->heap_max = start_addr + max_size;
+    heap->mmap_base = 0x0000700000000000 as uint64;
+    heap->mmap_current = 0x0000700000000000 as uint64;
+}
+
+fn bool validate_user_pointer(uint64 ptr) {
+    if (ptr == 0 as uint64) {
+        return false;
+    }
+    // Standard x86_64 lower canonical address space upper bound: 0x0000800000000000
+    if (ptr >= 0x0000800000000000 as uint64) {
+        return false;
+    }
+    return true;
+}
+
+fn bool validate_user_range(uint64 ptr, uint64 length) {
+    if (ptr == 0 as uint64 || length == 0 as uint64) {
+        return false;
+    }
+    if (ptr >= 0x0000800000000000 as uint64) {
+        return false;
+    }
+    if ((ptr + length) > 0x0000800000000000 as uint64) {
+        return false;
+    }
+    return true;
+}
+
+// Process Control Syscalls
+fn void sys_getpid(SyscallContext* ctx, uint32 current_pid) {
+    ctx->return_value = current_pid as uint64;
+    ctx->error = 0;
+}
+
+fn void sys_getppid(SyscallContext* ctx, uint32 parent_pid) {
+    ctx->return_value = parent_pid as uint64;
+    ctx->error = 0;
+}
+
+fn void sys_exit(SyscallContext* ctx, int32* out_exit_code, bool* out_terminated) {
+    *out_exit_code = ctx->arg1 as int32;
+    *out_terminated = true;
+    ctx->return_value = 0 as uint64;
+    ctx->error = 0;
+}
+
+fn void sys_sched_yield(SyscallContext* ctx, bool* out_yield_requested) {
+    *out_yield_requested = true;
+    ctx->return_value = 0 as uint64;
+    ctx->error = 0;
+}
+
+// Memory Management Syscalls
+fn void sys_brk(SyscallContext* ctx, ProcessHeap* heap) {
+    uint64 new_brk = ctx->arg1;
+    // brk(0) queries the current break pointer
+    if (new_brk == 0 as uint64) {
+        ctx->return_value = heap->heap_break;
+        ctx->error = 0;
+        return;
+    }
+
+    // Validate boundaries
+    if (new_brk < heap->heap_start || new_brk > heap->heap_max) {
+        ctx->return_value = heap->heap_break;
+        ctx->error = ENOMEM;
+        return;
+    }
+
+    // Update break
+    heap->heap_break = new_brk;
+    ctx->return_value = new_brk;
+    ctx->error = 0;
+}
+
+fn void sys_mmap(SyscallContext* ctx, ProcessHeap* heap) {
+    uint64 length = ctx->arg2;
+    if (length == 0 as uint64) {
+        ctx->return_value = 0 - 1 as uint64;
+        ctx->error = EINVAL;
+        return;
+    }
+
+    // Page align length (4096-byte pages)
+    uint64 aligned_len = (length + 4095 as uint64) & (0 - 4096 as uint64);
+    uint64 allocated_addr = heap->mmap_current;
+
+    // Check virtual memory upper bound
+    if ((allocated_addr + aligned_len) >= 0x0000800000000000 as uint64) {
+        ctx->return_value = 0 - 1 as uint64;
+        ctx->error = ENOMEM;
+        return;
+    }
+
+    heap->mmap_current = heap->mmap_current + aligned_len;
+    ctx->return_value = allocated_addr;
+    ctx->error = 0;
+}
+
+fn void sys_munmap(SyscallContext* ctx, ProcessHeap* heap) {
+    uint64 addr = ctx->arg1;
+    uint64 length = ctx->arg2;
+
+    if (!validate_user_range(addr, length)) {
+        ctx->return_value = 0 - 1 as uint64;
+        ctx->error = EINVAL;
+        return;
+    }
+
+    ctx->return_value = 0 as uint64;
+    ctx->error = 0;
+}
+
+// System Information Syscalls
+fn void sys_uname(SyscallContext* ctx, Utsname* out_uname) {
+    if (!validate_user_pointer(ctx->arg1)) {
+        ctx->return_value = 0 - 1 as uint64;
+        ctx->error = EFAULT;
+        return;
+    }
+
+    // Populate "KaleOS" 0.1.0-alpha x86_64
+    out_uname->sysname[0] = 'K' as uint8;
+    out_uname->sysname[1] = 'a' as uint8;
+    out_uname->sysname[2] = 'l' as uint8;
+    out_uname->sysname[3] = 'e' as uint8;
+    out_uname->sysname[4] = 'O' as uint8;
+    out_uname->sysname[5] = 'S' as uint8;
+    out_uname->sysname[6] = 0 as uint8;
+
+    out_uname->release[0] = '0' as uint8;
+    out_uname->release[1] = '.' as uint8;
+    out_uname->release[2] = '1' as uint8;
+    out_uname->release[3] = '.' as uint8;
+    out_uname->release[4] = '0' as uint8;
+    out_uname->release[5] = 0 as uint8;
+
+    out_uname->machine[0] = 'x' as uint8;
+    out_uname->machine[1] = '8' as uint8;
+    out_uname->machine[2] = '6' as uint8;
+    out_uname->machine[3] = '_' as uint8;
+    out_uname->machine[4] = '6' as uint8;
+    out_uname->machine[5] = '4' as uint8;
+    out_uname->machine[6] = 0 as uint8;
+
+    ctx->return_value = 0 as uint64;
+    ctx->error = 0;
+}
+
+fn void sys_sysinfo(SyscallContext* ctx, Sysinfo* out_info, uint64 uptime_sec, uint64 total_ram, uint64 free_ram, uint16 procs) {
+    if (!validate_user_pointer(ctx->arg1)) {
+        ctx->return_value = 0 - 1 as uint64;
+        ctx->error = EFAULT;
+        return;
+    }
+
+    out_info->uptime = uptime_sec;
+    out_info->loads[0] = 0 as uint64;
+    out_info->loads[1] = 0 as uint64;
+    out_info->loads[2] = 0 as uint64;
+    out_info->totalram = total_ram;
+    out_info->freeram = free_ram;
+    out_info->sharedram = 0 as uint64;
+    out_info->bufferram = 0 as uint64;
+    out_info->totalswap = 0 as uint64;
+    out_info->freeswap = 0 as uint64;
+    out_info->procs = procs;
+    out_info->totalhigh = 0 as uint64;
+    out_info->freehigh = 0 as uint64;
+    out_info->mem_unit = 1 as uint32;
+
+    ctx->return_value = 0 as uint64;
+    ctx->error = 0;
+}
+
+fn void sys_gettimeofday(SyscallContext* ctx, TimeVal* out_tv, uint64 system_ms) {
+    if (!validate_user_pointer(ctx->arg1)) {
+        ctx->return_value = 0 - 1 as uint64;
+        ctx->error = EFAULT;
+        return;
+    }
+
+    out_tv->tv_sec = system_ms / 1000 as uint64;
+    out_tv->tv_usec = (system_ms % 1000 as uint64) * 1000 as uint64;
+
+    ctx->return_value = 0 as uint64;
+    ctx->error = 0;
+}
+
+// Basic File and Terminal I/O Syscalls
+fn void sys_write(SyscallContext* ctx, uint64 target_fd, uint64 count) {
+    // FDs: 0 = stdin, 1 = stdout, 2 = stderr
+    if (target_fd != 1 as uint64 && target_fd != 2 as uint64) {
+        ctx->return_value = 0 - 1 as uint64;
+        ctx->error = EBADF;
+        return;
+    }
+
+    if (!validate_user_range(ctx->arg2, count)) {
+        ctx->return_value = 0 - 1 as uint64;
+        ctx->error = EFAULT;
+        return;
+    }
+
+    ctx->return_value = count;
+    ctx->error = 0;
+}
+
+fn void sys_read(SyscallContext* ctx, uint64 target_fd, uint64 count) {
+    if (target_fd != 0 as uint64) {
+        ctx->return_value = 0 - 1 as uint64;
+        ctx->error = EBADF;
+        return;
+    }
+
+    if (!validate_user_range(ctx->arg2, count)) {
+        ctx->return_value = 0 - 1 as uint64;
+        ctx->error = EFAULT;
+        return;
+    }
+
+    ctx->return_value = count;
+    ctx->error = 0;
+}
+
+fn void sys_close(SyscallContext* ctx, uint64 fd) {
+    if (fd > 255 as uint64) {
+        ctx->return_value = 0 - 1 as uint64;
+        ctx->error = EBADF;
+        return;
+    }
+    ctx->return_value = 0 as uint64;
+    ctx->error = 0;
+}
+
+// Master Syscall Dispatcher
+fn void syscall_dispatch_context(
+    SyscallContext* ctx,
+    SyscallStatsTable* stats,
+    ProcessHeap* heap,
+    uint32 current_pid,
+    uint32 parent_pid,
+    uint64 uptime_ms,
+    uint64 total_ram,
+    uint64 free_ram,
+    int32* out_exit_code,
+    bool* out_terminated,
+    bool* out_yield
+) {
+    uint64 num = ctx->number;
+    uint64 start_ticks = 10 as uint64; // profiling base
+
+    if (num == 0 as uint64) { // SYS_READ
+        sys_read(ctx, ctx->arg1, ctx->arg3);
+    } else if (num == 1 as uint64) { // SYS_WRITE
+        sys_write(ctx, ctx->arg1, ctx->arg3);
+    } else if (num == 3 as uint64) { // SYS_CLOSE
+        sys_close(ctx, ctx->arg1);
+    } else if (num == 9 as uint64) { // SYS_MMAP
+        sys_mmap(ctx, heap);
+    } else if (num == 11 as uint64) { // SYS_MUNMAP
+        sys_munmap(ctx, heap);
+    } else if (num == 12 as uint64) { // SYS_BRK
+        sys_brk(ctx, heap);
+    } else if (num == 24 as uint64) { // SYS_SCHED_YIELD
+        sys_sched_yield(ctx, out_yield);
+    } else if (num == 39 as uint64) { // SYS_GETPID
+        sys_getpid(ctx, current_pid);
+    } else if (num == 60 as uint64) { // SYS_EXIT
+        sys_exit(ctx, out_exit_code, out_terminated);
+    } else if (num == 63 as uint64) { // SYS_UNAME
+        Utsname* u = ctx->arg1 as Utsname*;
+        sys_uname(ctx, u);
+    } else if (num == 96 as uint64) { // SYS_GETTIMEOFDAY
+        TimeVal* tv = ctx->arg1 as TimeVal*;
+        sys_gettimeofday(ctx, tv, uptime_ms);
+    } else if (num == 99 as uint64) { // SYS_SYSINFO
+        Sysinfo* s = ctx->arg1 as Sysinfo*;
+        sys_sysinfo(ctx, s, uptime_ms / 1000 as uint64, total_ram, free_ram, 1 as uint16);
+    } else if (num == 110 as uint64) { // SYS_GETPPID
+        sys_getppid(ctx, parent_pid);
+    } else {
+        ctx->return_value = 0 - 1 as uint64;
+        ctx->error = ENOSYS;
+    }
+
+    syscall_stats_record(stats, num, start_ticks, ctx->error != 0);
+}

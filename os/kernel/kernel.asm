@@ -686,11 +686,11 @@ vga_print_hex_qword:
 ; PS/2 Keyboard Driver (Polling & Scancode Set 1 Translation)
 ; ==============================================================================
 kbd_poll_char:
-    ; Check interrupt-driven ring buffer first
+    ; Check interrupt-driven ring buffer
     cli
     movzx ecx, byte [rel kbd_buf_count]
     test ecx, ecx
-    jz .poll_hardware
+    jz .no_key
 
     movzx ebx, byte [rel kbd_buf_tail]
     mov al, [kbd_buffer + rbx]
@@ -700,33 +700,13 @@ kbd_poll_char:
 
     movzx eax, al
     cmp eax, 128
-    jge .no_key_nosti
-    mov al, [scancode_ascii_table + rax]
-    ret
-
-.poll_hardware:
-    sti
-    in al, 0x64
-    test al, 1                  ; Bit 0: Output buffer full?
-    jz .no_key
-
-    ; Read scancode from port 0x60
-    in al, 0x60
-
-    ; Key release (break code)?
-    test al, 0x80
-    jnz .no_key
-
-    ; Look up scancode in translation table
-    movzx eax, al
-    cmp eax, 128
-    jge .no_key
-
+    jge .no_key_done
     mov al, [scancode_ascii_table + rax]
     ret
 
 .no_key:
-.no_key_nosti:
+    sti
+.no_key_done:
     xor al, al
     ret
 
