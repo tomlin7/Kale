@@ -573,7 +573,7 @@ fn bool vfs_create_block_device(VFSNode* parent, VFSNode* new_dev, char* name, u
 }
 
 fn bool vfs_mount_block_device(VFSNode* mount_dir, VFSNode* dev_node) {
-    if (mount_dir == null || dev_node == null || mount_dir->node_type != VFS_DIRECTORY) {
+    if (mount_dir == null || dev_node == null || mount_dir->node_type != VFS_DIRECTORY || dev_node->node_type != VFS_BLOCKDEVICE) {
         return false;
     }
     mount_dir->data = dev_node->data;

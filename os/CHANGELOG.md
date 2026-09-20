@@ -42,17 +42,17 @@
 - ATA/IDE PIO mode hard disk driver (`os/drivers/ata.kl`) supporting primary/secondary bus ports (0x1F0-0x1F7), drive identification (0xEC), 28-bit LBA (0x20/0x30), and 48-bit LBA (0x24/0x34) sector read/write
 - Block buffer cache (`os/kernel/bio.kl`) implementing LRU sector cache eviction, dirty buffer writeback, and hit/miss performance metrics
 - Block storage VFS integration (`os/kernel/vfs.kl`) with `VFS_BLOCKDEVICE` node type, `/dev/hda` device creation, and partition mounting
-- Comprehensive block storage test suite (`tests/test_os_block_storage.py`) with 11 automated unit tests
+- Comprehensive block storage test suite (`tests/test_os_block_storage.py`) with 14 automated unit tests covering drive identification, ATA register helpers, sector R/W, buffer cache LRU eviction, dirty writeback protection, and VFS block device mounting
 - Framebuffer graphics driver (`os/drivers/fb.kl`) supporting 32-bit linear ARGB video modes (800x600, 1024x768), double buffering, and hardware scissor clipping
-- 2D rasterization primitives: integer Bresenham line rendering across all octants, filled/outlined rectangles, ARGB alpha channel compositing, and 8x8 monospace bitmap font typography
+- 2D rasterization primitives: integer symmetric Bresenham line rendering across all octants, filled/outlined rectangles, ARGB alpha channel compositing, and expanded 8x8 monospace bitmap font typography
 - PS/2 mouse hardware driver (`os/drivers/mouse.kl`) with 3-byte packet stream decoding, 9-bit sign extension, button state detection, and display boundary coordinate clamping
-- Desktop window & canvas foundation (`os/kernel/window.kl`) with window descriptors, z-ordering, focus transitions, dirty region tracking, and spatial hit-testing
-- Comprehensive graphics and mouse test suite (`tests/test_os_graphics_mouse.py`) with 12 automated unit tests
+- Desktop window & canvas foundation (`os/kernel/window.kl`) with window descriptors, z-ordering, focus transitions, dirty region tracking, positive dimension bounds validation, and spatial hit-testing
+- Comprehensive graphics and mouse test suite (`tests/test_os_graphics_mouse.py`) with 15 automated unit tests
 - Network device interface and loopback driver (`os/drivers/net_loopback.kl`) supporting 127.0.0.1, MTU 1500, packet ring buffers, and device traffic counters
 - PCI Ethernet hardware driver stubs for Realtek RTL8139 (`os/drivers/rtl8139.kl`) and Intel E1000 Gigabit (`os/drivers/e1000.kl`)
-- TCP/IP protocol stack and packet parser (`os/kernel/net.kl`) implementing Ethernet II framing (0x0800 IPv4, 0x0806 ARP), ARP cache resolution & reply synthesis, IPv4 RFC 791 16-bit Internet checksum calculation, ICMP ping echo reply generator, and UDP socket datagram delivery
+- TCP/IP protocol stack and packet parser (`os/kernel/net.kl`) implementing Ethernet II framing (0x0800 IPv4, 0x0806 ARP), ARP cache resolution & reply synthesis, IPv4 RFC 791 16-bit Internet checksum calculation, ICMP ping echo reply generator, UDP socket datagram delivery with MTU payload boundary validation and malformed packet rejection
 - Network socket system call interface (`SYS_SOCKET`, `SYS_BIND`, `SYS_SENDTO`, `SYS_RECVFROM`) integrated into `os/kernel/syscall.kl`
-- Comprehensive networking test suite (`tests/test_os_networking.py`) with 9 automated unit tests
+- Comprehensive networking test suite (`tests/test_os_networking.py`) with 12 automated unit tests
 - Enhanced interactive kernel shell with 'disk', 'gui', and 'net' commands
 
 ### Changed

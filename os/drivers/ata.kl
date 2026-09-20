@@ -113,6 +113,39 @@ fn void ata_setup_simulated_storage(
     dev->model_name[i] = 0 as char;
 }
 
+// Status and Command Register Manipulation Helpers
+fn bool ata_status_is_busy(uint8 status) {
+    return (status & ATA_SR_BSY) != (0 as uint8);
+}
+
+fn bool ata_status_is_ready(uint8 status) {
+    return (status & ATA_SR_DRDY) != (0 as uint8);
+}
+
+fn bool ata_status_has_drq(uint8 status) {
+    return (status & ATA_SR_DRQ) != (0 as uint8);
+}
+
+fn bool ata_status_has_err(uint8 status) {
+    return (status & (ATA_SR_ERR | ATA_SR_DF)) != (0 as uint8);
+}
+
+fn uint8 ata_build_drive_head_lba28(uint8 is_slave, uint32 lba) {
+    uint8 base = ATA_DRIVE_MASTER;
+    if (is_slave != (0 as uint8)) {
+        base = ATA_DRIVE_SLAVE;
+    }
+    uint8 top4 = ((lba >> 24) & (0x0F as uint32)) as uint8;
+    return base | top4;
+}
+
+fn uint8 ata_build_drive_head_lba48(uint8 is_slave) {
+    if (is_slave != (0 as uint8)) {
+        return ATA_DRIVE_SLAVE;
+    }
+    return ATA_DRIVE_MASTER;
+}
+
 // Drive identification parser (processes the 256-word / 512-byte IDENTIFY buffer)
 fn bool ata_parse_identity(ATADevice* dev, uint16* ident) {
     if (ident == null) {
@@ -125,6 +158,21 @@ fn bool ata_parse_identity(ATADevice* dev, uint16* ident) {
         dev->is_present = false;
         return false; // ATAPI device or not present
     }
+
+    // Words 10-19: Serial number (20 characters, high byte first per ATA specification)
+    int s = 10;
+    int s_pos = 0;
+    while (s <= 19 && s_pos < 20) {
+        uint16 val = ident[s];
+        char hi = ((val >> 8) & (0xFF as uint16)) as char;
+        char lo = (val & (0xFF as uint16)) as char;
+        dev->serial_number[s_pos] = hi;
+        s_pos = s_pos + 1;
+        dev->serial_number[s_pos] = lo;
+        s_pos = s_pos + 1;
+        s = s + 1;
+    }
+    dev->serial_number[s_pos] = 0 as char;
 
     // Word 49: Capabilities (bit 9 indicates LBA support)
     uint16 caps = ident[49];
@@ -157,16 +205,16 @@ fn bool ata_parse_identity(ATADevice* dev, uint16* ident) {
         }
     }
 
-    // Model name: Words 27-46 (40 characters, ATA spec byte-swaps each 16-bit word)
+    // Model name: Words 27-46 (40 characters, high byte first per ATA specification)
     int w = 27;
     int str_pos = 0;
     while (w <= 46 && str_pos < 40) {
         uint16 val = ident[w];
-        char lo = (val & (0xFF as uint16)) as char;
         char hi = ((val >> 8) & (0xFF as uint16)) as char;
-        dev->model_name[str_pos] = lo;
-        str_pos = str_pos + 1;
+        char lo = (val & (0xFF as uint16)) as char;
         dev->model_name[str_pos] = hi;
+        str_pos = str_pos + 1;
+        dev->model_name[str_pos] = lo;
         str_pos = str_pos + 1;
         w = w + 1;
     }

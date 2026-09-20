@@ -97,7 +97,7 @@ fn Window* wm_create_window(
     int32 h,
     uint32 bg_color
 ) {
-    if (wm == null || wm->window_count >= (16 as uint32)) {
+    if (wm == null || wm->window_count >= (16 as uint32) || w <= 0 || h <= 0) {
         return null;
     }
 

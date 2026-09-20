@@ -463,5 +463,109 @@ class TestOSNetworking(unittest.TestCase):
         res = self.run_kale_jit(code)
         self.assertEqual(res, 42)
 
+    def test_socket_sendto_payload_bounds(self):
+        code = """
+        import "os/drivers/net_loopback.kl" as loop;
+        import "os/kernel/net.kl" as net;
+
+        loop.NetDevice dev;
+        loop.loopback_init(&dev);
+
+        net.SocketTable sock_tbl;
+        net.socket_table_init(&sock_tbl);
+
+        int32 s = net.socket_create(&sock_tbl, net.AF_INET, net.SOCK_DGRAM, 17 as uint32);
+        uint8[4] dst_ip;
+        dst_ip[0] = 127 as uint8; dst_ip[1] = 0 as uint8; dst_ip[2] = 0 as uint8; dst_ip[3] = 1 as uint8;
+
+        // Null payload must be rejected
+        int32 r1 = net.socket_sendto(&sock_tbl, s, &dst_ip[0], 80 as uint16, null, 10 as uint32, &dev);
+        if (r1 != -1) {
+            return 1;
+        }
+
+        // Payload exceeding max MTU (1472 bytes) must be rejected
+        uint8[1500] big_buf;
+        int32 r2 = net.socket_sendto(&sock_tbl, s, &dst_ip[0], 80 as uint16, &big_buf[0], 1473 as uint32, &dev);
+        if (r2 != -1) {
+            return 2;
+        }
+
+        return 42;
+        """
+        res = self.run_kale_jit(code)
+        self.assertEqual(res, 42)
+
+    def test_socket_deliver_udp_malformed_packets(self):
+        code = """
+        import "os/kernel/net.kl" as net;
+
+        net.SocketTable sock_tbl;
+        net.socket_table_init(&sock_tbl);
+
+        int32 s = net.socket_create(&sock_tbl, net.AF_INET, net.SOCK_DGRAM, 17 as uint32);
+        uint8[4] ip;
+        ip[0] = 127 as uint8; ip[1] = 0 as uint8; ip[2] = 0 as uint8; ip[3] = 1 as uint8;
+        net.socket_bind(&sock_tbl, s, &ip[0], 9000 as uint16);
+
+        // Build malformed raw packet: udp_len = 4 (less than 8 bytes minimum UDP header)
+        uint8[64] bad_pkt;
+        int i = 0;
+        while (i < 64) {
+            bad_pkt[i] = 0 as uint8;
+            i = i + 1;
+        }
+        bad_pkt[12] = 0x08 as uint8; bad_pkt[13] = 0x00 as uint8; // IPv4
+        bad_pkt[23] = net.IP_PROTO_UDP;                           // UDP
+        bad_pkt[36] = ((9000 >> 8) & 0xFF) as uint8;              // dst_port 9000
+        bad_pkt[37] = (9000 & 0xFF) as uint8;
+        bad_pkt[38] = 0 as uint8; bad_pkt[39] = 4 as uint8;       // udp_len = 4 (illegal)
+
+        bool ok = net.socket_deliver_udp(&sock_tbl, &bad_pkt[0], 64 as uint32);
+        if (ok) {
+            return 1; // Malformed packet must be rejected
+        }
+
+        return 42;
+        """
+        res = self.run_kale_jit(code)
+        self.assertEqual(res, 42)
+
+    def test_socket_table_reuse_clean_state(self):
+        code = """
+        import "os/kernel/net.kl" as net;
+
+        net.SocketTable sock_tbl;
+        net.socket_table_init(&sock_tbl);
+
+        int32 s1 = net.socket_create(&sock_tbl, net.AF_INET, net.SOCK_DGRAM, 17 as uint32);
+        uint8[4] ip1;
+        ip1[0] = 10 as uint8; ip1[1] = 0 as uint8; ip1[2] = 0 as uint8; ip1[3] = 1 as uint8;
+        net.socket_bind(&sock_tbl, s1, &ip1[0], 1234 as uint16);
+
+        // Close socket
+        net.socket_close(&sock_tbl, s1);
+
+        // Re-create socket in same slot
+        int32 s2 = net.socket_create(&sock_tbl, net.AF_INET, net.SOCK_DGRAM, 17 as uint32);
+        net.Socket* s_ptr = net.socket_find(&sock_tbl, s2 as uint32);
+        if (s_ptr == null) {
+            return 1;
+        }
+
+        // New socket must have clean zeroed IP and port state
+        if (s_ptr->is_bound || s_ptr->local_port != (0 as uint16)) {
+            return 2;
+        }
+        if (s_ptr->local_ip[0] != (0 as uint8) || s_ptr->local_ip[3] != (0 as uint8)) {
+            return 3;
+        }
+
+        return 42;
+        """
+        res = self.run_kale_jit(code)
+        self.assertEqual(res, 42)
+
 if __name__ == "__main__":
     unittest.main()
+

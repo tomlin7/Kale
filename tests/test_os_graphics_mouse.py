@@ -476,5 +476,115 @@ class TestOSGraphicsMouse(unittest.TestCase):
         res = self.run_kale_jit(code)
         self.assertEqual(res, 42)
 
+    def test_bresenham_line_symmetry(self):
+        code = """
+        import "os/drivers/fb.kl" as fb;
+
+        uint32[100] buf1;
+        uint32[100] buf2;
+        int i = 0;
+        while (i < 100) {
+            buf1[i] = 0 as uint32;
+            buf2[i] = 0 as uint32;
+            i = i + 1;
+        }
+
+        fb.Framebuffer fb1;
+        fb.Framebuffer fb2;
+        fb.fb_init(&fb1, &buf1[0], null, 10 as uint32, 10 as uint32, 40 as uint32);
+        fb.fb_init(&fb2, &buf2[0], null, 10 as uint32, 10 as uint32, 40 as uint32);
+
+        // Draw forward: (0, 0) -> (1, 2)
+        fb.fb_draw_line(&fb1, 0, 0, 1, 2, 0xFFFFFFFF as uint32);
+        // Draw backward: (1, 2) -> (0, 0)
+        fb.fb_draw_line(&fb2, 1, 2, 0, 0, 0xFFFFFFFF as uint32);
+
+        // Both framebuffers must match identically
+        i = 0;
+        while (i < 100) {
+            if (buf1[i] != buf2[i]) {
+                return 1;
+            }
+            i = i + 1;
+        }
+
+        return 42;
+        """
+        res = self.run_kale_jit(code)
+        self.assertEqual(res, 42)
+
+    def test_font_extended_glyphs(self):
+        code = """
+        import "os/drivers/fb.kl" as fb;
+
+        // Distinct glyph checks
+        uint8 row_l = fb.font_get_glyph_row('L' as char, 6);
+        if (row_l != (0x7E as uint8)) {
+            return 1;
+        }
+        uint8 row_e = fb.font_get_glyph_row('E' as char, 3);
+        if (row_e != (0x7E as uint8)) {
+            return 2;
+        }
+        uint8 row_o = fb.font_get_glyph_row('O' as char, 0);
+        if (row_o != (0x3C as uint8)) {
+            return 3;
+        }
+        uint8 row_s = fb.font_get_glyph_row('S' as char, 0);
+        if (row_s != (0x3C as uint8)) {
+            return 4;
+        }
+        uint8 row_dot = fb.font_get_glyph_row('.' as char, 6);
+        if (row_dot != (0x18 as uint8)) {
+            return 5;
+        }
+
+        // Draw string with newly added characters
+        uint32[400] buf;
+        int i = 0;
+        while (i < 400) {
+            buf[i] = 0 as uint32;
+            i = i + 1;
+        }
+
+        fb.Framebuffer frame;
+        fb.fb_init(&frame, &buf[0], null, 50 as uint32, 8 as uint32, 200 as uint32);
+        fb.fb_draw_string(&frame, 0, 0, "KALE", 0xFFFFFFFF as uint32, 0 as uint32, false);
+
+        // First pixel of K (x=1, y=0, row 0 of K is 0x46 -> bits 1 and 2: col 1 and 6)
+        if (fb.fb_get_pixel(&frame, 1, 0) != (0xFFFFFFFF as uint32)) {
+            return 6;
+        }
+
+        return 42;
+        """
+        res = self.run_kale_jit(code)
+        self.assertEqual(res, 42)
+
+    def test_wm_create_window_invalid_dimensions(self):
+        code = """
+        import "os/kernel/window.kl" as win;
+
+        win.WindowManager wm;
+        win.wm_init(&wm);
+
+        // Window with 0 width must be rejected
+        win.Window* w1 = win.wm_create_window(&wm, "BadW", 10, 10, 0, 50, 0 as uint32);
+        if (w1 != null) {
+            return 1;
+        }
+
+        // Window with negative height must be rejected
+        win.Window* w2 = win.wm_create_window(&wm, "BadH", 10, 10, 50, -5, 0 as uint32);
+        if (w2 != null) {
+            return 2;
+        }
+
+        return 42;
+        """
+        res = self.run_kale_jit(code)
+        self.assertEqual(res, 42)
+
 if __name__ == "__main__":
     unittest.main()
+

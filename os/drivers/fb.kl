@@ -223,6 +223,15 @@ fn int32 fb_abs(int32 v) {
 
 // Bresenham's line algorithm handling all octants
 fn void fb_draw_line(Framebuffer* fb, int32 x0, int32 y0, int32 x1, int32 y1, uint32 color) {
+    if (x0 > x1 || (x0 == x1 && y0 > y1)) {
+        int32 tx = x0;
+        int32 ty = y0;
+        x0 = x1;
+        y0 = y1;
+        x1 = tx;
+        y1 = ty;
+    }
+
     int32 dx = fb_abs(x1 - x0);
     int32 dy = fb_abs(y1 - y0);
     int32 sx = -1;
@@ -241,11 +250,11 @@ fn void fb_draw_line(Framebuffer* fb, int32 x0, int32 y0, int32 x1, int32 y1, ui
             return;
         }
         int32 e2 = err * 2;
-        if (e2 > (0 - dy)) {
+        if (e2 >= (0 - dy)) {
             err = err - dy;
             x0 = x0 + sx;
         }
-        if (e2 < dx) {
+        if (e2 <= dx) {
             err = err + dx;
             y0 = y0 + sy;
         }
@@ -312,6 +321,18 @@ fn uint8 font_get_glyph_row(char c, int row) {
         return 0 as uint8;
     }
 
+    // Number '2'
+    if (c == ('2' as char)) {
+        if (row == 0) { return 0x3C as uint8; }
+        if (row == 1) { return 0x66 as uint8; }
+        if (row == 2) { return 0x06 as uint8; }
+        if (row == 3) { return 0x1C as uint8; }
+        if (row == 4) { return 0x30 as uint8; }
+        if (row == 5) { return 0x60 as uint8; }
+        if (row == 6) { return 0x7E as uint8; }
+        return 0 as uint8;
+    }
+
     // Letter 'A'
     if (c == ('A' as char) || c == ('a' as char)) {
         if (row == 0) { return 0x18 as uint8; }
@@ -328,6 +349,65 @@ fn uint8 font_get_glyph_row(char c, int row) {
         if (row == 1 || row == 5) { return 0x4C as uint8; }
         if (row == 2 || row == 4) { return 0x58 as uint8; }
         if (row == 3) { return 0x70 as uint8; }
+        return 0 as uint8;
+    }
+
+    // Letter 'L'
+    if (c == ('L' as char) || c == ('l' as char)) {
+        if (row >= 0 && row <= 5) { return 0x60 as uint8; }
+        if (row == 6) { return 0x7E as uint8; }
+        return 0 as uint8;
+    }
+
+    // Letter 'E'
+    if (c == ('E' as char) || c == ('e' as char)) {
+        if (row == 0 || row == 3 || row == 6) { return 0x7E as uint8; }
+        if (row >= 1 && row <= 5) { return 0x60 as uint8; }
+        return 0 as uint8;
+    }
+
+    // Letter 'O'
+    if (c == ('O' as char) || c == ('o' as char)) {
+        if (row == 0 || row == 6) { return 0x3C as uint8; }
+        if (row >= 1 && row <= 5) { return 0x66 as uint8; }
+        return 0 as uint8;
+    }
+
+    // Letter 'S'
+    if (c == ('S' as char) || c == ('s' as char)) {
+        if (row == 0 || row == 3 || row == 6) { return 0x3C as uint8; }
+        if (row == 1 || row == 2) { return 0x60 as uint8; }
+        if (row == 4 || row == 5) { return 0x06 as uint8; }
+        return 0 as uint8;
+    }
+
+    // Period '.'
+    if (c == ('.' as char)) {
+        if (row == 6) { return 0x18 as uint8; }
+        return 0 as uint8;
+    }
+
+    // Colon ':'
+    if (c == (':' as char)) {
+        if (row == 2 || row == 5) { return 0x18 as uint8; }
+        return 0 as uint8;
+    }
+
+    // Dash '-'
+    if (c == ('-' as char)) {
+        if (row == 3) { return 0x7E as uint8; }
+        return 0 as uint8;
+    }
+
+    // Slash '/'
+    if (c == ('/' as char)) {
+        if (row == 0) { return 0x02 as uint8; }
+        if (row == 1) { return 0x04 as uint8; }
+        if (row == 2) { return 0x08 as uint8; }
+        if (row == 3) { return 0x10 as uint8; }
+        if (row == 4) { return 0x20 as uint8; }
+        if (row == 5) { return 0x40 as uint8; }
+        if (row == 6) { return 0x80 as uint8; }
         return 0 as uint8;
     }
 

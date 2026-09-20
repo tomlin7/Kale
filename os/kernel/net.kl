@@ -383,6 +383,15 @@ fn int32 socket_create(SocketTable* table, uint32 domain, uint32 sock_type, uint
     s->remote_port = 0 as uint16;
     s->rx_len = 0 as uint32;
 
+    int m = 0;
+    while (m < 4) {
+        s->local_ip[m] = 0 as uint8;
+        s->remote_ip[m] = 0 as uint8;
+        s->last_rx_ip[m] = 0 as uint8;
+        m = m + 1;
+    }
+    s->last_rx_port = 0 as uint16;
+
     table->count = table->count + (1 as uint32);
     return s->id as int32;
 }
@@ -422,7 +431,7 @@ fn int32 socket_sendto(
     loop.NetDevice* dev
 ) {
     Socket* s = socket_find(table, sock_id as uint32);
-    if (s == null || !s->is_open) {
+    if (s == null || !s->is_open || payload == null || payload_len > (1472 as uint32)) {
         return -1;
     }
 
@@ -504,7 +513,13 @@ fn bool socket_deliver_udp(SocketTable* table, uint8* raw_pkt, uint32 pkt_len) {
     uint16 dst_port = ((raw_pkt[36] as uint16) << 8) | (raw_pkt[37] as uint16);
     uint16 src_port = ((raw_pkt[34] as uint16) << 8) | (raw_pkt[35] as uint16);
     uint16 udp_len  = ((raw_pkt[38] as uint16) << 8) | (raw_pkt[39] as uint16);
+    if (udp_len < (8 as uint16)) {
+        return false;
+    }
     uint32 payload_len = (udp_len as uint32) - (8 as uint32);
+    if ((42 as uint32 + payload_len) > pkt_len) {
+        payload_len = pkt_len - (42 as uint32);
+    }
 
     // Find socket bound to dst_port
     int i = 0;

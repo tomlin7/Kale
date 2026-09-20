@@ -77,12 +77,18 @@ class TestOSBlockStorage(unittest.TestCase):
         ident[102] = 0x0000 as uint16;
         ident[103] = 0x0000 as uint16;
 
-        // Words 27-46: Model string "KALE DISK       " (byte-swapped: 'AK', 'EL', ' D', 'SI', 'K ')
-        ident[27] = ((('A' as uint16) << 8) | ('K' as uint16));
-        ident[28] = ((('E' as uint16) << 8) | ('L' as uint16));
-        ident[29] = (((' ' as uint16) << 8) | (' ' as uint16));
-        ident[30] = ((('I' as uint16) << 8) | ('D' as uint16));
-        ident[31] = ((('K' as uint16) << 8) | ('S' as uint16));
+        // Words 10-19: Serial number "KL012345" (high byte first per ATA spec)
+        ident[10] = ((('K' as uint16) << 8) | ('L' as uint16));
+        ident[11] = ((('0' as uint16) << 8) | ('1' as uint16));
+        ident[12] = ((('2' as uint16) << 8) | ('3' as uint16));
+        ident[13] = ((('4' as uint16) << 8) | ('5' as uint16));
+
+        // Words 27-46: Model string "KALE DISK       " (high byte first per ATA spec: 'KA', 'LE', ' D', 'IS', 'K ')
+        ident[27] = ((('K' as uint16) << 8) | ('A' as uint16));
+        ident[28] = ((('L' as uint16) << 8) | ('E' as uint16));
+        ident[29] = (((' ' as uint16) << 8) | ('D' as uint16));
+        ident[30] = ((('I' as uint16) << 8) | ('S' as uint16));
+        ident[31] = ((('K' as uint16) << 8) | (' ' as uint16));
 
         bool ok = ata.ata_parse_identity(&dev, &ident[0]);
         if (!ok) {
@@ -97,6 +103,10 @@ class TestOSBlockStorage(unittest.TestCase):
         if (dev.model_name[0] != ('K' as char) || dev.model_name[1] != ('A' as char) ||
             dev.model_name[2] != ('L' as char) || dev.model_name[3] != ('E' as char)) {
             return 4;
+        }
+        if (dev.serial_number[0] != ('K' as char) || dev.serial_number[1] != ('L' as char) ||
+            dev.serial_number[2] != ('0' as char) || dev.serial_number[7] != ('5' as char)) {
+            return 5;
         }
 
         return 42;
@@ -556,6 +566,96 @@ class TestOSBlockStorage(unittest.TestCase):
 
         bool ok = ata.ata_parse_identity(&dev, &ident[0]);
         if (ok || dev.is_present) {
+            return 1;
+        }
+
+        return 42;
+        """
+        res = self.run_kale_jit(code)
+        self.assertEqual(res, 42)
+
+    def test_ata_register_helpers(self):
+        code = """
+        import "os/drivers/ata.kl" as ata;
+
+        // Status register parsing
+        uint8 busy_status = ata.ATA_SR_BSY | ata.ATA_SR_DRDY;
+        if (!ata.ata_status_is_busy(busy_status) || !ata.ata_status_is_ready(busy_status)) {
+            return 1;
+        }
+
+        uint8 drq_status = ata.ATA_SR_DRQ;
+        if (!ata.ata_status_has_drq(drq_status) || ata.ata_status_is_busy(drq_status)) {
+            return 2;
+        }
+
+        uint8 err_status = ata.ATA_SR_ERR;
+        if (!ata.ata_status_has_err(err_status)) {
+            return 3;
+        }
+
+        // Drive head register construction
+        // LBA28: Master, LBA 0x01234567 -> top 4 bits are 0x1, base is 0xE0 -> 0xE1
+        uint8 dh28_m = ata.ata_build_drive_head_lba28(0 as uint8, 0x01234567 as uint32);
+        if (dh28_m != (0xE1 as uint8)) {
+            return 4;
+        }
+
+        // LBA28: Slave -> base is 0xF0 -> 0xF1
+        uint8 dh28_s = ata.ata_build_drive_head_lba28(1 as uint8, 0x01234567 as uint32);
+        if (dh28_s != (0xF1 as uint8)) {
+            return 5;
+        }
+
+        // LBA48: Master -> 0xE0, Slave -> 0xF0
+        uint8 dh48_m = ata.ata_build_drive_head_lba48(0 as uint8);
+        uint8 dh48_s = ata.ata_build_drive_head_lba48(1 as uint8);
+        if (dh48_m != (0xE0 as uint8) || dh48_s != (0xF0 as uint8)) {
+            return 6;
+        }
+
+        return 42;
+        """
+        res = self.run_kale_jit(code)
+        self.assertEqual(res, 42)
+
+    def test_bio_null_device_rejection(self):
+        code = """
+        import "os/kernel/bio.kl" as bio;
+
+        // Init cache with NULL ata_dev
+        bio.BufCache cache;
+        bio.bio_init(&cache, null);
+
+        // Reading block must safely fail without returning a garbage valid buffer
+        bio.BufHeader* b = bio.bio_bread(&cache, 0 as uint32, 5 as uint64);
+        if (b != null) {
+            return 1;
+        }
+
+        return 42;
+        """
+        res = self.run_kale_jit(code)
+        self.assertEqual(res, 42)
+
+    def test_vfs_mount_reject_non_block_device(self):
+        code = """
+        import "os/kernel/vfs.kl" as vfs;
+
+        vfs.VFSNode root;
+        vfs.vfs_node_init(&root, "/", vfs.VFS_DIRECTORY, 1 as uint64);
+
+        vfs.VFSNode mnt;
+        vfs.vfs_create_dir(&root, &mnt, "mnt", 2 as uint64);
+
+        // Create regular file (NOT a block device)
+        uint8[64] f_buf;
+        vfs.VFSNode regular_file;
+        vfs.vfs_create_file(&root, &regular_file, "file.txt", &f_buf[0], 0 as uint64, 64 as uint64, 3 as uint64);
+
+        // Attempting to mount regular file must be rejected
+        bool ok = vfs.vfs_mount_block_device(&mnt, &regular_file);
+        if (ok) {
             return 1;
         }
 

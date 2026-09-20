@@ -145,7 +145,10 @@ fn BufHeader* bio_alloc_buffer(BufCache* cache, uint32 dev_id, uint64 block_no) 
 
     // Writeback victim if dirty
     if ((victim->flags & B_DIRTY) != (0 as uint32)) {
-        bio_bflush(cache, victim);
+        bool flushed = bio_bflush(cache, victim);
+        if (!flushed) {
+            return null; // Flush failed; abort eviction to preserve dirty block data
+        }
     }
 
     // Reinitialize victim for new block
@@ -155,6 +158,12 @@ fn BufHeader* bio_alloc_buffer(BufCache* cache, uint32 dev_id, uint64 block_no) 
     victim->ref_count = 1 as uint32;
     cache->lru_clock = cache->lru_clock + (1 as uint32);
     victim->last_used = cache->lru_clock;
+
+    int bidx = 0;
+    while (bidx < 512) {
+        victim->data[bidx] = 0 as uint8;
+        bidx = bidx + 1;
+    }
     return victim;
 }
 
@@ -190,6 +199,9 @@ fn BufHeader* bio_bread(BufCache* cache, uint32 dev_id, uint64 block_no) {
             buf->ref_count = 0 as uint32;
             return null;
         }
+    } else {
+        buf->ref_count = 0 as uint32;
+        return null;
     }
 
     buf->flags = buf->flags | B_VALID;
