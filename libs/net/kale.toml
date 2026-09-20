@@ -2,7 +2,7 @@
 name = "kale-net"
 version = "0.1.0"
 description = "Networking library, TCP/UDP sockets, HTTP client, and URL parser for Kale"
-authors = ["Tom Lin <tom@kale-lang.org>"]
+authors = ["Tomlin7 <billydevbusiness@gmail.com>"]
 license = "MIT"
 edition = "2026"
 entry = "http.kl"

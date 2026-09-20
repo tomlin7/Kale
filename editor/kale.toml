@@ -2,7 +2,7 @@
 name = "kale-editor"
 version = "0.1.0"
 description = "High-performance GPU code editor for the Kale ecosystem"
-authors = ["Tom Lin <tom@kale-lang.org>"]
+authors = ["Tomlin7 <billydevbusiness@gmail.com>"]
 license = "MIT"
 edition = "2026"
 entry = "main.kl"
