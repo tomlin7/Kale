@@ -27,9 +27,18 @@
 - Large allocation (> 64KB) dynamic mapping via page tables and physical frame allocation
 - User-space process heap allocator (os/userspace/libc/heap.kl and stdlib.kl) with coalescing free and sbrk/brk syscall integration
 - Enhanced interactive kernel shell with 'heap' command displaying live heap statistics and layout
-- Comprehensive heap allocator test suite (tests/test_os_heap_allocator.py) with 100% pass rate
 - Enhanced kernel shell with 'user' command inspecting user space infrastructure
 - Comprehensive user space support test suite with 100% pass rate
+- Virtual File System (VFS) abstraction (`os/kernel/vfs.kl`) with inode/vnode architecture, permission modes, and node types (File, Directory, CharDevice, BlockDevice, Pipe)
+- Hierarchical directory traversal and absolute path resolution (`/dir/subdir/file`)
+- Process file descriptor table management (0=stdin, 1=stdout, 2=stderr) supporting open, close, and lowest-free FD allocation recycling
+- File descriptor duplication via `vfs_dup` and `vfs_dup2`
+- File seek capabilities (`SEEK_SET`, `SEEK_CUR`, `SEEK_END`) and node metadata queries (`vfs_stat_node`)
+- Pre-populated rootfs with device nodes (`/dev/null`, `/dev/zero`, `/dev/serial`) and filesystem hierarchy (`/bin`, `/dev`, `/etc`, `/tmp`)
+- System call dispatcher integration for `SYS_OPEN` (2) and `SYS_CLOSE` (3)
+- User-space standard library stdio enhancements (`open`, `close`) in `os/userspace/libc/stdio.kl`
+- Enhanced interactive kernel shell with 'ls' and 'cat' commands for directory inspection and file display
+- Comprehensive Virtual File System test suite (`tests/test_os_filesystem.py`) with 100% pass rate
 
 ### Changed
 - Enhanced kernel.asm with ISR integration

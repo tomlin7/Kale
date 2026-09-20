@@ -1,0 +1,524 @@
+// os/kernel/vfs.kl
+// Virtual File System (VFS) and In-Memory Ramdisk (KaleFS) for Kale OS
+// Features: Inode/vnode architecture, directory trees, path resolution,
+// file descriptor tables (stdin/stdout/stderr), seek/read/write, and device routing.
+
+// Node Types
+uint32 VFS_FILE        = 1 as uint32;
+uint32 VFS_DIRECTORY   = 2 as uint32;
+uint32 VFS_CHARDEVICE  = 3 as uint32;
+uint32 VFS_BLOCKDEVICE = 4 as uint32;
+uint32 VFS_PIPE        = 5 as uint32;
+
+// Access / Open Mode Flags
+uint32 O_RDONLY = 0 as uint32;
+uint32 O_WRONLY = 1 as uint32;
+uint32 O_RDWR   = 2 as uint32;
+uint32 O_CREAT  = 64 as uint32;
+uint32 O_TRUNC  = 512 as uint32;
+uint32 O_APPEND = 1024 as uint32;
+
+// Seek Modes
+uint32 SEEK_SET = 0 as uint32;
+uint32 SEEK_CUR = 1 as uint32;
+uint32 SEEK_END = 2 as uint32;
+
+// Maximum bounds
+int MAX_CHILDREN = 16;
+int MAX_OPEN_FILES = 32;
+int MAX_NAME_LEN = 32;
+
+// Forward reference struct
+struct VFSNode {
+    char[32] name;
+    uint32 node_type;       // VFS_FILE, VFS_DIRECTORY, etc.
+    uint32 permissions;     // POSIX-style: 0x755, 0x644
+    uint32 uid;
+    uint32 gid;
+    uint64 size;            // File size in bytes
+    uint64 inode_number;
+    uint8* data;            // Pointer to file content buffer
+    uint64 data_capacity;   // Allocated buffer capacity
+    VFSNode*[16] children;  // Directory entries
+    uint32 child_count;
+    VFSNode* parent;
+}
+
+// File Descriptor Entry
+struct FileDescriptor {
+    VFSNode* node;
+    uint64 offset;
+    uint32 flags;
+    bool is_open;
+}
+
+// Process File Table (FD 0=stdin, 1=stdout, 2=stderr, ...)
+struct FileTable {
+    FileDescriptor[32] descriptors;
+    uint32 max_fds;
+}
+
+// System Stat Result
+struct VFSStat {
+    uint64 dev;
+    uint64 ino;
+    uint32 mode;
+    uint32 nlink;
+    uint32 uid;
+    uint32 gid;
+    uint64 rdev;
+    uint64 size;
+    uint64 blksize;
+    uint64 blocks;
+}
+
+// ==============================================================================
+// String & Memory Helper Functions
+// ==============================================================================
+
+fn bool vfs_str_equals(char* s1, char* s2) {
+    int i = 0;
+    while (i < 32) {
+        char c1 = s1[i];
+        char c2 = s2[i];
+        if (c1 != c2) {
+            return false;
+        }
+        if (c1 == (0 as char)) {
+            return true;
+        }
+        i = i + 1;
+    }
+    return true;
+}
+
+fn void vfs_str_copy(char* dest, char* src, int max_len) {
+    int i = 0;
+    while (i < max_len - 1) {
+        dest[i] = src[i];
+        if (src[i] == (0 as char)) {
+            return;
+        }
+        i = i + 1;
+    }
+    dest[max_len - 1] = 0 as char;
+}
+
+fn uint64 vfs_strlen(char* s) {
+    uint64 len = 0 as uint64;
+    while (s[len as int] != (0 as char)) {
+        len = len + (1 as uint64);
+    }
+    return len;
+}
+
+// ==============================================================================
+// VFS Node Management
+// ==============================================================================
+
+fn void vfs_node_init(VFSNode* node, char* name, uint32 node_type, uint64 inode_num) {
+    vfs_str_copy(&node->name[0], name, 32);
+    node->node_type = node_type;
+    node->permissions = 420 as uint32; // 0644 default
+    if (node_type == VFS_DIRECTORY) {
+        node->permissions = 493 as uint32; // 0755 default
+    }
+    node->uid = 0 as uint32;
+    node->gid = 0 as uint32;
+    node->size = 0 as uint64;
+    node->inode_number = inode_num;
+    node->data = null;
+    node->data_capacity = 0 as uint64;
+    node->child_count = 0 as uint32;
+    node->parent = null;
+
+    int i = 0;
+    while (i < 16) {
+        node->children[i] = null;
+        i = i + 1;
+    }
+}
+
+fn bool vfs_add_child(VFSNode* parent, VFSNode* child) {
+    if (parent == null || child == null || parent->node_type != VFS_DIRECTORY) {
+        return false;
+    }
+    if (parent->child_count >= (16 as uint32)) {
+        return false; // Directory entry limit reached
+    }
+
+    parent->children[parent->child_count as int] = child;
+    parent->child_count = parent->child_count + (1 as uint32);
+    child->parent = parent;
+    return true;
+}
+
+fn VFSNode* vfs_finddir(VFSNode* dir, char* child_name) {
+    if (dir == null || dir->node_type != VFS_DIRECTORY) {
+        return null;
+    }
+
+    uint32 i = 0 as uint32;
+    while (i < dir->child_count) {
+        VFSNode* c = dir->children[i as int];
+        if (c != null && vfs_str_equals(&c->name[0], child_name)) {
+            return c;
+        }
+        i = i + (1 as uint32);
+    }
+
+    return null;
+}
+
+// ==============================================================================
+// Path Resolution (/dir/subdir/file)
+// ==============================================================================
+
+fn VFSNode* vfs_resolve_path(VFSNode* root, char* path) {
+    if (root == null || path == null) {
+        return null;
+    }
+
+    // Path must start with '/' for absolute path
+    if (path[0] != (47 as char)) { // '/' == 47
+        return null;
+    }
+
+    if (path[1] == (0 as char)) {
+        return root; // Root requested ("/")
+    }
+
+    VFSNode* current = root;
+    char[32] segment;
+    int path_idx = 1; // Skip leading '/'
+
+    while (path[path_idx] != (0 as char)) {
+        int seg_idx = 0;
+        while (path[path_idx] != (0 as char) && path[path_idx] != (47 as char) && seg_idx < 31) {
+            segment[seg_idx] = path[path_idx];
+            seg_idx = seg_idx + 1;
+            path_idx = path_idx + 1;
+        }
+        segment[seg_idx] = 0 as char;
+
+        if (path[path_idx] == (47 as char)) {
+            path_idx = path_idx + 1;
+        }
+
+        if (seg_idx > 0) {
+            current = vfs_finddir(current, &segment[0]);
+            if (current == null) {
+                return null; // Path segment not found
+            }
+        }
+    }
+
+    return current;
+}
+
+// ==============================================================================
+// Node I/O Operations (Read / Write / Truncate)
+// ==============================================================================
+
+fn uint64 vfs_read(VFSNode* node, uint64 offset, uint64 size, uint8* buffer) {
+    if (node == null || buffer == null) {
+        return 0 as uint64;
+    }
+
+    // Special Character Device Handling
+    if (node->node_type == VFS_CHARDEVICE) {
+        // /dev/null
+        if (vfs_str_equals(&node->name[0], "null")) {
+            return 0 as uint64; // EOF immediately
+        }
+        // /dev/zero
+        if (vfs_str_equals(&node->name[0], "zero")) {
+            uint64 z = 0 as uint64;
+            while (z < size) {
+                buffer[z as int] = 0 as uint8;
+                z = z + (1 as uint64);
+            }
+            return size;
+        }
+    }
+
+    // Regular file read
+    if (offset >= node->size || node->data == null) {
+        return 0 as uint64; // Beyond EOF
+    }
+
+    uint64 bytes_to_read = size;
+    if (offset + bytes_to_read > node->size) {
+        bytes_to_read = node->size - offset;
+    }
+
+    uint64 i = 0 as uint64;
+    while (i < bytes_to_read) {
+        buffer[i as int] = node->data[(offset + i) as int];
+        i = i + (1 as uint64);
+    }
+
+    return bytes_to_read;
+}
+
+fn uint64 vfs_write(VFSNode* node, uint64 offset, uint64 size, uint8* buffer) {
+    if (node == null || buffer == null) {
+        return 0 as uint64;
+    }
+
+    // Special Character Device Handling
+    if (node->node_type == VFS_CHARDEVICE) {
+        // /dev/null discards all writes successfully
+        if (vfs_str_equals(&node->name[0], "null") || vfs_str_equals(&node->name[0], "zero")) {
+            return size;
+        }
+    }
+
+    if (node->data == null) {
+        return 0 as uint64;
+    }
+
+    uint64 end_pos = offset + size;
+    if (end_pos > node->data_capacity) {
+        size = node->data_capacity - offset;
+        end_pos = node->data_capacity;
+    }
+
+    uint64 i = 0 as uint64;
+    while (i < size) {
+        node->data[(offset + i) as int] = buffer[i as int];
+        i = i + (1 as uint64);
+    }
+
+    if (end_pos > node->size) {
+        node->size = end_pos;
+    }
+
+    return size;
+}
+
+// ==============================================================================
+// File Descriptor & Process Table Management
+// ==============================================================================
+
+fn void vfs_file_table_init(FileTable* table) {
+    table->max_fds = 32 as uint32;
+    int i = 0;
+    while (i < 32) {
+        table->descriptors[i].node = null;
+        table->descriptors[i].offset = 0 as uint64;
+        table->descriptors[i].flags = 0 as uint32;
+        table->descriptors[i].is_open = false;
+        i = i + 1;
+    }
+}
+
+fn int32 vfs_open(FileTable* table, VFSNode* node, uint32 flags) {
+    if (table == null || node == null) {
+        return -1;
+    }
+
+    // Find lowest available file descriptor
+    int fd = 0;
+    while (fd < 32) {
+        if (!table->descriptors[fd].is_open) {
+            table->descriptors[fd].node = node;
+            table->descriptors[fd].flags = flags;
+            table->descriptors[fd].is_open = true;
+
+            // If O_APPEND, start offset at file end
+            if ((flags & O_APPEND) != (0 as uint32)) {
+                table->descriptors[fd].offset = node->size;
+            } else {
+                table->descriptors[fd].offset = 0 as uint64;
+            }
+
+            // If O_TRUNC, reset file length to 0
+            if ((flags & O_TRUNC) != (0 as uint32) && node->node_type == VFS_FILE) {
+                node->size = 0 as uint64;
+            }
+
+            return fd;
+        }
+        fd = fd + 1;
+    }
+
+    return -1; // Out of file descriptors (EMFILE)
+}
+
+fn bool vfs_close(FileTable* table, int32 fd) {
+    if (table == null || fd < 0 || fd >= 32) {
+        return false;
+    }
+
+    if (!table->descriptors[fd].is_open) {
+        return false;
+    }
+
+    table->descriptors[fd].node = null;
+    table->descriptors[fd].offset = 0 as uint64;
+    table->descriptors[fd].flags = 0 as uint32;
+    table->descriptors[fd].is_open = false;
+    return true;
+}
+
+fn int64 vfs_fd_read(FileTable* table, int32 fd, uint8* buffer, uint64 size) {
+    if (table == null || fd < 0 || fd >= 32 || buffer == null) {
+        return -1 as int64;
+    }
+
+    FileDescriptor* desc = &table->descriptors[fd];
+    if (!desc->is_open || desc->node == null) {
+        return -1 as int64;
+    }
+
+    uint64 bytes_read = vfs_read(desc->node, desc->offset, size, buffer);
+    desc->offset = desc->offset + bytes_read;
+    return bytes_read as int64;
+}
+
+fn int64 vfs_fd_write(FileTable* table, int32 fd, uint8* buffer, uint64 size) {
+    if (table == null || fd < 0 || fd >= 32 || buffer == null) {
+        return -1 as int64;
+    }
+
+    FileDescriptor* desc = &table->descriptors[fd];
+    if (!desc->is_open || desc->node == null) {
+        return -1 as int64;
+    }
+
+    // Verify write permission
+    if ((desc->flags & 3 as uint32) == O_RDONLY) {
+        return -1 as int64; // EBADF: file open for reading only
+    }
+
+    uint64 bytes_written = vfs_write(desc->node, desc->offset, size, buffer);
+    desc->offset = desc->offset + bytes_written;
+    return bytes_written as int64;
+}
+
+fn int64 vfs_fd_lseek(FileTable* table, int32 fd, int64 offset, uint32 whence) {
+    if (table == null || fd < 0 || fd >= 32) {
+        return -1 as int64;
+    }
+
+    FileDescriptor* desc = &table->descriptors[fd];
+    if (!desc->is_open || desc->node == null) {
+        return -1 as int64;
+    }
+
+    int64 new_pos = 0 as int64;
+    if (whence == SEEK_SET) {
+        new_pos = offset;
+    } else if (whence == SEEK_CUR) {
+        new_pos = (desc->offset as int64) + offset;
+    } else if (whence == SEEK_END) {
+        new_pos = (desc->node->size as int64) + offset;
+    } else {
+        return -1 as int64; // EINVAL
+    }
+
+    if (new_pos < (0 as int64)) {
+        return -1 as int64; // Negative seek position forbidden
+    }
+
+    desc->offset = new_pos as uint64;
+    return new_pos;
+}
+
+fn bool vfs_stat_node(VFSNode* node, VFSStat* out_stat) {
+    if (node == null || out_stat == null) {
+        return false;
+    }
+
+    out_stat->dev = 1 as uint64;
+    out_stat->ino = node->inode_number;
+    out_stat->mode = node->permissions;
+    out_stat->nlink = 1 as uint32;
+    out_stat->uid = node->uid;
+    out_stat->gid = node->gid;
+    out_stat->rdev = 0 as uint64;
+    out_stat->size = node->size;
+    out_stat->blksize = 4096 as uint64;
+    out_stat->blocks = (node->size + (511 as uint64)) / (512 as uint64);
+    return true;
+}
+
+// Duplicate a file descriptor (dup)
+fn int32 vfs_dup(FileTable* table, int32 old_fd) {
+    if (table == null || old_fd < 0 || old_fd >= 32) {
+        return -1;
+    }
+    if (!table->descriptors[old_fd].is_open) {
+        return -1;
+    }
+
+    int new_fd = 0;
+    while (new_fd < 32) {
+        if (!table->descriptors[new_fd].is_open) {
+            table->descriptors[new_fd].node = table->descriptors[old_fd].node;
+            table->descriptors[new_fd].offset = table->descriptors[old_fd].offset;
+            table->descriptors[new_fd].flags = table->descriptors[old_fd].flags;
+            table->descriptors[new_fd].is_open = true;
+            return new_fd;
+        }
+        new_fd = new_fd + 1;
+    }
+
+    return -1;
+}
+
+// Duplicate a file descriptor to a specific target (dup2)
+fn int32 vfs_dup2(FileTable* table, int32 old_fd, int32 new_fd) {
+    if (table == null || old_fd < 0 || old_fd >= 32 || new_fd < 0 || new_fd >= 32) {
+        return -1;
+    }
+    if (!table->descriptors[old_fd].is_open) {
+        return -1;
+    }
+
+    if (old_fd == new_fd) {
+        return new_fd;
+    }
+
+    if (table->descriptors[new_fd].is_open) {
+        vfs_close(table, new_fd);
+    }
+
+    table->descriptors[new_fd].node = table->descriptors[old_fd].node;
+    table->descriptors[new_fd].offset = table->descriptors[old_fd].offset;
+    table->descriptors[new_fd].flags = table->descriptors[old_fd].flags;
+    table->descriptors[new_fd].is_open = true;
+    return new_fd;
+}
+
+// ==============================================================================
+// Concrete Filesystem Helpers & RootFS Pre-population
+// ==============================================================================
+
+fn bool vfs_create_file(VFSNode* parent, VFSNode* new_file, char* name, uint8* data_buf, uint64 data_size, uint64 capacity, uint64 inode_num) {
+    if (parent == null || new_file == null || name == null) {
+        return false;
+    }
+    vfs_node_init(new_file, name, VFS_FILE, inode_num);
+    new_file->data = data_buf;
+    new_file->size = data_size;
+    new_file->data_capacity = capacity;
+    return vfs_add_child(parent, new_file);
+}
+
+fn bool vfs_create_dir(VFSNode* parent, VFSNode* new_dir, char* name, uint64 inode_num) {
+    if (parent == null || new_dir == null || name == null) {
+        return false;
+    }
+    vfs_node_init(new_dir, name, VFS_DIRECTORY, inode_num);
+    return vfs_add_child(parent, new_dir);
+}
+
+fn bool vfs_create_device(VFSNode* parent, VFSNode* new_dev, char* name, uint64 inode_num) {
+    if (parent == null || new_dev == null || name == null) {
+        return false;
+    }
+    vfs_node_init(new_dev, name, VFS_CHARDEVICE, inode_num);
+    return vfs_add_child(parent, new_dev);
+}

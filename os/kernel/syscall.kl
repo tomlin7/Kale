@@ -360,6 +360,16 @@ fn void sys_read(SyscallContext* ctx, uint64 target_fd, uint64 count) {
     ctx->error = 0;
 }
 
+fn void sys_open(SyscallContext* ctx, uint64 path_ptr, uint64 flags) {
+    if (path_ptr == 0 as uint64) {
+        ctx->return_value = 0 - 1 as uint64;
+        ctx->error = EFAULT;
+        return;
+    }
+    ctx->return_value = 3 as uint64;
+    ctx->error = 0;
+}
+
 fn void sys_close(SyscallContext* ctx, uint64 fd) {
     if (fd > 255 as uint64) {
         ctx->return_value = 0 - 1 as uint64;
@@ -391,6 +401,8 @@ fn void syscall_dispatch_context(
         sys_read(ctx, ctx->arg1, ctx->arg3);
     } else if (num == 1 as uint64) { // SYS_WRITE
         sys_write(ctx, ctx->arg1, ctx->arg3);
+    } else if (num == 2 as uint64) { // SYS_OPEN
+        sys_open(ctx, ctx->arg1, ctx->arg2);
     } else if (num == 3 as uint64) { // SYS_CLOSE
         sys_close(ctx, ctx->arg1);
     } else if (num == 9 as uint64) { // SYS_MMAP

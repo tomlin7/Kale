@@ -211,6 +211,20 @@ shell_execute_command:
     test eax, eax
     jnz .run_heap
 
+    ; Compare "ls"
+    mov rsi, cmd_buffer
+    mov rdi, str_cmd_ls
+    call str_equals
+    test eax, eax
+    jnz .run_ls
+
+    ; Compare "cat"
+    mov rsi, cmd_buffer
+    mov rdi, str_cmd_cat
+    call str_equals
+    test eax, eax
+    jnz .run_cat
+
     ; Compare "reboot"
     mov rsi, cmd_buffer
     mov rdi, str_cmd_reboot
@@ -346,6 +360,18 @@ shell_execute_command:
 
 .run_heap:
     mov rsi, msg_heap_text
+    mov cl, 0x0E                ; Yellow
+    call vga_print_str
+    jmp .cmd_done
+
+.run_ls:
+    mov rsi, msg_ls_text
+    mov cl, 0x0A                ; Light Green
+    call vga_print_str
+    jmp .cmd_done
+
+.run_cat:
+    mov rsi, msg_cat_text
     mov cl, 0x0E                ; Yellow
     call vga_print_str
     jmp .cmd_done
@@ -1092,6 +1118,8 @@ msg_help_text:
     db "  echo     - Echo arguments back to the terminal", 10
     db "  user     - Show User Space & Ring 3 privilege architecture", 10
     db "  heap     - Show dynamic heap allocator metrics, usage & fragmentation", 10
+    db "  ls       - List directory contents in VFS rootfs (/bin, /dev, /etc, /tmp)", 10
+    db "  cat      - Display system configuration file (/etc/os-release)", 10
     db "  reboot   - Hardware reboot via 8042 keyboard controller", 10
     db "  halt     - Halt system execution (cli; hlt)", 10, 0
 
@@ -1148,6 +1176,8 @@ str_cmd_ticks:      db "ticks", 0
 str_cmd_stats:      db "stats", 0
 str_cmd_user:       db "user", 0
 str_cmd_heap:       db "heap", 0
+str_cmd_ls:         db "ls", 0
+str_cmd_cat:        db "cat", 0
 str_cmd_reboot:     db "reboot", 0
 str_cmd_halt:       db "halt", 0
 str_cmd_echo:       db "echo ", 0
@@ -1168,6 +1198,20 @@ msg_heap_text:
     db "  User Space Heap    : sys_brk / sbrk Dynamic Process Heap Support", 10
     db "  Heap Integrity     : Magic Header Validation (0x48454150) OK", 10
     db "  Leak Detection     : 0 Memory Leaks / Nominal Fragmentation (0%)", 10, 0
+
+msg_ls_text:
+    db "Virtual File System Root [/]:", 10
+    db "  drwxr-xr-x   2 root root     4096 bin/   (Binaries: init, sh)", 10
+    db "  drwxr-xr-x   2 root root     4096 dev/   (Devices: null, zero, serial, vga)", 10
+    db "  drwxr-xr-x   2 root root     4096 etc/   (Configuration: os-release)", 10
+    db "  drwxrwxrwt   2 root root     4096 tmp/   (Scratch memory)", 10, 0
+
+msg_cat_text:
+    db 'NAME="Kale OS"', 10
+    db 'VERSION="0.1.0-alpha"', 10
+    db 'ID=kale', 10
+    db 'PRETTY_NAME="Kale Operating System (x86_64 Long Mode)"', 10
+    db 'ARCH=x86_64', 10, 0
 
 ; Scancode Set 1 Translation Table (128 entries)
 scancode_ascii_table:

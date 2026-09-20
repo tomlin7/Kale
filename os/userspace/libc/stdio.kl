@@ -50,3 +50,23 @@ fn int32 putchar(char c, sys.SyscallStatsTable* stats, sys.ProcessHeap* heap, ui
     }
     return c as int32;
 }
+
+fn int32 open(char* path, uint32 flags, sys.SyscallStatsTable* stats, sys.ProcessHeap* heap, uint32 pid) {
+    sys.SyscallContext ctx;
+    libc_sys.user_syscall_context_init(&ctx, libc_sys.SYS_OPEN, path as uint64, flags as uint64, 0 as uint64, 0 as uint64, 0 as uint64, 0 as uint64);
+    int32 exit_code = 0;
+    bool term = false;
+    bool yielded = false;
+    int64 res = libc_sys.user_syscall(&ctx, stats, heap, pid, 1 as uint32, 0 as uint64, 0 as uint64, 0 as uint64, &exit_code, &term, &yielded);
+    return res as int32;
+}
+
+fn int32 close(int32 fd, sys.SyscallStatsTable* stats, sys.ProcessHeap* heap, uint32 pid) {
+    sys.SyscallContext ctx;
+    libc_sys.user_syscall_context_init(&ctx, libc_sys.SYS_CLOSE, fd as uint64, 0 as uint64, 0 as uint64, 0 as uint64, 0 as uint64, 0 as uint64);
+    int32 exit_code = 0;
+    bool term = false;
+    bool yielded = false;
+    int64 res = libc_sys.user_syscall(&ctx, stats, heap, pid, 1 as uint32, 0 as uint64, 0 as uint64, 0 as uint64, &exit_code, &term, &yielded);
+    return res as int32;
+}
