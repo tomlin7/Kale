@@ -2,8 +2,8 @@ import "libs/term/color.kl" as color;
 
 struct Cell {
     int ch;
-    color.Color fg;
-    color.Color bg;
+    color.TermColor fg;
+    color.TermColor bg;
     bool bold;
     bool italic;
     bool underline;
@@ -16,8 +16,8 @@ struct CellGrid {
     Cell* cells;
     int cursor_col;
     int cursor_row;
-    color.Color cur_fg;
-    color.Color cur_bg;
+    color.TermColor cur_fg;
+    color.TermColor cur_bg;
     bool cur_bold;
     bool cur_underline;
 }

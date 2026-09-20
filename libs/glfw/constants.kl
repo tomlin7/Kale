@@ -92,6 +92,7 @@ int32 GLFW_KEY_W() { return 87; }
 int32 GLFW_KEY_X() { return 88; }
 int32 GLFW_KEY_Y() { return 89; }
 int32 GLFW_KEY_Z() { return 90; }
+int32 GLFW_KEY_GRAVE_ACCENT() { return 96; }
 
 // Function & Control Keys
 int32 GLFW_KEY_ESCAPE() { return 256; }

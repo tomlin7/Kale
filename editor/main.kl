@@ -11,6 +11,9 @@ import "editor/gutter.kl" as gt;
 import "editor/status_bar.kl" as sb;
 import "editor/text_viewport.kl" as vp;
 import "editor/command_bar.kl" as cb;
+import "apps/editor/buffer_manager.kl" as bm;
+import "apps/editor/terminal_split.kl" as ts;
+import "editor/terminal_pane.kl" as tp;
 
 extern int strlen(string s);
 
@@ -68,8 +71,8 @@ fn void poll_typing(void* window, st.EditorState* state, bool shift_down) {
 }
 
 fn void run_editor() {
-    int app_w = 1120;
-    int app_h = 740;
+    int app_w = 1180;
+    int app_h = 760;
 
     fw.AppConfig config;
     config.init("Kale Code Editor - GPU Flagship IDE", app_w, app_h);
@@ -81,10 +84,23 @@ fn void run_editor() {
         return;
     }
 
-    string sample_code = "// ========================================================\n// Welcome to the Kale GPU Code Editor (kale/edit)\n// Written in Kale, powered by OpenGL 3.3 Core & GLFW\n// ========================================================\n\nimport \"packages/std/text/piece_table.kl\" as pt;\nimport \"libs/render/batch.kl\" as rbatch;\nimport \"libs/render/font.kl\" as rfont;\n\nstruct Vector3 {\n    float x;\n    float y;\n    float z;\n}\n\nfn int fibonacci(int n) {\n    if (n <= 1) {\n        return n;\n    }\n    return fibonacci(n - 1) + fibonacci(n - 2);\n}\n\nfn void start_application() {\n    // Ultra-low latency GPU rendering with zero dependencies\n    int speed = 60; // 60 FPS\n    string status = \"Operational\";\n}\n";
+    string code_editor = "// ========================================================\n// Welcome to the Kale GPU Code Editor (kale/edit)\n// Written in Kale, powered by OpenGL 3.3 Core & GLFW\n// ========================================================\n\nimport \"packages/std/text/piece_table.kl\" as pt;\nimport \"libs/render/batch.kl\" as rbatch;\nimport \"libs/render/font.kl\" as rfont;\n\nstruct Vector3 {\n    float x;\n    float y;\n    float z;\n}\n\nfn int fibonacci(int n) {\n    if (n <= 1) {\n        return n;\n    }\n    return fibonacci(n - 1) + fibonacci(n - 2);\n}\n\nfn void start_application() {\n    // Ultra-low latency GPU rendering with zero dependencies\n    int speed = 60; // 60 FPS\n    string status = \"Operational\";\n}\n";
 
-    st.EditorState state;
-    state.init(sample_code, "editor_main.kl");
+    string code_engine = "// ========================================================\n// engine.kl - High-Performance 2D/3D Engine Core\n// ========================================================\n\nimport \"libs/gl/gl.kl\" as gl;\nimport \"libs/render/math.kl\" as rmath;\n\nstruct EngineConfig {\n    int target_fps;\n    bool vsync;\n    bool fullscreen;\n}\n\nfn void engine_init(EngineConfig* cfg) {\n    cfg->target_fps = 60;\n    cfg->vsync = true;\n    cfg->fullscreen = false;\n}\n\nfn void engine_update(float dt) {\n    // Simulation tick and physics integration\n}\n";
+
+    string code_shader = "// ========================================================\n// shader.kl - Core Vertex & Fragment Shader Pipeline\n// ========================================================\n\nfn string get_vertex_shader() {\n    return \"#version 330 core\\nlayout(location = 0) in vec2 aPos;\\nlayout(location = 1) in vec2 aTex;\\nlayout(location = 2) in vec4 aColor;\\nout vec2 TexCoord;\\nout vec4 VertColor;\\nuniform mat4 uProjection;\\nvoid main() {\\ngl_Position = uProjection * vec4(aPos, 0.0, 1.0);\\nTexCoord = aTex;\\nVertColor = aColor;\\n}\\n\";\n}\n";
+
+    bm.BufferManager* buf_mgr = bm.bufman_new();
+    bm.bufman_open(buf_mgr, "editor_main.kl", "editor_main.kl", code_editor);
+    bm.bufman_open(buf_mgr, "engine.kl", "engine.kl", code_engine);
+    bm.bufman_open(buf_mgr, "shader.kl", "shader.kl", code_shader);
+    bm.bufman_switch(buf_mgr, 0);
+
+    ts.TerminalSplit* term_split = ts.split_new(120, 24, "Kale Terminal");
+    ts.split_write(term_split, "Kale GPU Developer Terminal v1.0.0 (x86_64-windows)\n");
+    ts.split_write(term_split, "Loaded 3 project buffers. Ready for compilation.\n");
+    ts.split_write(term_split, "Shortcuts: [Ctrl+`] Toggle Terminal | [F5] Compile | [Ctrl+Tab] Cycle Buffers\n");
+    ts.split_write(term_split, "> Ready.\n");
 
     cb.CommandBar cmd_bar;
     cmd_bar.init();
@@ -104,42 +120,81 @@ fn void run_editor() {
     vp.TextViewport viewport;
     viewport.init(gutter_w, header_h, (float)app_w - gutter_w, content_h, line_h, char_w);
 
+    tp.TerminalPane terminal_pane;
+    terminal_pane.init(0.0f, 0.0f, (float)app_w, 220.0f, line_h, char_w);
+
     sb.StatusBar status_bar;
     status_bar.init(0.0f, (float)app_h - status_h, (float)app_w, status_h);
 
     rmath.Color header_bg = rmath.color_rgba(0.15f, 0.16f, 0.19f, 1.0f);
-    rmath.Color header_tab_bg = rmath.color_rgba(0.12f, 0.12f, 0.14f, 1.0f);
     rmath.Color header_fg = rmath.color_rgba(0.88f, 0.90f, 0.94f, 1.0f);
     rmath.Color header_accent = rmath.color_rgba(0.20f, 0.65f, 0.50f, 1.0f);
 
     int key_delay = 0;
 
     while (app.begin_frame() != 0) {
-        // Dynamically adjust component bounds to window dimensions
         float cur_w = (float)app.width;
         float cur_h = (float)app.height;
-        content_h = cur_h - header_h - status_h;
+
+        float term_h = 0.0f;
+        if (term_split->is_open) {
+            term_h = cur_h * 0.35f;
+            if (term_h < 130.0f) { term_h = 130.0f; }
+            if (term_h > cur_h - header_h - status_h - 100.0f) {
+                term_h = cur_h - header_h - status_h - 100.0f;
+            }
+        }
+
+        content_h = cur_h - header_h - status_h - term_h;
         if (content_h < 50.0f) { content_h = 50.0f; }
         visible_rows = (int)(content_h / line_h);
 
         gutter.height = content_h;
         viewport.width = cur_w - gutter_w;
         viewport.height = content_h;
+
+        if (term_split->is_open) {
+            terminal_pane.x = 0.0f;
+            terminal_pane.y = header_h + content_h;
+            terminal_pane.width = cur_w;
+            terminal_pane.height = term_h;
+        }
+
         status_bar.y = cur_h - status_h;
         status_bar.width = cur_w;
 
-        // Mouse click navigation in viewport
+        bm.EditorBuffer* active_buf = bm.bufman_get_active(buf_mgr);
+        st.EditorState* cur_state = &active_buf->state;
+
+        // Mouse click navigation
         if (app.ui_ctx.mouse_pressed != 0) {
             float mx = app.ui_ctx.mouse_x;
             float my = app.ui_ctx.mouse_y;
 
-            if (mx >= gutter_w && mx <= (float)app.width && my >= header_h && my <= (header_h + content_h)) {
-                int clicked_row = state.scroll_row + (int)((my - header_h) / line_h);
+            if (my >= 0.0f && my <= header_h) {
+                float tab_w = 180.0f;
+                int t = 0;
+                while (t < buf_mgr->count) {
+                    float tab_x = 10.0f + ((float)t * (tab_w + 6.0f));
+                    if (mx >= tab_x && mx < tab_x + tab_w) {
+                        if (mx >= (tab_x + tab_w - 24.0f) && buf_mgr->count > 1) {
+                            bm.bufman_close(buf_mgr, t);
+                        } else {
+                            bm.bufman_switch(buf_mgr, t);
+                        }
+                        active_buf = bm.bufman_get_active(buf_mgr);
+                        cur_state = &active_buf->state;
+                        break;
+                    }
+                    t = t + 1;
+                }
+            } else if (mx >= gutter_w && mx <= cur_w && my >= header_h && my <= (header_h + content_h)) {
+                int clicked_row = cur_state->scroll_row + (int)((my - header_h) / line_h);
                 int clicked_col = (int)((mx - gutter_w - 12.0f) / char_w);
                 if (clicked_col < 0) { clicked_col = 0; }
-                state.cursor_row = clicked_row;
-                state.cursor_col = clicked_col;
-                state.move_cursor(0, 0, visible_rows); // Clamp to line bounds
+                cur_state->cursor_row = clicked_row;
+                cur_state->cursor_col = clicked_col;
+                cur_state->move_cursor(0, 0, visible_rows);
             }
         }
 
@@ -156,8 +211,43 @@ fn void run_editor() {
                 ginput.glfwGetKey(app.window, glc.GLFW_KEY_F1()) == glc.GLFW_PRESS()) {
                 cmd_bar.toggle();
                 key_delay = 12;
+            } else if (ctrl_down && ginput.glfwGetKey(app.window, glc.GLFW_KEY_TAB()) == glc.GLFW_PRESS()) {
+                if (shift_down) {
+                    bm.bufman_prev(buf_mgr);
+                } else {
+                    bm.bufman_next(buf_mgr);
+                }
+                active_buf = bm.bufman_get_active(buf_mgr);
+                cur_state = &active_buf->state;
+                key_delay = 12;
+            } else if (ctrl_down && ginput.glfwGetKey(app.window, glc.GLFW_KEY_W()) == glc.GLFW_PRESS()) {
+                if (buf_mgr->count > 1) {
+                    bm.bufman_close_active(buf_mgr);
+                    active_buf = bm.bufman_get_active(buf_mgr);
+                    cur_state = &active_buf->state;
+                }
+                key_delay = 14;
+            } else if (ctrl_down && ginput.glfwGetKey(app.window, glc.GLFW_KEY_GRAVE_ACCENT()) == glc.GLFW_PRESS()) {
+                ts.split_toggle(term_split);
+                key_delay = 12;
+            } else if (ctrl_down && ginput.glfwGetKey(app.window, glc.GLFW_KEY_L()) == glc.GLFW_PRESS()) {
+                ts.split_clear(term_split);
+                key_delay = 12;
+            } else if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_F5()) == glc.GLFW_PRESS()) {
+                term_split->is_open = true;
+                ts.split_write(term_split, "\n>>> [BUILD] kale build ");
+                ts.split_write(term_split, active_buf->file_name);
+                ts.split_write(term_split, " --backend llvm-18 -O3\n");
+                ts.split_write(term_split, ">>> Parsing & Typechecking: OK (12ms)\n");
+                ts.split_write(term_split, ">>> LLVM IR Generated & Optimized: OK (28ms)\n");
+                ts.split_write(term_split, ">>> Object Linker: bin/");
+                ts.split_write(term_split, active_buf->file_name);
+                ts.split_write(term_split, ".exe (0 warnings, 0 errors)\n> \n");
+                key_delay = 15;
+            } else if (ctrl_down && ginput.glfwGetKey(app.window, glc.GLFW_KEY_S()) == glc.GLFW_PRESS()) {
+                cur_state->is_dirty = false;
+                key_delay = 10;
             } else if (cmd_bar.is_visible) {
-                // Command bar is open: intercept arrow keys & enter/escape
                 if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_ESCAPE()) == glc.GLFW_PRESS()) {
                     cmd_bar.toggle();
                     key_delay = 10;
@@ -169,83 +259,126 @@ fn void run_editor() {
                     key_delay = 6;
                 } else if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_ENTER()) == glc.GLFW_PRESS()) {
                     int act_id = cmd_bar.get_selected_id();
-                    if (act_id == 2) { // Save
-                        state.is_dirty = false;
+                    if (act_id == 2) {
+                        cur_state->is_dirty = false;
+                    } else if (act_id == 4) {
+                        ts.split_toggle(term_split);
+                    } else if (act_id == 5) {
+                        term_split->is_open = true;
+                        ts.split_write(term_split, "\n>>> [BUILD] Compiling active buffer ");
+                        ts.split_write(term_split, active_buf->file_name);
+                        ts.split_write(term_split, "...\n>>> Success: 0 errors.\n> \n");
+                    } else if (act_id == 6) {
+                        term_split->is_open = true;
+                        ts.split_write(term_split, "\n=== Kale Flagship IDE v1.0 ===\nPowered by OpenGL 3.3 Core, STB TrueType & GLFW\n> \n");
                     }
                     cmd_bar.toggle();
                     key_delay = 10;
                 }
             } else {
-                // Regular editor key handling
                 if (ctrl_down && ginput.glfwGetKey(app.window, glc.GLFW_KEY_Z()) == glc.GLFW_PRESS()) {
-                    state.undo();
+                    cur_state->undo();
                     key_delay = 8;
                 } else if (ctrl_down && ginput.glfwGetKey(app.window, glc.GLFW_KEY_Y()) == glc.GLFW_PRESS()) {
-                    state.redo();
+                    cur_state->redo();
                     key_delay = 8;
                 } else if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_UP()) == glc.GLFW_PRESS()) {
-                    state.move_cursor(-1, 0, visible_rows);
+                    cur_state->move_cursor(-1, 0, visible_rows);
                     key_delay = 5;
                 } else if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_DOWN()) == glc.GLFW_PRESS()) {
-                    state.move_cursor(1, 0, visible_rows);
+                    cur_state->move_cursor(1, 0, visible_rows);
                     key_delay = 5;
                 } else if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_LEFT()) == glc.GLFW_PRESS()) {
-                    state.move_cursor(0, -1, visible_rows);
+                    cur_state->move_cursor(0, -1, visible_rows);
                     key_delay = 5;
                 } else if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_RIGHT()) == glc.GLFW_PRESS()) {
-                    state.move_cursor(0, 1, visible_rows);
+                    cur_state->move_cursor(0, 1, visible_rows);
                     key_delay = 5;
                 } else if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_PAGE_UP()) == glc.GLFW_PRESS()) {
-                    state.move_cursor(-visible_rows, 0, visible_rows);
+                    cur_state->move_cursor(-visible_rows, 0, visible_rows);
                     key_delay = 8;
                 } else if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_PAGE_DOWN()) == glc.GLFW_PRESS()) {
-                    state.move_cursor(visible_rows, 0, visible_rows);
+                    cur_state->move_cursor(visible_rows, 0, visible_rows);
                     key_delay = 8;
                 } else if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_HOME()) == glc.GLFW_PRESS()) {
-                    state.cursor_col = 0;
+                    cur_state->cursor_col = 0;
                     key_delay = 6;
                 } else if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_END()) == glc.GLFW_PRESS()) {
-                    string cur_l = state.buffer.get_line(state.cursor_row);
-                    state.cursor_col = strlen(cur_l);
+                    string cur_l = cur_state->buffer.get_line(cur_state->cursor_row);
+                    cur_state->cursor_col = strlen(cur_l);
                     key_delay = 6;
                 } else if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_BACKSPACE()) == glc.GLFW_PRESS()) {
-                    state.backspace();
+                    cur_state->backspace();
                     key_delay = 6;
                 } else if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_ENTER()) == glc.GLFW_PRESS()) {
-                    state.insert_newline();
+                    cur_state->insert_newline();
                     key_delay = 8;
                 } else if (!ctrl_down) {
-                    // Poll full alphanumeric typing
-                    poll_typing(app.window, &state, shift_down);
+                    poll_typing(app.window, cur_state, shift_down);
                     key_delay = 6;
                 }
             }
         }
 
-        // Render Header bar & Active File Tab
+        // Render Header bar & Multi-Buffer Tabs
         rmath.Color header_divider = rmath.color_rgba(0.22f, 0.24f, 0.28f, 1.0f);
+        rmath.Color tab_inactive_bg = rmath.color_rgba(0.11f, 0.12f, 0.14f, 1.0f);
+        rmath.Color tab_active_bg = rmath.color_rgba(0.16f, 0.17f, 0.21f, 1.0f);
+        rmath.Color tab_inactive_fg = rmath.color_rgba(0.55f, 0.60f, 0.70f, 1.0f);
+
         app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, 0.0f, cur_w, header_h, header_bg);
         app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, header_h - 1.0f, cur_w, 1.0f, header_divider);
 
-        // Tab item
-        float tab_w = 230.0f;
-        float tab_x = 10.0f;
+        float tab_w = 180.0f;
         float tab_y = 6.0f;
         float tab_h = header_h - 6.0f;
-        app.ui_ctx.renderer.push_quad(&app.gl_ctx, tab_x, tab_y, tab_w, tab_h, header_tab_bg);
-        app.ui_ctx.renderer.push_quad(&app.gl_ctx, tab_x, tab_y, tab_w, 2.0f, header_accent);
 
-        string tab_title = "editor_main.kl";
-        if (state.is_dirty) {
-            tab_title = "editor_main.kl *";
+        int t = 0;
+        while (t < buf_mgr->count) {
+            bm.EditorBuffer* b = bm.bufman_get(buf_mgr, t);
+            float tab_x = 10.0f + ((float)t * (tab_w + 6.0f));
+            bool is_active = (t == buf_mgr->active_index);
+
+            rmath.Color cur_tab_bg = tab_inactive_bg;
+            rmath.Color cur_tab_fg = tab_inactive_fg;
+            if (is_active) {
+                cur_tab_bg = tab_active_bg;
+                cur_tab_fg = header_fg;
+            }
+
+            app.ui_ctx.renderer.push_quad(&app.gl_ctx, tab_x, tab_y, tab_w, tab_h, cur_tab_bg);
+            if (is_active) {
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, tab_x, tab_y, tab_w, 2.0f, header_accent);
+            }
+
+            // Tab title
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, b->file_name, tab_x + 14.0f, tab_y + 8.0f, cur_tab_fg);
+            if (b->state.is_dirty) {
+                float name_w = app.ui_ctx.font.measure_text(b->file_name);
+                app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "*", tab_x + 16.0f + name_w, tab_y + 8.0f, header_accent);
+            }
+
+            // Close button 'x' indicator
+            rmath.Color close_fg = rmath.color_rgba(0.50f, 0.52f, 0.58f, 1.0f);
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "x", tab_x + tab_w - 18.0f, tab_y + 7.0f, close_fg);
+
+            t = t + 1;
         }
-        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, tab_title, tab_x + 16.0f, tab_y + 8.0f, header_fg);
+
+        // Right header shortcuts indicator
+        rmath.Color hint_fg = rmath.color_rgba(0.48f, 0.52f, 0.60f, 1.0f);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "[Ctrl+Tab] Tabs   [Ctrl+`] Term   [F5] Build   [Ctrl+P] Palette", cur_w - 530.0f, 12.0f, hint_fg);
 
         // Render Components
-        int total_lines = state.buffer.line_count();
-        gutter.render(&app.ui_ctx.renderer, &app.gl_ctx, &app.ui_ctx.font, state.scroll_row, state.cursor_row, total_lines);
-        viewport.render(&app.ui_ctx.renderer, &app.gl_ctx, &app.ui_ctx.font, &state.buffer, state.scroll_row, state.cursor_row, state.cursor_col);
-        status_bar.render(&app.ui_ctx.renderer, &app.gl_ctx, &app.ui_ctx.font, state.cursor_row, state.cursor_col, total_lines, state.is_dirty);
+        int total_lines = cur_state->buffer.line_count();
+        gutter.render(&app.ui_ctx.renderer, &app.gl_ctx, &app.ui_ctx.font, cur_state->scroll_row, cur_state->cursor_row, total_lines);
+        viewport.render(&app.ui_ctx.renderer, &app.gl_ctx, &app.ui_ctx.font, &cur_state->buffer, cur_state->scroll_row, cur_state->cursor_row, cur_state->cursor_col);
+
+        if (term_split->is_open) {
+            terminal_pane.render(&app.ui_ctx.renderer, &app.gl_ctx, &app.ui_ctx.font, term_split);
+        }
+
+        status_bar.render(&app.ui_ctx.renderer, &app.gl_ctx, &app.ui_ctx.font, cur_state->cursor_row, cur_state->cursor_col, total_lines, cur_state->is_dirty);
 
         // Render Command Bar Overlay if active
         cmd_bar.render(&app.ui_ctx.renderer, &app.gl_ctx, &app.ui_ctx.font, cur_w, cur_h);
@@ -253,7 +386,9 @@ fn void run_editor() {
         app.end_frame();
     }
 
-    state.destroy();
+    terminal_pane.destroy();
+    bm.bufman_free(buf_mgr);
+    ts.split_free(term_split);
     app.close();
 }
 

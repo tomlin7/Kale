@@ -1,0 +1,130 @@
+// editor/terminal_pane.kl
+// GPU-Accelerated Terminal Emulator Pane Component for Kale Code Editor
+
+import "libs/gl/loader.kl" as glloader;
+import "libs/render/math.kl" as rmath;
+import "libs/render/batch.kl" as rbatch;
+import "libs/render/font.kl" as rfont;
+import "libs/term/term.kl" as term;
+import "libs/term/grid.kl" as grid;
+import "apps/editor/terminal_split.kl" as ts;
+
+struct TerminalPane {
+    float x;
+    float y;
+    float width;
+    float height;
+    float header_h;
+    float line_height;
+    float char_width;
+
+    rmath.Color bg;
+    rmath.Color header_bg;
+    rmath.Color border;
+    rmath.Color title_color;
+    rmath.Color help_color;
+    rmath.Color cursor_color;
+    char* ch_buf;
+}
+
+fn void TerminalPane.init(float x, float y, float w, float h, float line_h, float char_w) {
+    this->x = x;
+    this->y = y;
+    this->width = w;
+    this->height = h;
+    this->header_h = 26.0f;
+    this->line_height = line_h;
+    this->char_width = char_w;
+
+    this->bg = rmath.color_rgba(0.09f, 0.10f, 0.12f, 1.0f);
+    this->header_bg = rmath.color_rgba(0.14f, 0.15f, 0.18f, 1.0f);
+    this->border = rmath.color_rgba(0.24f, 0.26f, 0.32f, 1.0f);
+    this->title_color = rmath.color_rgba(0.88f, 0.90f, 0.95f, 1.0f);
+    this->help_color = rmath.color_rgba(0.50f, 0.55f, 0.65f, 1.0f);
+    this->cursor_color = rmath.color_rgba(0.35f, 0.75f, 0.55f, 0.70f);
+
+    this->ch_buf = alloc(char, 2);
+    this->ch_buf[0] = (char)32;
+    this->ch_buf[1] = (char)0;
+}
+
+fn void TerminalPane.destroy() {
+    if (this->ch_buf != (char*)0) {
+        free(this->ch_buf);
+        this->ch_buf = (char*)0;
+    }
+}
+
+fn void TerminalPane.render(
+    rbatch.BatchRenderer* renderer,
+    glloader.GLContext* gl_ctx,
+    rfont.FontAtlas* font,
+    ts.TerminalSplit* term_split
+) {
+    if (term_split == (ts.TerminalSplit*)0 || !term_split->is_open) {
+        return;
+    }
+
+    // Header bar & top divider
+    renderer->push_quad(gl_ctx, this->x, this->y, this->width, 1.0f, this->border);
+    renderer->push_quad(gl_ctx, this->x, this->y + 1.0f, this->width, this->header_h - 1.0f, this->header_bg);
+
+    font->draw_text(renderer, gl_ctx, " TERMINAL ", this->x + 8.0f, this->y + 5.0f, this->title_color);
+    font->draw_text(renderer, gl_ctx, "[Ctrl+] Hide Pane   [Ctrl+L] Clear Screen", this->x + 130.0f, this->y + 5.0f, this->help_color);
+
+    float body_y = this->y + this->header_h;
+    float body_h = this->height - this->header_h;
+    if (body_h < 10.0f) {
+        return;
+    }
+
+    // Terminal console body
+    renderer->push_quad(gl_ctx, this->x, body_y, this->width, body_h, this->bg);
+
+    // Hardware scissor clipping to keep terminal output inside pane
+    renderer->set_clip_rect(gl_ctx, this->x, body_y, this->width, body_h);
+
+    term.Terminal* t = term_split->terminal;
+    if (t != (term.Terminal*)0 && t->g != (grid.CellGrid*)0) {
+        int max_r = (int)(body_h / this->line_height);
+        if (max_r > t->g->rows) { max_r = t->g->rows; }
+        int max_c = (int)((this->width - 16.0f) / this->char_width);
+        if (max_c > t->g->cols) { max_c = t->g->cols; }
+
+        char* ch_buf = this->ch_buf;
+
+        int r = 0;
+        while (r < max_r) {
+            float cur_y = body_y + ((float)r * this->line_height);
+            int c = 0;
+            while (c < max_c) {
+                grid.Cell* cell = term.term_cell_at(t, c, r);
+                float cur_x = this->x + 8.0f + ((float)c * this->char_width);
+
+                if (cell->ch > 32 && cell->ch < 127) {
+                    ch_buf[0] = (char)cell->ch;
+                    rmath.Color fg_col = rmath.color_rgba(
+                        (float)cell->fg.r / 255.0f,
+                        (float)cell->fg.g / 255.0f,
+                        (float)cell->fg.b / 255.0f,
+                        1.0f
+                    );
+                    font->draw_text(renderer, gl_ctx, (string)ch_buf, cur_x, cur_y + 2.0f, fg_col);
+                }
+                c = c + 1;
+            }
+            r = r + 1;
+        }
+
+        // Terminal cursor
+        int cur_c = t->g->cursor_col;
+        int cur_r = t->g->cursor_row;
+        if (cur_r >= 0 && cur_r < max_r && cur_c >= 0 && cur_c < max_c) {
+            float caret_x = this->x + 8.0f + ((float)cur_c * this->char_width);
+            float caret_y = body_y + ((float)cur_r * this->line_height) + 2.0f;
+            renderer->push_quad(gl_ctx, caret_x, caret_y, this->char_width, this->line_height - 4.0f, this->cursor_color);
+        }
+    }
+
+    renderer->reset_clip(gl_ctx);
+}

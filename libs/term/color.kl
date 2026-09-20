@@ -1,12 +1,12 @@
-struct Color {
+struct TermColor {
     int r;
     int g;
     int b;
     bool is_default;
 }
 
-fn Color color_rgb(int r, int g, int b) {
-    Color c;
+fn TermColor color_rgb(int r, int g, int b) {
+    TermColor c;
     c.r = r;
     c.g = g;
     c.b = b;
@@ -14,8 +14,8 @@ fn Color color_rgb(int r, int g, int b) {
     return c;
 }
 
-fn Color color_default() {
-    Color c;
+fn TermColor color_default() {
+    TermColor c;
     c.r = 255;
     c.g = 255;
     c.b = 255;
@@ -23,18 +23,18 @@ fn Color color_default() {
     return c;
 }
 
-fn Color color_crimson() {
+fn TermColor color_crimson() {
     return color_rgb(185, 28, 28);
 }
 
-fn Color color_gold() {
+fn TermColor color_gold() {
     return color_rgb(217, 119, 6);
 }
 
-fn Color color_parchment() {
+fn TermColor color_parchment() {
     return color_rgb(254, 243, 199);
 }
 
-fn Color color_black() {
+fn TermColor color_black() {
     return color_rgb(15, 23, 42);
 }
