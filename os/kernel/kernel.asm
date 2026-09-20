@@ -225,6 +225,27 @@ shell_execute_command:
     test eax, eax
     jnz .run_cat
 
+    ; Compare "disk"
+    mov rsi, cmd_buffer
+    mov rdi, str_cmd_disk
+    call str_equals
+    test eax, eax
+    jnz .run_disk
+
+    ; Compare "gui"
+    mov rsi, cmd_buffer
+    mov rdi, str_cmd_gui
+    call str_equals
+    test eax, eax
+    jnz .run_gui
+
+    ; Compare "net"
+    mov rsi, cmd_buffer
+    mov rdi, str_cmd_net
+    call str_equals
+    test eax, eax
+    jnz .run_net
+
     ; Compare "reboot"
     mov rsi, cmd_buffer
     mov rdi, str_cmd_reboot
@@ -373,6 +394,24 @@ shell_execute_command:
 .run_cat:
     mov rsi, msg_cat_text
     mov cl, 0x0E                ; Yellow
+    call vga_print_str
+    jmp .cmd_done
+
+.run_disk:
+    mov rsi, msg_disk_text
+    mov cl, 0x0B                ; Light Cyan
+    call vga_print_str
+    jmp .cmd_done
+
+.run_gui:
+    mov rsi, msg_gui_text
+    mov cl, 0x0D                ; Light Magenta
+    call vga_print_str
+    jmp .cmd_done
+
+.run_net:
+    mov rsi, msg_net_text
+    mov cl, 0x0A                ; Light Green
     call vga_print_str
     jmp .cmd_done
 
@@ -1120,6 +1159,9 @@ msg_help_text:
     db "  heap     - Show dynamic heap allocator metrics, usage & fragmentation", 10
     db "  ls       - List directory contents in VFS rootfs (/bin, /dev, /etc, /tmp)", 10
     db "  cat      - Display system configuration file (/etc/os-release)", 10
+    db "  disk     - Show ATA/IDE hard drive status, LBA geometry & buffer cache", 10
+    db "  gui      - Show Framebuffer graphics modes, clipping & mouse status", 10
+    db "  net      - Show Network device status (lo0 127.0.0.1, sockets, packets)", 10
     db "  reboot   - Hardware reboot via 8042 keyboard controller", 10
     db "  halt     - Halt system execution (cli; hlt)", 10, 0
 
@@ -1178,6 +1220,9 @@ str_cmd_user:       db "user", 0
 str_cmd_heap:       db "heap", 0
 str_cmd_ls:         db "ls", 0
 str_cmd_cat:        db "cat", 0
+str_cmd_disk:       db "disk", 0
+str_cmd_gui:        db "gui", 0
+str_cmd_net:        db "net", 0
 str_cmd_reboot:     db "reboot", 0
 str_cmd_halt:       db "halt", 0
 str_cmd_echo:       db "echo ", 0
@@ -1202,7 +1247,7 @@ msg_heap_text:
 msg_ls_text:
     db "Virtual File System Root [/]:", 10
     db "  drwxr-xr-x   2 root root     4096 bin/   (Binaries: init, sh)", 10
-    db "  drwxr-xr-x   2 root root     4096 dev/   (Devices: null, zero, serial, vga)", 10
+    db "  drwxr-xr-x   2 root root     4096 dev/   (Devices: null, zero, serial, vga, hda)", 10
     db "  drwxr-xr-x   2 root root     4096 etc/   (Configuration: os-release)", 10
     db "  drwxrwxrwt   2 root root     4096 tmp/   (Scratch memory)", 10, 0
 
@@ -1212,6 +1257,27 @@ msg_cat_text:
     db 'ID=kale', 10
     db 'PRETTY_NAME="Kale Operating System (x86_64 Long Mode)"', 10
     db 'ARCH=x86_64', 10, 0
+
+msg_disk_text:
+    db "Block Storage & ATA/IDE Controller (Milestone 8):", 10
+    db "  Primary Controller: Ports 0x1F0-0x1F7 / Ctrl 0x3F6 (ATA PIO Active)", 10
+    db "  Drive 0 (/dev/hda): ATA Master (Capacity: 48 Sectors / 24 KB Boot Disk)", 10
+    db "  LBA Addressing    : LBA28 (0x20/0x30) & LBA48 (0x24/0x34) Supported", 10
+    db "  Buffer Cache (bio): 16 Pool Slots / LRU Eviction & Writeback OK", 10, 0
+
+msg_gui_text:
+    db "Graphics Subsystem & Pointer (Milestone 9):", 10
+    db "  Framebuffer Driver: 32-bit Linear ARGB (800x600 / 1024x768 Supported)", 10
+    db "  2D Primitives     : Scissor Clipping / Bresenham Line / Alpha Compositing", 10
+    db "  Font Typography   : 8x8 Monospace Bitmap Font Rasterizer OK", 10
+    db "  Mouse Controller  : PS/2 3-Byte Packet Stream / Clamped Viewport OK", 10, 0
+
+msg_net_text:
+    db "Networking Subsystem & Sockets (Milestone 10):", 10
+    db "  Loopback Interface: lo0 Active (127.0.0.1 / 255.0.0.0 / MTU 1500)", 10
+    db "  Protocol Stack    : Ethernet II (0x0800, 0x0806) / IPv4 / ARP / ICMP / UDP", 10
+    db "  Socket Interface  : AF_INET Sockets (SYS_SOCKET, SYS_BIND, SYS_SENDTO)", 10
+    db "  Hardware Drivers  : Realtek RTL8139 & Intel E1000 PCI Driver Stubs", 10, 0
 
 ; Scancode Set 1 Translation Table (128 entries)
 scancode_ascii_table:

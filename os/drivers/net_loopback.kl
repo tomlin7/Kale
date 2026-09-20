@@ -1,0 +1,165 @@
+// os/drivers/net_loopback.kl
+// Loopback Network Device Driver & Packet Ring Buffers for Kale OS
+// Implements 127.0.0.1 loopback transmission, packet queuing, and device statistics.
+
+int MAX_PACKET_LEN = 1514; // Standard Ethernet II MTU 1500 + 14B header
+int RING_SIZE = 8;
+
+struct PacketBuffer {
+    uint8[1514] data;
+    uint32 length;
+}
+
+struct PacketRing {
+    PacketBuffer[8] packets;
+    uint32 head;
+    uint32 tail;
+    uint32 count;
+}
+
+struct NetDevice {
+    char[16] name;
+    uint8[6] mac;
+    uint8[4] ip;
+    uint8[4] netmask;
+    uint8[4] gateway;
+    uint32 mtu;
+    bool is_up;
+    uint64 rx_packets;
+    uint64 tx_packets;
+    uint64 rx_bytes;
+    uint64 tx_bytes;
+    PacketRing rx_ring;
+    PacketRing tx_ring;
+}
+
+// ==============================================================================
+// Packet Ring Operations
+// ==============================================================================
+
+fn void net_ring_init(PacketRing* ring) {
+    ring->head = 0 as uint32;
+    ring->tail = 0 as uint32;
+    ring->count = 0 as uint32;
+
+    int i = 0;
+    while (i < 8) {
+        ring->packets[i].length = 0 as uint32;
+        i = i + 1;
+    }
+}
+
+fn bool net_ring_push(PacketRing* ring, uint8* data, uint32 len) {
+    if (ring == null || data == null || len == (0 as uint32) || len > (1514 as uint32)) {
+        return false;
+    }
+    if (ring->count >= (8 as uint32)) {
+        return false; // Ring buffer full (packet dropped)
+    }
+
+    uint32 slot = ring->tail;
+    PacketBuffer* pb = &ring->packets[slot as int];
+    pb->length = len;
+
+    uint32 i = 0 as uint32;
+    while (i < len) {
+        pb->data[i as int] = data[i as int];
+        i = i + (1 as uint32);
+    }
+
+    ring->tail = (ring->tail + (1 as uint32)) % (8 as uint32);
+    ring->count = ring->count + (1 as uint32);
+    return true;
+}
+
+fn bool net_ring_pop(PacketRing* ring, uint8* out_data, uint32* out_len) {
+    if (ring == null || out_data == null || out_len == null || ring->count == (0 as uint32)) {
+        return false; // Queue empty
+    }
+
+    uint32 slot = ring->head;
+    PacketBuffer* pb = &ring->packets[slot as int];
+    *out_len = pb->length;
+
+    uint32 i = 0 as uint32;
+    while (i < pb->length) {
+        out_data[i as int] = pb->data[i as int];
+        i = i + (1 as uint32);
+    }
+
+    ring->head = (ring->head + (1 as uint32)) % (8 as uint32);
+    ring->count = ring->count - (1 as uint32);
+    return true;
+}
+
+// ==============================================================================
+// Loopback Network Device Management
+// ==============================================================================
+
+fn void loopback_init(NetDevice* dev) {
+    dev->name[0] = 'l' as char;
+    dev->name[1] = 'o' as char;
+    dev->name[2] = '0' as char;
+    dev->name[3] = 0 as char;
+
+    int i = 0;
+    while (i < 6) {
+        dev->mac[i] = 0 as uint8;
+        i = i + 1;
+    }
+
+    // IP: 127.0.0.1
+    dev->ip[0] = 127 as uint8;
+    dev->ip[1] = 0 as uint8;
+    dev->ip[2] = 0 as uint8;
+    dev->ip[3] = 1 as uint8;
+
+    // Subnet: 255.0.0.0
+    dev->netmask[0] = 255 as uint8;
+    dev->netmask[1] = 0 as uint8;
+    dev->netmask[2] = 0 as uint8;
+    dev->netmask[3] = 0 as uint8;
+
+    // Gateway: 127.0.0.1
+    dev->gateway[0] = 127 as uint8;
+    dev->gateway[1] = 0 as uint8;
+    dev->gateway[2] = 0 as uint8;
+    dev->gateway[3] = 1 as uint8;
+
+    dev->mtu = 1500 as uint32;
+    dev->is_up = true;
+    dev->rx_packets = 0 as uint64;
+    dev->tx_packets = 0 as uint64;
+    dev->rx_bytes = 0 as uint64;
+    dev->tx_bytes = 0 as uint64;
+
+    net_ring_init(&dev->rx_ring);
+    net_ring_init(&dev->tx_ring);
+}
+
+// Loopback Transmit: Directly mirrors packet into the RX ring
+fn bool loopback_transmit(NetDevice* dev, uint8* packet, uint32 len) {
+    if (dev == null || !dev->is_up || packet == null || len == (0 as uint32)) {
+        return false;
+    }
+
+    // Push into RX queue
+    bool enqueued = net_ring_push(&dev->rx_ring, packet, len);
+    if (!enqueued) {
+        return false;
+    }
+
+    dev->tx_packets = dev->tx_packets + (1 as uint64);
+    dev->tx_bytes = dev->tx_bytes + (len as uint64);
+    dev->rx_packets = dev->rx_packets + (1 as uint64);
+    dev->rx_bytes = dev->rx_bytes + (len as uint64);
+    return true;
+}
+
+// Loopback Receive: Dequeues next packet from RX ring
+fn bool loopback_receive(NetDevice* dev, uint8* out_buf, uint32* out_len) {
+    if (dev == null || !dev->is_up) {
+        return false;
+    }
+    return net_ring_pop(&dev->rx_ring, out_buf, out_len);
+}

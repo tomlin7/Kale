@@ -242,6 +242,23 @@ fn uint64 vfs_read(VFSNode* node, uint64 offset, uint64 size, uint8* buffer) {
         }
     }
 
+    // Block device read
+    if (node->node_type == VFS_BLOCKDEVICE) {
+        if (node->data == null || offset >= node->size) {
+            return 0 as uint64;
+        }
+        uint64 to_read = size;
+        if (offset + to_read > node->size) {
+            to_read = node->size - offset;
+        }
+        uint64 i = 0 as uint64;
+        while (i < to_read) {
+            buffer[i as int] = node->data[(offset + i) as int];
+            i = i + (1 as uint64);
+        }
+        return to_read;
+    }
+
     // Regular file read
     if (offset >= node->size || node->data == null) {
         return 0 as uint64; // Beyond EOF
@@ -272,6 +289,26 @@ fn uint64 vfs_write(VFSNode* node, uint64 offset, uint64 size, uint8* buffer) {
         if (vfs_str_equals(&node->name[0], "null") || vfs_str_equals(&node->name[0], "zero")) {
             return size;
         }
+    }
+
+    // Block device write
+    if (node->node_type == VFS_BLOCKDEVICE) {
+        if (node->data == null || offset >= node->data_capacity) {
+            return 0 as uint64;
+        }
+        uint64 to_write = size;
+        if (offset + to_write > node->data_capacity) {
+            to_write = node->data_capacity - offset;
+        }
+        uint64 i = 0 as uint64;
+        while (i < to_write) {
+            node->data[(offset + i) as int] = buffer[i as int];
+            i = i + (1 as uint64);
+        }
+        if (offset + to_write > node->size) {
+            node->size = offset + to_write;
+        }
+        return to_write;
     }
 
     if (node->data == null) {
@@ -522,3 +559,26 @@ fn bool vfs_create_device(VFSNode* parent, VFSNode* new_dev, char* name, uint64 
     vfs_node_init(new_dev, name, VFS_CHARDEVICE, inode_num);
     return vfs_add_child(parent, new_dev);
 }
+
+fn bool vfs_create_block_device(VFSNode* parent, VFSNode* new_dev, char* name, uint8* storage_buf, uint64 capacity, uint64 inode_num) {
+    if (parent == null || new_dev == null || name == null) {
+        return false;
+    }
+    vfs_node_init(new_dev, name, VFS_BLOCKDEVICE, inode_num);
+    new_dev->data = storage_buf;
+    new_dev->size = capacity;
+    new_dev->data_capacity = capacity;
+    new_dev->permissions = 420 as uint32; // 0644
+    return vfs_add_child(parent, new_dev);
+}
+
+fn bool vfs_mount_block_device(VFSNode* mount_dir, VFSNode* dev_node) {
+    if (mount_dir == null || dev_node == null || mount_dir->node_type != VFS_DIRECTORY) {
+        return false;
+    }
+    mount_dir->data = dev_node->data;
+    mount_dir->size = dev_node->size;
+    mount_dir->data_capacity = dev_node->data_capacity;
+    return true;
+}
+

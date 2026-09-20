@@ -1,0 +1,276 @@
+// os/kernel/window.kl
+// Window & Desktop Canvas Management for Kale OS
+// Supports multi-window management, z-ordering, focus switching,
+// dirty rectangle tracking, and coordinate hit-testing.
+
+struct Rect {
+    int32 x;
+    int32 y;
+    int32 width;
+    int32 height;
+}
+
+struct Window {
+    uint32 id;
+    char[32] title;
+    Rect rect;
+    uint32 z_order;
+    bool is_visible;
+    bool is_focused;
+    bool is_dirty;
+    Rect dirty_rect;
+    uint32 bg_color;
+    uint32 title_color;
+}
+
+struct WindowManager {
+    Window[16] windows;
+    uint32 window_count;
+    uint32 next_window_id;
+    uint32 focused_window_id;
+    uint32 max_z_order;
+}
+
+// ==============================================================================
+// String helper
+// ==============================================================================
+
+fn void win_str_copy(char* dest, char* src, int max_len) {
+    int i = 0;
+    while (i < max_len - 1 && src[i] != (0 as char)) {
+        dest[i] = src[i];
+        i = i + 1;
+    }
+    dest[i] = 0 as char;
+}
+
+// ==============================================================================
+// Window Manager Operations
+// ==============================================================================
+
+fn void wm_init(WindowManager* wm) {
+    wm->window_count = 0 as uint32;
+    wm->next_window_id = 1 as uint32;
+    wm->focused_window_id = 0 as uint32;
+    wm->max_z_order = 0 as uint32;
+
+    int i = 0;
+    while (i < 16) {
+        Window* w = &wm->windows[i];
+        w->id = 0 as uint32;
+        w->rect.x = 0;
+        w->rect.y = 0;
+        w->rect.width = 0;
+        w->rect.height = 0;
+        w->z_order = 0 as uint32;
+        w->is_visible = false;
+        w->is_focused = false;
+        w->is_dirty = false;
+        w->bg_color = 0xFFFFFFFF as uint32;
+        w->title_color = 0xFF0000AA as uint32;
+        i = i + 1;
+    }
+}
+
+fn Window* wm_find_window(WindowManager* wm, uint32 window_id) {
+    if (wm == null || window_id == (0 as uint32)) {
+        return null;
+    }
+
+    int i = 0;
+    while (i < 16) {
+        Window* w = &wm->windows[i];
+        if (w->id == window_id) {
+            return w;
+        }
+        i = i + 1;
+    }
+    return null;
+}
+
+fn Window* wm_create_window(
+    WindowManager* wm,
+    char* title,
+    int32 x,
+    int32 y,
+    int32 w,
+    int32 h,
+    uint32 bg_color
+) {
+    if (wm == null || wm->window_count >= (16 as uint32)) {
+        return null;
+    }
+
+    // Find empty slot
+    int slot = -1;
+    int i = 0;
+    while (i < 16) {
+        if (wm->windows[i].id == (0 as uint32)) {
+            slot = i;
+            i = 16; // break
+        }
+        i = i + 1;
+    }
+
+    if (slot < 0) {
+        return null;
+    }
+
+    Window* win = &wm->windows[slot];
+    win->id = wm->next_window_id;
+    wm->next_window_id = wm->next_window_id + (1 as uint32);
+
+    win_str_copy(&win->title[0], title, 32);
+    win->rect.x = x;
+    win->rect.y = y;
+    win->rect.width = w;
+    win->rect.height = h;
+
+    wm->max_z_order = wm->max_z_order + (1 as uint32);
+    win->z_order = wm->max_z_order;
+    win->is_visible = true;
+    win->is_focused = true;
+    win->is_dirty = true;
+    win->dirty_rect.x = 0;
+    win->dirty_rect.y = 0;
+    win->dirty_rect.width = w;
+    win->dirty_rect.height = h;
+    win->bg_color = bg_color;
+    win->title_color = 0xFF000080 as uint32;
+
+    // Defocus previously focused window
+    if (wm->focused_window_id != (0 as uint32)) {
+        Window* prev = wm_find_window(wm, wm->focused_window_id);
+        if (prev != null) {
+            prev->is_focused = false;
+        }
+    }
+    wm->focused_window_id = win->id;
+    wm->window_count = wm->window_count + (1 as uint32);
+    return win;
+}
+
+fn bool wm_destroy_window(WindowManager* wm, uint32 window_id) {
+    if (wm == null || window_id == (0 as uint32)) {
+        return false;
+    }
+
+    Window* w = wm_find_window(wm, window_id);
+    if (w == null) {
+        return false;
+    }
+
+    w->id = 0 as uint32;
+    w->is_visible = false;
+    w->is_focused = false;
+    w->is_dirty = false;
+    wm->window_count = wm->window_count - (1 as uint32);
+
+    if (wm->focused_window_id == window_id) {
+        wm->focused_window_id = 0 as uint32;
+    }
+    return true;
+}
+
+fn bool wm_bring_to_front(WindowManager* wm, uint32 window_id) {
+    Window* w = wm_find_window(wm, window_id);
+    if (w == null) {
+        return false;
+    }
+
+    wm->max_z_order = wm->max_z_order + (1 as uint32);
+    w->z_order = wm->max_z_order;
+
+    // Shift focus
+    if (wm->focused_window_id != window_id) {
+        Window* prev = wm_find_window(wm, wm->focused_window_id);
+        if (prev != null) {
+            prev->is_focused = false;
+        }
+        w->is_focused = true;
+        wm->focused_window_id = window_id;
+    }
+
+    w->is_dirty = true;
+    return true;
+}
+
+fn bool wm_move_window(WindowManager* wm, uint32 window_id, int32 new_x, int32 new_y) {
+    Window* w = wm_find_window(wm, window_id);
+    if (w == null) {
+        return false;
+    }
+
+    w->rect.x = new_x;
+    w->rect.y = new_y;
+    w->is_dirty = true;
+    return true;
+}
+
+fn bool wm_resize_window(WindowManager* wm, uint32 window_id, int32 new_w, int32 new_h) {
+    Window* w = wm_find_window(wm, window_id);
+    if (w == null || new_w <= 0 || new_h <= 0) {
+        return false;
+    }
+
+    w->rect.width = new_w;
+    w->rect.height = new_h;
+    w->is_dirty = true;
+    w->dirty_rect.x = 0;
+    w->dirty_rect.y = 0;
+    w->dirty_rect.width = new_w;
+    w->dirty_rect.height = new_h;
+    return true;
+}
+
+fn bool wm_invalidate_rect(
+    WindowManager* wm,
+    uint32 window_id,
+    int32 dx,
+    int32 dy,
+    int32 dw,
+    int32 dh
+) {
+    Window* w = wm_find_window(wm, window_id);
+    if (w == null) {
+        return false;
+    }
+
+    w->is_dirty = true;
+    w->dirty_rect.x = dx;
+    w->dirty_rect.y = dy;
+    w->dirty_rect.width = dw;
+    w->dirty_rect.height = dh;
+    return true;
+}
+
+// Spatial hit-test: return topmost visible window containing point (px, py)
+fn Window* wm_hit_test(WindowManager* wm, int32 px, int32 py) {
+    if (wm == null) {
+        return null;
+    }
+
+    Window* topmost = null;
+    uint32 highest_z = 0 as uint32;
+
+    int i = 0;
+    while (i < 16) {
+        Window* w = &wm->windows[i];
+        if (w->id != (0 as uint32) && w->is_visible) {
+            int32 rx1 = w->rect.x;
+            int32 ry1 = w->rect.y;
+            int32 rx2 = w->rect.x + w->rect.width;
+            int32 ry2 = w->rect.y + w->rect.height;
+
+            if (px >= rx1 && px < rx2 && py >= ry1 && py < ry2) {
+                if (w->z_order >= highest_z) {
+                    highest_z = w->z_order;
+                    topmost = w;
+                }
+            }
+        }
+        i = i + 1;
+    }
+
+    return topmost;
+}

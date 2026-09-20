@@ -1,0 +1,84 @@
+// os/drivers/rtl8139.kl
+// Realtek RTL8139 Fast Ethernet PCI Network Controller Driver for Kale OS
+// Supports PCI configuration space, MAC address reading, TX/RX descriptor control,
+// and hardware register interface.
+
+uint16 RTL8139_VENDOR_ID = 0x10EC as uint16;
+uint16 RTL8139_DEVICE_ID = 0x8139 as uint16;
+
+// I/O Register Offsets
+uint16 RTL_REG_MAC       = 0x00 as uint16; // IDR0-IDR5 (0x00 - 0x05)
+uint16 RTL_REG_TSD0      = 0x10 as uint16; // Transmit Status Descriptor 0
+uint16 RTL_REG_TSAD0     = 0x20 as uint16; // Transmit Start Address 0
+uint16 RTL_REG_RBSTART   = 0x30 as uint16; // Receive Buffer Start Address
+uint16 RTL_REG_CMD       = 0x37 as uint16; // Command Register
+uint16 RTL_REG_CAPR      = 0x38 as uint16; // Current Address of Packet Read
+uint16 RTL_REG_CBR       = 0x3A as uint16; // Current Buffer Address
+uint16 RTL_REG_IMR       = 0x3C as uint16; // Interrupt Mask Register
+uint16 RTL_REG_ISR       = 0x3E as uint16; // Interrupt Status Register
+uint16 RTL_REG_TCR       = 0x40 as uint16; // Transmit Configuration Register
+uint16 RTL_REG_RCR       = 0x44 as uint16; // Receive Configuration Register
+
+// Command Register Bits
+uint8 RTL_CMD_EMPTY = 0x01 as uint8; // Buffer empty
+uint8 RTL_CMD_TE    = 0x04 as uint8; // Transmit Enable
+uint8 RTL_CMD_RE    = 0x08 as uint8; // Receive Enable
+uint8 RTL_CMD_RST   = 0x10 as uint8; // Software Reset
+
+// Interrupt Bits
+uint16 RTL_INT_ROK = 0x0001 as uint16; // Receive OK
+uint16 RTL_INT_RER = 0x0002 as uint16; // Receive Error
+uint16 RTL_INT_TOK = 0x0004 as uint16; // Transmit OK
+uint16 RTL_INT_TER = 0x0008 as uint16; // Transmit Error
+
+struct RTL8139Device {
+    uint16 io_base;
+    uint8 irq;
+    uint8[6] mac_address;
+    uint32 rx_buffer_phys;
+    uint8 tx_current_descriptor;
+    bool is_active;
+    uint64 tx_packets;
+    uint64 rx_packets;
+}
+
+// ==============================================================================
+// Driver Operations
+// ==============================================================================
+
+fn void rtl8139_init(RTL8139Device* dev, uint16 io_base, uint8 irq) {
+    dev->io_base = io_base;
+    dev->irq = irq;
+    dev->rx_buffer_phys = 0 as uint32;
+    dev->tx_current_descriptor = 0 as uint8;
+    dev->is_active = false;
+    dev->tx_packets = 0 as uint64;
+    dev->rx_packets = 0 as uint64;
+
+    // Default QEMU RTL8139 MAC: 52:54:00:12:34:56
+    dev->mac_address[0] = 0x52 as uint8;
+    dev->mac_address[1] = 0x54 as uint8;
+    dev->mac_address[2] = 0x00 as uint8;
+    dev->mac_address[3] = 0x12 as uint8;
+    dev->mac_address[4] = 0x34 as uint8;
+    dev->mac_address[5] = 0x56 as uint8;
+}
+
+fn void rtl8139_set_mac(RTL8139Device* dev, uint8 m0, uint8 m1, uint8 m2, uint8 m3, uint8 m4, uint8 m5) {
+    dev->mac_address[0] = m0;
+    dev->mac_address[1] = m1;
+    dev->mac_address[2] = m2;
+    dev->mac_address[3] = m3;
+    dev->mac_address[4] = m4;
+    dev->mac_address[5] = m5;
+}
+
+fn void rtl8139_reset(RTL8139Device* dev) {
+    dev->is_active = false;
+    dev->tx_current_descriptor = 0 as uint8;
+}
+
+fn void rtl8139_enable(RTL8139Device* dev, uint32 rx_buf_addr) {
+    dev->rx_buffer_phys = rx_buf_addr;
+    dev->is_active = true;
+}

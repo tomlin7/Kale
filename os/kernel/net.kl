@@ -1,0 +1,583 @@
+// os/kernel/net.kl
+// TCP/IP Protocol Stack, Packet Parser, and Socket Engine for Kale OS
+// Features: Ethernet II framing, ARP cache & resolution, IPv4 engine with Internet checksums,
+// ICMP ping echo reply, UDP/TCP sockets, and port binding.
+
+import "os/drivers/net_loopback.kl" as loop;
+
+// EtherTypes (Big Endian)
+uint16 ETH_TYPE_IPV4 = 0x0800 as uint16;
+uint16 ETH_TYPE_ARP  = 0x0806 as uint16;
+
+// IP Protocols
+uint8 IP_PROTO_ICMP = 1 as uint8;
+uint8 IP_PROTO_TCP  = 6 as uint8;
+uint8 IP_PROTO_UDP  = 17 as uint8;
+
+// Socket Domains & Types
+uint32 AF_INET     = 2 as uint32;
+uint32 SOCK_STREAM = 1 as uint32;
+uint32 SOCK_DGRAM  = 2 as uint32;
+
+// ICMP Types
+uint8 ICMP_ECHO_REPLY   = 0 as uint8;
+uint8 ICMP_ECHO_REQUEST = 8 as uint8;
+
+// ==============================================================================
+// Header Structures
+// ==============================================================================
+
+struct EthernetHeader {
+    uint8[6] dest_mac;
+    uint8[6] src_mac;
+    uint16 ether_type;
+}
+
+struct ARPHeader {
+    uint16 hw_type;       // 1 = Ethernet
+    uint16 proto_type;    // 0x0800 = IPv4
+    uint8 hw_size;        // 6
+    uint8 proto_size;     // 4
+    uint16 opcode;        // 1 = Request, 2 = Reply
+    uint8[6] sender_mac;
+    uint8[4] sender_ip;
+    uint8[6] target_mac;
+    uint8[4] target_ip;
+}
+
+struct IPv4Header {
+    uint8 ver_ihl;        // 0x45 (IPv4, 5 words / 20 bytes)
+    uint8 tos;
+    uint16 total_len;
+    uint16 id;
+    uint16 flags_frag;
+    uint8 ttl;
+    uint8 protocol;
+    uint16 checksum;
+    uint8[4] src_ip;
+    uint8[4] dst_ip;
+}
+
+struct UDPHeader {
+    uint16 src_port;
+    uint16 dst_port;
+    uint16 length;
+    uint16 checksum;
+}
+
+struct ICMPHeader {
+    uint8 msg_type;
+    uint8 code;
+    uint16 checksum;
+    uint16 id;
+    uint16 sequence;
+}
+
+// ==============================================================================
+// Checksum Calculation (RFC 791 / RFC 1071)
+// ==============================================================================
+
+fn uint16 net_checksum(uint8* data, int length) {
+    uint32 sum = 0 as uint32;
+    int i = 0;
+    while (i < length - 1) {
+        uint32 word = ((data[i] as uint32) << 8) | (data[i + 1] as uint32);
+        sum = sum + word;
+        i = i + 2;
+    }
+    if (i < length) {
+        sum = sum + ((data[i] as uint32) << 8);
+    }
+    while ((sum >> 16) > (0 as uint32)) {
+        sum = (sum & (0xFFFF as uint32)) + (sum >> 16);
+    }
+
+    uint32 inverted = (sum ^ (0xFFFF as uint32)) & (0xFFFF as uint32);
+    return inverted as uint16;
+}
+
+// ==============================================================================
+// ARP Cache & Resolution
+// ==============================================================================
+
+struct ARPEntry {
+    uint8[4] ip;
+    uint8[6] mac;
+    bool is_valid;
+    uint32 age;
+}
+
+struct ARPTable {
+    ARPEntry[16] entries;
+    uint32 entry_count;
+}
+
+fn void arp_init(ARPTable* table) {
+    table->entry_count = 0 as uint32;
+    int i = 0;
+    while (i < 16) {
+        table->entries[i].is_valid = false;
+        table->entries[i].age = 0 as uint32;
+        i = i + 1;
+    }
+}
+
+fn bool ip_equals(uint8* ip1, uint8* ip2) {
+    return (ip1[0] == ip2[0] && ip1[1] == ip2[1] && ip1[2] == ip2[2] && ip1[3] == ip2[3]);
+}
+
+fn void arp_insert(ARPTable* table, uint8* ip, uint8* mac) {
+    // 1. Check if IP already in table
+    int i = 0;
+    while (i < 16) {
+        if (table->entries[i].is_valid && ip_equals(&table->entries[i].ip[0], ip)) {
+            int m = 0;
+            while (m < 6) {
+                table->entries[i].mac[m] = mac[m];
+                m = m + 1;
+            }
+            return;
+        }
+        i = i + 1;
+    }
+
+    // 2. Find empty slot
+    i = 0;
+    while (i < 16) {
+        if (!table->entries[i].is_valid) {
+            table->entries[i].is_valid = true;
+            table->entries[i].ip[0] = ip[0];
+            table->entries[i].ip[1] = ip[1];
+            table->entries[i].ip[2] = ip[2];
+            table->entries[i].ip[3] = ip[3];
+
+            int m = 0;
+            while (m < 6) {
+                table->entries[i].mac[m] = mac[m];
+                m = m + 1;
+            }
+            table->entry_count = table->entry_count + (1 as uint32);
+            return;
+        }
+        i = i + 1;
+    }
+}
+
+fn bool arp_lookup(ARPTable* table, uint8* ip, uint8* out_mac) {
+    int i = 0;
+    while (i < 16) {
+        if (table->entries[i].is_valid && ip_equals(&table->entries[i].ip[0], ip)) {
+            int m = 0;
+            while (m < 6) {
+                out_mac[m] = table->entries[i].mac[m];
+                m = m + 1;
+            }
+            return true;
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
+// Process ARP request and generate ARP reply
+fn bool arp_handle_packet(
+    ARPTable* table,
+    uint8* my_ip,
+    uint8* my_mac,
+    uint8* arp_pkt,
+    uint8* out_reply,
+    uint32* out_len
+) {
+    // Opcode: 1 = Request (bytes 6-7: 0x00, 0x01)
+    if (arp_pkt[6] != (0 as uint8) || arp_pkt[7] != (1 as uint8)) {
+        return false;
+    }
+
+    // Target IP is at bytes 24-27
+    uint8[4] target_ip;
+    target_ip[0] = arp_pkt[24];
+    target_ip[1] = arp_pkt[25];
+    target_ip[2] = arp_pkt[26];
+    target_ip[3] = arp_pkt[27];
+
+    // Sender IP is at bytes 14-17, sender MAC at 8-13
+    uint8[4] sender_ip;
+    sender_ip[0] = arp_pkt[14];
+    sender_ip[1] = arp_pkt[15];
+    sender_ip[2] = arp_pkt[16];
+    sender_ip[3] = arp_pkt[17];
+
+    uint8[6] sender_mac;
+    int m = 0;
+    while (m < 6) {
+        sender_mac[m] = arp_pkt[8 + m];
+        m = m + 1;
+    }
+
+    // Cache the sender
+    arp_insert(table, &sender_ip[0], &sender_mac[0]);
+
+    // If request was for my IP, generate ARP Reply
+    if (!ip_equals(&target_ip[0], my_ip)) {
+        return false;
+    }
+
+    // Build 28-byte ARP Reply
+    out_reply[0] = 0 as uint8; out_reply[1] = 1 as uint8;     // HW type: Ethernet
+    out_reply[2] = 0x08 as uint8; out_reply[3] = 0x00 as uint8; // Proto: IPv4
+    out_reply[4] = 6 as uint8;                                // HW size
+    out_reply[5] = 4 as uint8;                                // Proto size
+    out_reply[6] = 0 as uint8; out_reply[7] = 2 as uint8;     // Opcode: 2 (Reply)
+
+    // Sender = My MAC & IP
+    m = 0;
+    while (m < 6) {
+        out_reply[8 + m] = my_mac[m];
+        m = m + 1;
+    }
+    out_reply[14] = my_ip[0];
+    out_reply[15] = my_ip[1];
+    out_reply[16] = my_ip[2];
+    out_reply[17] = my_ip[3];
+
+    // Target = Requester MAC & IP
+    m = 0;
+    while (m < 6) {
+        out_reply[18 + m] = sender_mac[m];
+        m = m + 1;
+    }
+    out_reply[24] = sender_ip[0];
+    out_reply[25] = sender_ip[1];
+    out_reply[26] = sender_ip[2];
+    out_reply[27] = sender_ip[3];
+
+    *out_len = 28 as uint32;
+    return true;
+}
+
+// ==============================================================================
+// ICMP Ping Processing
+// ==============================================================================
+
+fn bool icmp_handle_echo_request(
+    uint8* in_icmp,
+    uint32 in_len,
+    uint8* out_reply,
+    uint32* out_len
+) {
+    if (in_icmp == null || in_len < (8 as uint32)) {
+        return false;
+    }
+
+    // Check if Echo Request (type 8)
+    if (in_icmp[0] != ICMP_ECHO_REQUEST) {
+        return false;
+    }
+
+    // Copy entire packet into reply buffer
+    uint32 i = 0 as uint32;
+    while (i < in_len) {
+        out_reply[i as int] = in_icmp[i as int];
+        i = i + (1 as uint32);
+    }
+
+    // Change type to Echo Reply (0) and code to 0
+    out_reply[0] = ICMP_ECHO_REPLY;
+    out_reply[1] = 0 as uint8;
+
+    // Reset checksum field to 0 before recalculating
+    out_reply[2] = 0 as uint8;
+    out_reply[3] = 0 as uint8;
+
+    uint16 cksum = net_checksum(out_reply, in_len as int);
+    out_reply[2] = ((cksum >> 8) & (0xFF as uint16)) as uint8;
+    out_reply[3] = (cksum & (0xFF as uint16)) as uint8;
+
+    *out_len = in_len;
+    return true;
+}
+
+// ==============================================================================
+// Socket Engine
+// ==============================================================================
+
+struct Socket {
+    uint32 id;
+    uint32 domain;
+    uint32 sock_type;
+    uint32 protocol;
+    uint8[4] local_ip;
+    uint16 local_port;
+    uint8[4] remote_ip;
+    uint16 remote_port;
+    bool is_bound;
+    bool is_open;
+    uint8[1514] rx_buf;
+    uint32 rx_len;
+    uint8[4] last_rx_ip;
+    uint16 last_rx_port;
+}
+
+struct SocketTable {
+    Socket[16] sockets;
+    uint32 count;
+    uint32 next_id;
+}
+
+fn void socket_table_init(SocketTable* table) {
+    table->count = 0 as uint32;
+    table->next_id = 1 as uint32;
+
+    int i = 0;
+    while (i < 16) {
+        table->sockets[i].id = 0 as uint32;
+        table->sockets[i].is_open = false;
+        table->sockets[i].is_bound = false;
+        table->sockets[i].rx_len = 0 as uint32;
+        i = i + 1;
+    }
+}
+
+fn Socket* socket_find(SocketTable* table, uint32 sock_id) {
+    if (table == null || sock_id == (0 as uint32)) {
+        return null;
+    }
+    int i = 0;
+    while (i < 16) {
+        if (table->sockets[i].id == sock_id && table->sockets[i].is_open) {
+            return &table->sockets[i];
+        }
+        i = i + 1;
+    }
+    return null;
+}
+
+fn int32 socket_create(SocketTable* table, uint32 domain, uint32 sock_type, uint32 protocol) {
+    if (table == null || table->count >= (16 as uint32)) {
+        return -1;
+    }
+
+    int slot = -1;
+    int i = 0;
+    while (i < 16) {
+        if (!table->sockets[i].is_open) {
+            slot = i;
+            i = 16;
+        }
+        i = i + 1;
+    }
+
+    if (slot < 0) {
+        return -1;
+    }
+
+    Socket* s = &table->sockets[slot];
+    s->id = table->next_id;
+    table->next_id = table->next_id + (1 as uint32);
+    s->domain = domain;
+    s->sock_type = sock_type;
+    s->protocol = protocol;
+    s->is_open = true;
+    s->is_bound = false;
+    s->local_port = 0 as uint16;
+    s->remote_port = 0 as uint16;
+    s->rx_len = 0 as uint32;
+
+    table->count = table->count + (1 as uint32);
+    return s->id as int32;
+}
+
+fn bool socket_bind(SocketTable* table, int32 sock_id, uint8* ip, uint16 port) {
+    Socket* s = socket_find(table, sock_id as uint32);
+    if (s == null) {
+        return false;
+    }
+
+    // Check port collision
+    int i = 0;
+    while (i < 16) {
+        Socket* other = &table->sockets[i];
+        if (other->is_open && other->is_bound && other->local_port == port && other->id != s->id) {
+            return false; // Port already in use (EADDRINUSE)
+        }
+        i = i + 1;
+    }
+
+    s->local_ip[0] = ip[0];
+    s->local_ip[1] = ip[1];
+    s->local_ip[2] = ip[2];
+    s->local_ip[3] = ip[3];
+    s->local_port = port;
+    s->is_bound = true;
+    return true;
+}
+
+fn int32 socket_sendto(
+    SocketTable* table,
+    int32 sock_id,
+    uint8* dest_ip,
+    uint16 dest_port,
+    uint8* payload,
+    uint32 payload_len,
+    loop.NetDevice* dev
+) {
+    Socket* s = socket_find(table, sock_id as uint32);
+    if (s == null || !s->is_open) {
+        return -1;
+    }
+
+    // Construct raw packet: Ethernet II (14) + IPv4 (20) + UDP (8) + Payload
+    uint32 total_packet_size = (14 as uint32) + (20 as uint32) + (8 as uint32) + payload_len;
+    uint8[1514] packet;
+
+    // 1. Ethernet II Header
+    packet[0] = 0 as uint8; packet[1] = 0 as uint8; packet[2] = 0 as uint8;
+    packet[3] = 0 as uint8; packet[4] = 0 as uint8; packet[5] = 0 as uint8; // Dest MAC
+    packet[6] = 0 as uint8; packet[7] = 0 as uint8; packet[8] = 0 as uint8;
+    packet[9] = 0 as uint8; packet[10] = 0 as uint8; packet[11] = 0 as uint8; // Src MAC
+    packet[12] = 0x08 as uint8; packet[13] = 0x00 as uint8; // EtherType: IPv4
+
+    // 2. IPv4 Header
+    packet[14] = 0x45 as uint8; // Version 4, IHL 5
+    packet[15] = 0 as uint8;    // DSCP/ECN
+    uint16 ip_total_len = ((20 as uint32) + (8 as uint32) + payload_len) as uint16;
+    packet[16] = ((ip_total_len >> 8) & (0xFF as uint16)) as uint8;
+    packet[17] = (ip_total_len & (0xFF as uint16)) as uint8;
+    packet[18] = 0x12 as uint8; packet[19] = 0x34 as uint8; // ID
+    packet[20] = 0x40 as uint8; packet[21] = 0x00 as uint8; // Flags: DF
+    packet[22] = 64 as uint8;                               // TTL
+    packet[23] = IP_PROTO_UDP;                              // Protocol: UDP
+    packet[24] = 0 as uint8; packet[25] = 0 as uint8;       // Checksum zeroed for calculation
+    packet[26] = s->local_ip[0]; packet[27] = s->local_ip[1];
+    packet[28] = s->local_ip[2]; packet[29] = s->local_ip[3]; // Src IP
+    packet[30] = dest_ip[0]; packet[31] = dest_ip[1];
+    packet[32] = dest_ip[2]; packet[33] = dest_ip[3];         // Dst IP
+
+    uint16 ip_cksum = net_checksum(&packet[14], 20);
+    packet[24] = ((ip_cksum >> 8) & (0xFF as uint16)) as uint8;
+    packet[25] = (ip_cksum & (0xFF as uint16)) as uint8;
+
+    // 3. UDP Header
+    uint16 udp_src = s->local_port;
+    packet[34] = ((udp_src >> 8) & (0xFF as uint16)) as uint8;
+    packet[35] = (udp_src & (0xFF as uint16)) as uint8;
+    packet[36] = ((dest_port >> 8) & (0xFF as uint16)) as uint8;
+    packet[37] = (dest_port & (0xFF as uint16)) as uint8;
+    uint16 udp_len = ((8 as uint32) + payload_len) as uint16;
+    packet[38] = ((udp_len >> 8) & (0xFF as uint16)) as uint8;
+    packet[39] = (udp_len & (0xFF as uint16)) as uint8;
+    packet[40] = 0 as uint8; packet[41] = 0 as uint8; // Checksum optional in IPv4 UDP
+
+    // 4. Payload
+    uint32 i = 0 as uint32;
+    while (i < payload_len) {
+        packet[(42 as uint32 + i) as int] = payload[i as int];
+        i = i + (1 as uint32);
+    }
+
+    // Transmit through device
+    if (dev != null) {
+        bool sent = loop.loopback_transmit(dev, &packet[0], total_packet_size);
+        if (!sent) {
+            return -1;
+        }
+    }
+
+    return payload_len as int32;
+}
+
+// Deliver an incoming UDP packet to the matching bound socket
+fn bool socket_deliver_udp(SocketTable* table, uint8* raw_pkt, uint32 pkt_len) {
+    if (table == null || raw_pkt == null || pkt_len < (42 as uint32)) {
+        return false;
+    }
+
+    // Verify IPv4 & UDP protocol
+    if (raw_pkt[12] != (0x08 as uint8) || raw_pkt[13] != (0x00 as uint8)) {
+        return false; // Not IPv4
+    }
+    if (raw_pkt[23] != IP_PROTO_UDP) {
+        return false; // Not UDP
+    }
+
+    // Extract destination port from UDP header (bytes 36-37)
+    uint16 dst_port = ((raw_pkt[36] as uint16) << 8) | (raw_pkt[37] as uint16);
+    uint16 src_port = ((raw_pkt[34] as uint16) << 8) | (raw_pkt[35] as uint16);
+    uint16 udp_len  = ((raw_pkt[38] as uint16) << 8) | (raw_pkt[39] as uint16);
+    uint32 payload_len = (udp_len as uint32) - (8 as uint32);
+
+    // Find socket bound to dst_port
+    int i = 0;
+    while (i < 16) {
+        Socket* s = &table->sockets[i];
+        if (s->is_open && s->is_bound && s->local_port == dst_port) {
+            s->last_rx_ip[0] = raw_pkt[26];
+            s->last_rx_ip[1] = raw_pkt[27];
+            s->last_rx_ip[2] = raw_pkt[28];
+            s->last_rx_ip[3] = raw_pkt[29];
+            s->last_rx_port = src_port;
+            s->rx_len = payload_len;
+
+            uint32 p = 0 as uint32;
+            while (p < payload_len && p < (1514 as uint32)) {
+                s->rx_buf[p as int] = raw_pkt[(42 as uint32 + p) as int];
+                p = p + (1 as uint32);
+            }
+            return true;
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
+fn int32 socket_recvfrom(
+    SocketTable* table,
+    int32 sock_id,
+    uint8* out_src_ip,
+    uint16* out_src_port,
+    uint8* out_buf,
+    uint32 max_len
+) {
+    Socket* s = socket_find(table, sock_id as uint32);
+    if (s == null || !s->is_open || s->rx_len == (0 as uint32)) {
+        return -1; // No packet available
+    }
+
+    if (out_src_ip != null) {
+        out_src_ip[0] = s->last_rx_ip[0];
+        out_src_ip[1] = s->last_rx_ip[1];
+        out_src_ip[2] = s->last_rx_ip[2];
+        out_src_ip[3] = s->last_rx_ip[3];
+    }
+    if (out_src_port != null) {
+        *out_src_port = s->last_rx_port;
+    }
+
+    uint32 copy_len = s->rx_len;
+    if (copy_len > max_len) {
+        copy_len = max_len;
+    }
+
+    uint32 i = 0 as uint32;
+    while (i < copy_len) {
+        out_buf[i as int] = s->rx_buf[i as int];
+        i = i + (1 as uint32);
+    }
+
+    s->rx_len = 0 as uint32; // Consume packet
+    return copy_len as int32;
+}
+
+fn bool socket_close(SocketTable* table, int32 sock_id) {
+    Socket* s = socket_find(table, sock_id as uint32);
+    if (s == null) {
+        return false;
+    }
+
+    s->is_open = false;
+    s->is_bound = false;
+    s->id = 0 as uint32;
+    s->rx_len = 0 as uint32;
+    table->count = table->count - (1 as uint32);
+    return true;
+}

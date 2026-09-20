@@ -1,0 +1,244 @@
+// os/kernel/bio.kl
+// Block Buffer Cache (bio) Subsystem for Kale OS
+// Implements an LRU sector cache between filesystems/VFS and block devices,
+// dirty writeback, cache hit tracking, and block flushing.
+
+import "os/drivers/ata.kl" as ata;
+
+// Buffer Flags
+uint32 B_VALID = 1 as uint32; // Buffer contains valid disk data
+uint32 B_DIRTY = 2 as uint32; // Buffer has been modified, needs writeback
+uint32 B_BUSY  = 4 as uint32; // Buffer is locked by an active I/O operation
+
+// Cache Dimensions
+int BIO_POOL_SIZE = 16;
+int SECTOR_BYTES  = 512;
+
+struct BufHeader {
+    uint32 dev_id;       // Device ID (0 = primary ATA master /dev/hda)
+    uint64 block_no;     // LBA sector index
+    uint32 flags;        // B_VALID, B_DIRTY, B_BUSY
+    uint32 ref_count;    // Number of active users (0 = available for LRU eviction)
+    uint32 last_used;    // LRU access tick
+    uint8[512] data;     // Cached 512-byte sector data
+}
+
+struct BufCache {
+    BufHeader[16] pool;
+    uint32 pool_size;
+    uint32 lru_clock;
+    uint64 total_reads;
+    uint64 total_writes;
+    uint64 cache_hits;
+    uint64 cache_misses;
+    uint64 writebacks;
+    ata.ATADevice* ata_dev;
+}
+
+// ==============================================================================
+// Buffer Cache Management
+// ==============================================================================
+
+fn void bio_init(BufCache* cache, ata.ATADevice* dev) {
+    cache->pool_size = 16 as uint32;
+    cache->lru_clock = 0 as uint32;
+    cache->total_reads = 0 as uint64;
+    cache->total_writes = 0 as uint64;
+    cache->cache_hits = 0 as uint64;
+    cache->cache_misses = 0 as uint64;
+    cache->writebacks = 0 as uint64;
+    cache->ata_dev = dev;
+
+    int i = 0;
+    while (i < 16) {
+        BufHeader* b = &cache->pool[i];
+        b->dev_id = 0 as uint32;
+        b->block_no = 0 as uint64;
+        b->flags = 0 as uint32;
+        b->ref_count = 0 as uint32;
+        b->last_used = 0 as uint32;
+
+        int byte_idx = 0;
+        while (byte_idx < 512) {
+            b->data[byte_idx] = 0 as uint8;
+            byte_idx = byte_idx + 1;
+        }
+        i = i + 1;
+    }
+}
+
+// Search for buffer matching (dev_id, block_no)
+fn BufHeader* bio_find(BufCache* cache, uint32 dev_id, uint64 block_no) {
+    int i = 0;
+    while (i < 16) {
+        BufHeader* b = &cache->pool[i];
+        if ((b->flags & B_VALID) != (0 as uint32)) {
+            if (b->dev_id == dev_id && b->block_no == block_no) {
+                return b;
+            }
+        }
+        i = i + 1;
+    }
+    return null;
+}
+
+// Write a dirty buffer back to the underlying ATA device
+fn bool bio_bflush(BufCache* cache, BufHeader* buf) {
+    if (cache == null || buf == null) {
+        return false;
+    }
+
+    if ((buf->flags & B_DIRTY) == (0 as uint32)) {
+        return true; // Nothing to flush
+    }
+
+    if (cache->ata_dev != null) {
+        bool ok = ata.ata_write_sectors(cache->ata_dev, buf->block_no, 1 as uint32, &buf->data[0]);
+        if (!ok) {
+            return false;
+        }
+    }
+
+    // Clear dirty bit
+    buf->flags = buf->flags & (0xFFFFFFFD as uint32);
+    cache->writebacks = cache->writebacks + (1 as uint64);
+    return true;
+}
+
+// Allocate a buffer from the pool using LRU eviction
+fn BufHeader* bio_alloc_buffer(BufCache* cache, uint32 dev_id, uint64 block_no) {
+    // 1. Check for completely unused slot first
+    int i = 0;
+    while (i < 16) {
+        BufHeader* b = &cache->pool[i];
+        if ((b->flags & B_VALID) == (0 as uint32) && b->ref_count == (0 as uint32)) {
+            b->dev_id = dev_id;
+            b->block_no = block_no;
+            b->flags = 0 as uint32;
+            b->ref_count = 1 as uint32;
+            cache->lru_clock = cache->lru_clock + (1 as uint32);
+            b->last_used = cache->lru_clock;
+            return b;
+        }
+        i = i + 1;
+    }
+
+    // 2. Select LRU buffer with ref_count == 0
+    BufHeader* victim = null;
+    uint32 oldest_tick = 0xFFFFFFFF as uint32;
+
+    i = 0;
+    while (i < 16) {
+        BufHeader* b = &cache->pool[i];
+        if (b->ref_count == (0 as uint32)) {
+            if (b->last_used < oldest_tick) {
+                oldest_tick = b->last_used;
+                victim = b;
+            }
+        }
+        i = i + 1;
+    }
+
+    if (victim == null) {
+        return null; // All buffers currently pinned
+    }
+
+    // Writeback victim if dirty
+    if ((victim->flags & B_DIRTY) != (0 as uint32)) {
+        bio_bflush(cache, victim);
+    }
+
+    // Reinitialize victim for new block
+    victim->dev_id = dev_id;
+    victim->block_no = block_no;
+    victim->flags = 0 as uint32;
+    victim->ref_count = 1 as uint32;
+    cache->lru_clock = cache->lru_clock + (1 as uint32);
+    victim->last_used = cache->lru_clock;
+    return victim;
+}
+
+// Bread: Read a block through the buffer cache
+fn BufHeader* bio_bread(BufCache* cache, uint32 dev_id, uint64 block_no) {
+    if (cache == null) {
+        return null;
+    }
+
+    cache->total_reads = cache->total_reads + (1 as uint64);
+
+    // 1. Check for cache hit
+    BufHeader* existing = bio_find(cache, dev_id, block_no);
+    if (existing != null) {
+        cache->cache_hits = cache->cache_hits + (1 as uint64);
+        existing->ref_count = existing->ref_count + (1 as uint32);
+        cache->lru_clock = cache->lru_clock + (1 as uint32);
+        existing->last_used = cache->lru_clock;
+        return existing;
+    }
+
+    // 2. Cache miss: allocate slot
+    cache->cache_misses = cache->cache_misses + (1 as uint64);
+    BufHeader* buf = bio_alloc_buffer(cache, dev_id, block_no);
+    if (buf == null) {
+        return null; // No free buffer available
+    }
+
+    // 3. Read sector data from ATA device
+    if (cache->ata_dev != null) {
+        bool ok = ata.ata_read_sectors(cache->ata_dev, block_no, 1 as uint32, &buf->data[0]);
+        if (!ok) {
+            buf->ref_count = 0 as uint32;
+            return null;
+        }
+    }
+
+    buf->flags = buf->flags | B_VALID;
+    return buf;
+}
+
+// Bwrite: Mark buffer dirty and update write stats
+fn bool bio_bwrite(BufCache* cache, BufHeader* buf) {
+    if (cache == null || buf == null) {
+        return false;
+    }
+
+    buf->flags = buf->flags | (B_VALID | B_DIRTY);
+    cache->total_writes = cache->total_writes + (1 as uint64);
+    cache->lru_clock = cache->lru_clock + (1 as uint32);
+    buf->last_used = cache->lru_clock;
+    return true;
+}
+
+// Brelse: Release reference to a buffer
+fn void bio_brelse(BufCache* cache, BufHeader* buf) {
+    if (buf == null) {
+        return;
+    }
+    if (buf->ref_count > (0 as uint32)) {
+        buf->ref_count = buf->ref_count - (1 as uint32);
+    }
+    if (cache != null) {
+        cache->lru_clock = cache->lru_clock + (1 as uint32);
+        buf->last_used = cache->lru_clock;
+    }
+}
+
+// Flush all dirty buffers in the cache
+fn uint32 bio_bflush_all(BufCache* cache) {
+    if (cache == null) {
+        return 0 as uint32;
+    }
+
+    uint32 flushed = 0 as uint32;
+    int i = 0;
+    while (i < 16) {
+        BufHeader* b = &cache->pool[i];
+        if ((b->flags & B_DIRTY) != (0 as uint32)) {
+            if (bio_bflush(cache, b)) {
+                flushed = flushed + (1 as uint32);
+            }
+        }
+        i = i + 1;
+    }
+    return flushed;
+}

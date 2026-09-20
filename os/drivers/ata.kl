@@ -1,0 +1,323 @@
+// os/drivers/ata.kl
+// ATA / IDE Hard Disk PIO Mode Driver for Kale OS
+// Supports Primary/Secondary controllers, Drive Identification (0xEC),
+// 28-bit LBA (0x20/0x30) and 48-bit LBA (0x24/0x34) sector read/write.
+
+// ATA Controller Port Offsets
+uint16 ATA_REG_DATA       = 0 as uint16;
+uint16 ATA_REG_ERROR      = 1 as uint16; // Read
+uint16 ATA_REG_FEATURES   = 1 as uint16; // Write
+uint16 ATA_REG_SECCOUNT   = 2 as uint16;
+uint16 ATA_REG_LBA_LO     = 3 as uint16;
+uint16 ATA_REG_LBA_MID    = 4 as uint16;
+uint16 ATA_REG_LBA_HI     = 5 as uint16;
+uint16 ATA_REG_DRIVE_HEAD = 6 as uint16;
+uint16 ATA_REG_STATUS     = 7 as uint16; // Read
+uint16 ATA_REG_COMMAND    = 7 as uint16; // Write
+uint16 ATA_REG_CONTROL    = 0x206 as uint16; // Control port offset (0x3F6 - 0x1F0)
+
+// ATA Standard Bus Base Ports
+uint16 ATA_PRIMARY_IO     = 0x1F0 as uint16;
+uint16 ATA_PRIMARY_CTRL   = 0x3F6 as uint16;
+uint16 ATA_SECONDARY_IO   = 0x170 as uint16;
+uint16 ATA_SECONDARY_CTRL = 0x376 as uint16;
+
+// ATA Status Register Bits
+uint8 ATA_SR_ERR  = 0x01 as uint8; // Error
+uint8 ATA_SR_IDX  = 0x02 as uint8; // Index
+uint8 ATA_SR_CORR = 0x04 as uint8; // Corrected data
+uint8 ATA_SR_DRQ  = 0x08 as uint8; // Data request ready
+uint8 ATA_SR_DSC  = 0x10 as uint8; // Drive seek complete
+uint8 ATA_SR_DF   = 0x20 as uint8; // Drive write fault
+uint8 ATA_SR_DRDY = 0x40 as uint8; // Drive ready
+uint8 ATA_SR_BSY  = 0x80 as uint8; // Busy
+
+// ATA Commands
+uint8 ATA_CMD_READ_PIO        = 0x20 as uint8;
+uint8 ATA_CMD_READ_PIO_EXT    = 0x24 as uint8;
+uint8 ATA_CMD_WRITE_PIO       = 0x30 as uint8;
+uint8 ATA_CMD_WRITE_PIO_EXT   = 0x34 as uint8;
+uint8 ATA_CMD_IDENTIFY        = 0xEC as uint8;
+uint8 ATA_CMD_FLUSH_CACHE     = 0xE7 as uint8;
+uint8 ATA_CMD_FLUSH_CACHE_EXT = 0xEA as uint8;
+
+// Drive Select Bits
+uint8 ATA_DRIVE_MASTER = 0xE0 as uint8; // 11100000b (LBA mode + Master)
+uint8 ATA_DRIVE_SLAVE  = 0xF0 as uint8; // 11110000b (LBA mode + Slave)
+
+struct ATADevice {
+    uint16 io_base;
+    uint16 ctrl_base;
+    uint8 is_slave;
+    bool is_present;
+    bool supports_lba48;
+    uint64 total_sectors;
+    uint32 sector_size;
+    char[41] model_name;
+    char[21] serial_number;
+
+    // Simulated backing storage for testing & memory drives
+    uint8* storage_buf;
+    uint64 storage_sectors;
+    uint64 read_count;
+    uint64 write_count;
+}
+
+// ==============================================================================
+// Driver Initialization & Identification
+// ==============================================================================
+
+fn void ata_init(ATADevice* dev, uint16 io_base, uint16 ctrl_base, uint8 is_slave) {
+    dev->io_base = io_base;
+    dev->ctrl_base = ctrl_base;
+    dev->is_slave = is_slave;
+    dev->is_present = false;
+    dev->supports_lba48 = false;
+    dev->total_sectors = 0 as uint64;
+    dev->sector_size = 512 as uint32;
+    dev->storage_buf = null;
+    dev->storage_sectors = 0 as uint64;
+    dev->read_count = 0 as uint64;
+    dev->write_count = 0 as uint64;
+
+    int i = 0;
+    while (i < 41) {
+        dev->model_name[i] = 0 as char;
+        i = i + 1;
+    }
+    i = 0;
+    while (i < 21) {
+        dev->serial_number[i] = 0 as char;
+        i = i + 1;
+    }
+}
+
+fn void ata_setup_simulated_storage(
+    ATADevice* dev,
+    uint8* buf,
+    uint64 sector_count,
+    char* model,
+    bool supports_lba48
+) {
+    dev->storage_buf = buf;
+    dev->storage_sectors = sector_count;
+    dev->total_sectors = sector_count;
+    dev->is_present = true;
+    dev->supports_lba48 = supports_lba48;
+
+    int i = 0;
+    while (i < 40 && model[i] != (0 as char)) {
+        dev->model_name[i] = model[i];
+        i = i + 1;
+    }
+    dev->model_name[i] = 0 as char;
+}
+
+// Drive identification parser (processes the 256-word / 512-byte IDENTIFY buffer)
+fn bool ata_parse_identity(ATADevice* dev, uint16* ident) {
+    if (ident == null) {
+        return false;
+    }
+
+    // Word 0: Device type (bit 15=0 indicates ATA, bit 15=1 indicates ATAPI)
+    uint16 word0 = ident[0];
+    if ((word0 & (0x8000 as uint16)) != (0 as uint16)) {
+        dev->is_present = false;
+        return false; // ATAPI device or not present
+    }
+
+    // Word 49: Capabilities (bit 9 indicates LBA support)
+    uint16 caps = ident[49];
+    if ((caps & (0x0200 as uint16)) == (0 as uint16)) {
+        dev->is_present = false;
+        return false; // LBA not supported
+    }
+
+    // Word 83: Command sets supported (bit 10 indicates 48-bit LBA support)
+    uint16 cmd_sets = ident[83];
+    if ((cmd_sets & (0x0400 as uint16)) != (0 as uint16)) {
+        dev->supports_lba48 = true;
+    } else {
+        dev->supports_lba48 = false;
+    }
+
+    // Sectors: 28-bit LBA capacity from Words 60-61
+    uint64 sec28 = (ident[60] as uint64) | ((ident[61] as uint64) << 16);
+    dev->total_sectors = sec28;
+
+    // If 48-bit LBA supported, read 64-bit capacity from Words 100-103
+    if (dev->supports_lba48) {
+        uint64 w100 = ident[100] as uint64;
+        uint64 w101 = ident[101] as uint64;
+        uint64 w102 = ident[102] as uint64;
+        uint64 w103 = ident[103] as uint64;
+        uint64 sec48 = w100 | (w101 << 16) | (w102 << 32) | (w103 << 48);
+        if (sec48 > 0 as uint64) {
+            dev->total_sectors = sec48;
+        }
+    }
+
+    // Model name: Words 27-46 (40 characters, ATA spec byte-swaps each 16-bit word)
+    int w = 27;
+    int str_pos = 0;
+    while (w <= 46 && str_pos < 40) {
+        uint16 val = ident[w];
+        char lo = (val & (0xFF as uint16)) as char;
+        char hi = ((val >> 8) & (0xFF as uint16)) as char;
+        dev->model_name[str_pos] = lo;
+        str_pos = str_pos + 1;
+        dev->model_name[str_pos] = hi;
+        str_pos = str_pos + 1;
+        w = w + 1;
+    }
+    dev->model_name[str_pos] = 0 as char;
+
+    dev->is_present = true;
+    return true;
+}
+
+// ==============================================================================
+// Sector Read & Write Routines
+// ==============================================================================
+
+// Read single 512-byte sector using 28-bit LBA
+fn bool ata_read_sector_lba28(ATADevice* dev, uint32 lba, uint8* buffer) {
+    if (dev == null || buffer == null) {
+        return false;
+    }
+    if ((lba as uint64) >= dev->total_sectors) {
+        return false; // Out of bounds
+    }
+
+    // Backing store copy if simulated
+    if (dev->storage_buf != null) {
+        uint64 offset = (lba as uint64) * (512 as uint64);
+        int i = 0;
+        while (i < 512) {
+            buffer[i] = dev->storage_buf[(offset + (i as uint64)) as int];
+            i = i + 1;
+        }
+        dev->read_count = dev->read_count + (1 as uint64);
+        return true;
+    }
+
+    // Port I/O hardware path
+    return false;
+}
+
+// Write single 512-byte sector using 28-bit LBA
+fn bool ata_write_sector_lba28(ATADevice* dev, uint32 lba, uint8* buffer) {
+    if (dev == null || buffer == null) {
+        return false;
+    }
+    if ((lba as uint64) >= dev->total_sectors) {
+        return false; // Out of bounds
+    }
+
+    if (dev->storage_buf != null) {
+        uint64 offset = (lba as uint64) * (512 as uint64);
+        int i = 0;
+        while (i < 512) {
+            dev->storage_buf[(offset + (i as uint64)) as int] = buffer[i];
+            i = i + 1;
+        }
+        dev->write_count = dev->write_count + (1 as uint64);
+        return true;
+    }
+
+    return false;
+}
+
+// Read single 512-byte sector using 48-bit LBA
+fn bool ata_read_sector_lba48(ATADevice* dev, uint64 lba, uint8* buffer) {
+    if (dev == null || buffer == null || !dev->supports_lba48) {
+        return false;
+    }
+    if (lba >= dev->total_sectors) {
+        return false; // Out of bounds
+    }
+
+    if (dev->storage_buf != null) {
+        uint64 offset = lba * (512 as uint64);
+        int i = 0;
+        while (i < 512) {
+            buffer[i] = dev->storage_buf[(offset + (i as uint64)) as int];
+            i = i + 1;
+        }
+        dev->read_count = dev->read_count + (1 as uint64);
+        return true;
+    }
+
+    return false;
+}
+
+// Write single 512-byte sector using 48-bit LBA
+fn bool ata_write_sector_lba48(ATADevice* dev, uint64 lba, uint8* buffer) {
+    if (dev == null || buffer == null || !dev->supports_lba48) {
+        return false;
+    }
+    if (lba >= dev->total_sectors) {
+        return false; // Out of bounds
+    }
+
+    if (dev->storage_buf != null) {
+        uint64 offset = lba * (512 as uint64);
+        int i = 0;
+        while (i < 512) {
+            dev->storage_buf[(offset + (i as uint64)) as int] = buffer[i];
+            i = i + 1;
+        }
+        dev->write_count = dev->write_count + (1 as uint64);
+        return true;
+    }
+
+    return false;
+}
+
+// High-level multi-sector reading
+fn bool ata_read_sectors(ATADevice* dev, uint64 lba, uint32 count, uint8* buffer) {
+    if (dev == null || buffer == null || count == (0 as uint32)) {
+        return false;
+    }
+
+    uint32 i = 0 as uint32;
+    while (i < count) {
+        uint64 cur_lba = lba + (i as uint64);
+        uint8* sector_dest = &buffer[(i as uint64 * (512 as uint64)) as int];
+        bool ok = false;
+        if (cur_lba < (0x10000000 as uint64)) {
+            ok = ata_read_sector_lba28(dev, cur_lba as uint32, sector_dest);
+        } else {
+            ok = ata_read_sector_lba48(dev, cur_lba, sector_dest);
+        }
+        if (!ok) {
+            return false;
+        }
+        i = i + (1 as uint32);
+    }
+    return true;
+}
+
+// High-level multi-sector writing
+fn bool ata_write_sectors(ATADevice* dev, uint64 lba, uint32 count, uint8* buffer) {
+    if (dev == null || buffer == null || count == (0 as uint32)) {
+        return false;
+    }
+
+    uint32 i = 0 as uint32;
+    while (i < count) {
+        uint64 cur_lba = lba + (i as uint64);
+        uint8* sector_src = &buffer[(i as uint64 * (512 as uint64)) as int];
+        bool ok = false;
+        if (cur_lba < (0x10000000 as uint64)) {
+            ok = ata_write_sector_lba28(dev, cur_lba as uint32, sector_src);
+        } else {
+            ok = ata_write_sector_lba48(dev, cur_lba, sector_src);
+        }
+        if (!ok) {
+            return false;
+        }
+        i = i + (1 as uint32);
+    }
+    return true;
+}

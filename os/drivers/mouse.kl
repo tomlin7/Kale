@@ -1,0 +1,151 @@
+// os/drivers/mouse.kl
+// PS/2 Mouse Driver for Kale OS
+// Supports 3-byte packet stream decoding, relative coordinate calculation,
+// sign bit extension, button states, and screen boundary clamping.
+
+uint16 MOUSE_DATA_PORT   = 0x60 as uint16;
+uint16 MOUSE_STATUS_PORT = 0x64 as uint16;
+
+uint8 MOUSE_CMD_ENABLE_AUX      = 0xA8 as uint8;
+uint8 MOUSE_CMD_WRITE_TO_MOUSE  = 0xD4 as uint8;
+uint8 MOUSE_DEV_SET_DEFAULTS    = 0xF6 as uint8;
+uint8 MOUSE_DEV_ENABLE_PACKETS  = 0xF4 as uint8;
+uint8 MOUSE_DEV_ACK             = 0xFA as uint8;
+
+struct MouseState {
+    int32 x;
+    int32 y;
+    int32 delta_x;
+    int32 delta_y;
+    bool left_button;
+    bool right_button;
+    bool middle_button;
+    uint8 cycle;
+    uint8[3] buffer;
+    uint64 total_packets;
+}
+
+// ==============================================================================
+// Driver Initialization & State Management
+// ==============================================================================
+
+fn void mouse_init(MouseState* state, int32 start_x, int32 start_y) {
+    state->x = start_x;
+    state->y = start_y;
+    state->delta_x = 0;
+    state->delta_y = 0;
+    state->left_button = false;
+    state->right_button = false;
+    state->middle_button = false;
+    state->cycle = 0 as uint8;
+    state->buffer[0] = 0 as uint8;
+    state->buffer[1] = 0 as uint8;
+    state->buffer[2] = 0 as uint8;
+    state->total_packets = 0 as uint64;
+}
+
+// Process full 3-byte PS/2 mouse packet
+fn bool mouse_process_packet(
+    MouseState* state,
+    uint8 b0,
+    uint8 b1,
+    uint8 b2,
+    int32 screen_w,
+    int32 screen_h
+) {
+    if (state == null) {
+        return false;
+    }
+
+    // Packet validity: Bit 3 of byte 0 must always be 1
+    if ((b0 & (0x08 as uint8)) == (0 as uint8)) {
+        return false; // Out of sync packet
+    }
+
+    // Button states
+    state->left_button = (b0 & (0x01 as uint8)) != (0 as uint8);
+    state->right_button = (b0 & (0x02 as uint8)) != (0 as uint8);
+    state->middle_button = (b0 & (0x04 as uint8)) != (0 as uint8);
+
+    // Overflow flags
+    bool x_ovf = (b0 & (0x40 as uint8)) != (0 as uint8);
+    bool y_ovf = (b0 & (0x80 as uint8)) != (0 as uint8);
+
+    // Delta X with sign extension
+    int32 dx = 0;
+    if (!x_ovf) {
+        bool x_neg = (b0 & (0x10 as uint8)) != (0 as uint8);
+        if (x_neg) {
+            dx = (b1 as int32) - 256;
+        } else {
+            dx = b1 as int32;
+        }
+    }
+
+    // Delta Y with sign extension (PS/2 hardware reports positive moving up)
+    int32 dy = 0;
+    if (!y_ovf) {
+        bool y_neg = (b0 & (0x20 as uint8)) != (0 as uint8);
+        if (y_neg) {
+            dy = (b2 as int32) - 256;
+        } else {
+            dy = b2 as int32;
+        }
+    }
+
+    // Invert Y for standard screen coordinates (down is positive)
+    int32 screen_dy = 0 - dy;
+
+    state->delta_x = dx;
+    state->delta_y = screen_dy;
+
+    // Apply and clamp coordinates to screen viewport
+    int32 new_x = state->x + dx;
+    if (new_x < 0) {
+        new_x = 0;
+    }
+    if (screen_w > 0 && new_x >= screen_w) {
+        new_x = screen_w - 1;
+    }
+
+    int32 new_y = state->y + screen_dy;
+    if (new_y < 0) {
+        new_y = 0;
+    }
+    if (screen_h > 0 && new_y >= screen_h) {
+        new_y = screen_h - 1;
+    }
+
+    state->x = new_x;
+    state->y = new_y;
+    state->total_packets = state->total_packets + (1 as uint64);
+    return true;
+}
+
+// Feed a single raw byte from IRQ12 / Port 0x60
+fn bool mouse_feed_byte(MouseState* state, uint8 b, int32 screen_w, int32 screen_h) {
+    if (state == null) {
+        return false;
+    }
+
+    if (state->cycle == (0 as uint8)) {
+        // First byte must have bit 3 set
+        if ((b & (0x08 as uint8)) == (0 as uint8)) {
+            return false; // Skip byte until sync alignment
+        }
+        state->buffer[0] = b;
+        state->cycle = 1 as uint8;
+        return false;
+    } else if (state->cycle == (1 as uint8)) {
+        state->buffer[1] = b;
+        state->cycle = 2 as uint8;
+        return false;
+    } else if (state->cycle == (2 as uint8)) {
+        state->buffer[2] = b;
+        state->cycle = 0 as uint8;
+        return mouse_process_packet(state, state->buffer[0], state->buffer[1], state->buffer[2], screen_w, screen_h);
+    }
+
+    state->cycle = 0 as uint8;
+    return false;
+}

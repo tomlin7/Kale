@@ -13,6 +13,10 @@ enum SyscallNumber {
     SYS_BRK = 12,
     SYS_SCHED_YIELD = 24,
     SYS_GETPID = 39,
+    SYS_SOCKET = 41,
+    SYS_SENDTO = 44,
+    SYS_RECVFROM = 45,
+    SYS_BIND = 49,
     SYS_EXECVE = 59,
     SYS_EXIT = 60,
     SYS_KILL = 62,
@@ -380,6 +384,62 @@ fn void sys_close(SyscallContext* ctx, uint64 fd) {
     ctx->error = 0;
 }
 
+// Network Socket Syscalls
+fn void sys_socket(SyscallContext* ctx, uint64 domain, uint64 sock_type, uint64 protocol) {
+    if (domain != 2 as uint64) { // AF_INET
+        ctx->return_value = 0 - 1 as uint64;
+        ctx->error = EINVAL;
+        return;
+    }
+    ctx->return_value = 4 as uint64; // Socket file descriptor 4
+    ctx->error = 0;
+}
+
+fn void sys_bind(SyscallContext* ctx, uint64 fd, uint64 addr_ptr, uint64 addr_len) {
+    if (fd < 3 as uint64) {
+        ctx->return_value = 0 - 1 as uint64;
+        ctx->error = EBADF;
+        return;
+    }
+    if (addr_ptr == 0 as uint64) {
+        ctx->return_value = 0 - 1 as uint64;
+        ctx->error = EFAULT;
+        return;
+    }
+    ctx->return_value = 0 as uint64;
+    ctx->error = 0;
+}
+
+fn void sys_sendto(SyscallContext* ctx, uint64 fd, uint64 buf_ptr, uint64 len) {
+    if (fd < 3 as uint64) {
+        ctx->return_value = 0 - 1 as uint64;
+        ctx->error = EBADF;
+        return;
+    }
+    if (buf_ptr == 0 as uint64) {
+        ctx->return_value = 0 - 1 as uint64;
+        ctx->error = EFAULT;
+        return;
+    }
+    ctx->return_value = len;
+    ctx->error = 0;
+}
+
+fn void sys_recvfrom(SyscallContext* ctx, uint64 fd, uint64 buf_ptr, uint64 len) {
+    if (fd < 3 as uint64) {
+        ctx->return_value = 0 - 1 as uint64;
+        ctx->error = EBADF;
+        return;
+    }
+    if (buf_ptr == 0 as uint64) {
+        ctx->return_value = 0 - 1 as uint64;
+        ctx->error = EFAULT;
+        return;
+    }
+    ctx->return_value = len;
+    ctx->error = 0;
+}
+
 // Master Syscall Dispatcher
 fn void syscall_dispatch_context(
     SyscallContext* ctx,
@@ -415,6 +475,14 @@ fn void syscall_dispatch_context(
         sys_sched_yield(ctx, out_yield);
     } else if (num == 39 as uint64) { // SYS_GETPID
         sys_getpid(ctx, current_pid);
+    } else if (num == 41 as uint64) { // SYS_SOCKET
+        sys_socket(ctx, ctx->arg1, ctx->arg2, ctx->arg3);
+    } else if (num == 44 as uint64) { // SYS_SENDTO
+        sys_sendto(ctx, ctx->arg1, ctx->arg2, ctx->arg3);
+    } else if (num == 45 as uint64) { // SYS_RECVFROM
+        sys_recvfrom(ctx, ctx->arg1, ctx->arg2, ctx->arg3);
+    } else if (num == 49 as uint64) { // SYS_BIND
+        sys_bind(ctx, ctx->arg1, ctx->arg2, ctx->arg3);
     } else if (num == 60 as uint64) { // SYS_EXIT
         sys_exit(ctx, out_exit_code, out_terminated);
     } else if (num == 63 as uint64) { // SYS_UNAME
