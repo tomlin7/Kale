@@ -1,0 +1,440 @@
+// os/kernel/elf.kl
+// 64-Bit Executable and Linkable Format (ELF64) Specification & Binary Loader
+
+// ELF Identification (16 bytes)
+struct ElfIdent {
+    uint8[4] magic;      // 0x7F 'E' 'L' 'F'
+    uint8 class_type;    // 1 = 32-bit, 2 = 64-bit (ELFCLASS64)
+    uint8 endianness;    // 1 = Little-endian (ELFDATA2LSB), 2 = Big-endian
+    uint8 version;       // 1 = EV_CURRENT
+    uint8 os_abi;        // 0 = System V ABI
+    uint8 abi_version;   // ABI version
+    uint8[7] padding;    // Reserved padding bytes
+}
+
+// ELF 64-Bit File Header (64 bytes)
+struct ElfHeader {
+    ElfIdent ident;
+    uint16 type;         // 1 = Relocatable, 2 = Executable, 3 = Shared object
+    uint16 machine;      // 0x3E = x86_64 (AMD64)
+    uint32 version;      // 1 = EV_CURRENT
+    uint64 entry;        // Virtual address of program entry point
+    uint64 phoff;        // Program header table file offset
+    uint64 shoff;        // Section header table file offset
+    uint32 flags;        // Processor-specific flags
+    uint16 ehsize;       // ELF header size in bytes (64 bytes for 64-bit)
+    uint16 phentsize;    // Size of one program header table entry (56 bytes)
+    uint16 phnum;        // Number of entries in program header table
+    uint16 shentsize;    // Size of one section header table entry (64 bytes)
+    uint16 shnum;        // Number of entries in section header table
+    uint16 shstrndx;     // Section header index of string table
+}
+
+// ELF 64-Bit Program Header (56 bytes)
+struct ElfProgramHeader {
+    uint32 type;         // Segment type (PT_LOAD, PT_DYNAMIC, etc.)
+    uint32 flags;        // Segment permission flags (PF_X, PF_W, PF_R)
+    uint64 offset;       // Segment file offset
+    uint64 vaddr;        // Segment virtual address in memory
+    uint64 paddr;        // Segment physical address (reserved/ignored)
+    uint64 filesz;       // Segment size in file (bytes)
+    uint64 memsz;        // Segment size in memory (bytes)
+    uint64 align;        // Segment alignment requirement (e.g. 0x1000 = 4KB)
+}
+
+// ELF 64-Bit Section Header (64 bytes)
+struct ElfSectionHeader {
+    uint32 name;         // Section name string table index
+    uint32 type;         // Section type (SHT_PROGBITS, SHT_SYMTAB, etc.)
+    uint64 flags;        // Section flags (SHF_WRITE, SHF_ALLOC, etc.)
+    uint64 addr;         // Virtual address of section in memory
+    uint64 offset;       // Section file offset
+    uint64 size;         // Section size in bytes
+    uint32 link;         // Section header table index link
+    uint32 info;         // Extra information
+    uint64 addralign;    // Address alignment constraint
+    uint64 entsize;      // Entry size if section holds fixed-size entries
+}
+
+// Dynamic Section Entry (16 bytes)
+struct ElfDynamicEntry {
+    uint64 tag;          // Entry type tag (DT_STRTAB, DT_SYMTAB, etc.)
+    uint64 val;          // Value or virtual address pointer
+}
+
+// ELF Symbol Entry (24 bytes)
+struct ElfSymbol {
+    uint32 name;         // Symbol name string table offset
+    uint8 info;          // Symbol type and binding attributes
+    uint8 other;         // Symbol visibility
+    uint16 shndx;        // Section index
+    uint64 value;        // Symbol value / virtual address
+    uint64 size;         // Symbol size in bytes
+}
+
+// ELF Relocation with Addend (24 bytes)
+struct ElfRela {
+    uint64 offset;       // Address where relocation is applied
+    uint64 info;         // Symbol index and relocation type
+    int64 addend;        // Explicit addend
+}
+
+// ELF Identification Constants
+uint8 ELF_MAG0 = 127 as uint8; // 0x7F
+uint8 ELF_MAG1 = 69 as uint8;  // 'E'
+uint8 ELF_MAG2 = 76 as uint8;  // 'L'
+uint8 ELF_MAG3 = 70 as uint8;  // 'F'
+
+uint8 ELF_CLASS_NONE = 0 as uint8;
+uint8 ELF_CLASS_32   = 1 as uint8;
+uint8 ELF_CLASS_64   = 2 as uint8;
+
+uint8 ELF_DATA_NONE  = 0 as uint8;
+uint8 ELF_DATA_LITTLE = 1 as uint8;
+uint8 ELF_DATA_BIG   = 2 as uint8;
+
+// ELF File Types
+uint16 ELF_TYPE_NONE = 0 as uint16;
+uint16 ELF_TYPE_REL  = 1 as uint16;
+uint16 ELF_TYPE_EXEC = 2 as uint16;
+uint16 ELF_TYPE_DYN  = 3 as uint16;
+uint16 ELF_TYPE_CORE = 4 as uint16;
+
+// Target Architecture
+uint16 ELF_MACHINE_NONE   = 0 as uint16;
+uint16 ELF_MACHINE_386    = 3 as uint16;
+uint16 ELF_MACHINE_X86_64 = 62 as uint16; // 0x3E
+
+// Version
+uint32 ELF_VERSION_CURRENT = 1 as uint32;
+
+// Program Header Types
+uint32 PT_NULL    = 0 as uint32;
+uint32 PT_LOAD    = 1 as uint32;
+uint32 PT_DYNAMIC = 2 as uint32;
+uint32 PT_INTERP  = 3 as uint32;
+uint32 PT_NOTE    = 4 as uint32;
+uint32 PT_SHLIB   = 5 as uint32;
+uint32 PT_PHDR    = 6 as uint32;
+uint32 PT_TLS     = 7 as uint32;
+
+// Program Header Flags
+uint32 PF_X = 1 as uint32; // Executable
+uint32 PF_W = 2 as uint32; // Writable
+uint32 PF_R = 4 as uint32; // Readable
+
+// Section Header Types
+uint32 SHT_NULL     = 0 as uint32;
+uint32 SHT_PROGBITS = 1 as uint32;
+uint32 SHT_SYMTAB   = 2 as uint32;
+uint32 SHT_STRTAB   = 3 as uint32;
+uint32 SHT_RELA     = 4 as uint32;
+uint32 SHT_HASH     = 5 as uint32;
+uint32 SHT_DYNAMIC  = 6 as uint32;
+uint32 SHT_NOTE     = 7 as uint32;
+uint32 SHT_NOBITS   = 8 as uint32;
+uint32 SHT_REL      = 9 as uint32;
+uint32 SHT_DYNSYM   = 11 as uint32;
+
+// Dynamic Tags
+uint64 DT_NULL     = 0 as uint64;
+uint64 DT_NEEDED   = 1 as uint64;
+uint64 DT_PLTRELSZ = 2 as uint64;
+uint64 DT_PLTGOT   = 3 as uint64;
+uint64 DT_STRTAB   = 5 as uint64;
+uint64 DT_SYMTAB   = 6 as uint64;
+uint64 DT_RELA     = 7 as uint64;
+uint64 DT_RELASZ   = 8 as uint64;
+uint64 DT_STRSZ    = 10 as uint64;
+uint64 DT_SYMENT   = 11 as uint64;
+uint64 DT_PLTREL   = 20 as uint64;
+uint64 DT_JMPREL   = 23 as uint64;
+
+// -----------------------------------------------------------------------------
+// ELF Header Validation & Initialization
+// -----------------------------------------------------------------------------
+
+fn bool elf_validate_header(ElfHeader* header) {
+    if (header == null) {
+        return false;
+    }
+    // 1. Validate 4-byte Magic: 0x7F 'E' 'L' 'F'
+    if (header->ident.magic[0] != ELF_MAG0 ||
+        header->ident.magic[1] != ELF_MAG1 ||
+        header->ident.magic[2] != ELF_MAG2 ||
+        header->ident.magic[3] != ELF_MAG3) {
+        return false;
+    }
+    // 2. Validate Class (64-Bit Long Mode)
+    if (header->ident.class_type != ELF_CLASS_64) {
+        return false;
+    }
+    // 3. Validate Endianness (2's complement little-endian)
+    if (header->ident.endianness != ELF_DATA_LITTLE) {
+        return false;
+    }
+    // 4. Validate Version (EV_CURRENT = 1)
+    if (header->ident.version != 1 as uint8 || header->version != ELF_VERSION_CURRENT) {
+        return false;
+    }
+    // 5. Validate Machine (AMD x86_64)
+    if (header->machine != ELF_MACHINE_X86_64) {
+        return false;
+    }
+    // 6. Validate File Type (Executable or Position-Independent Executable / Shared Object)
+    if (header->type != ELF_TYPE_EXEC && header->type != ELF_TYPE_DYN) {
+        return false;
+    }
+    // 7. Validate Header Sizes
+    if (header->ehsize < 64 as uint16) {
+        return false;
+    }
+    if (header->phnum > 0 as uint16 && header->phentsize < 56 as uint16) {
+        return false;
+    }
+    return true;
+}
+
+fn void elf_header_init(ElfHeader* header, uint64 entry_point, uint16 phnum) {
+    header->ident.magic[0] = ELF_MAG0;
+    header->ident.magic[1] = ELF_MAG1;
+    header->ident.magic[2] = ELF_MAG2;
+    header->ident.magic[3] = ELF_MAG3;
+    header->ident.class_type = ELF_CLASS_64;
+    header->ident.endianness = ELF_DATA_LITTLE;
+    header->ident.version = 1 as uint8;
+    header->ident.os_abi = 0 as uint8;      // System V ABI
+    header->ident.abi_version = 0 as uint8;
+
+    int i = 0;
+    while (i < 7) {
+        header->ident.padding[i] = 0 as uint8;
+        i = i + 1;
+    }
+
+    header->type = ELF_TYPE_EXEC;
+    header->machine = ELF_MACHINE_X86_64;
+    header->version = ELF_VERSION_CURRENT;
+    header->entry = entry_point;
+    header->phoff = 128 as uint64;          // Placed at offset 128 (beyond 88-byte ElfHeader struct)
+    header->shoff = 0 as uint64;
+    header->flags = 0 as uint32;
+    header->ehsize = 128 as uint16;
+    header->phentsize = 56 as uint16;
+    header->phnum = phnum;
+    header->shentsize = 64 as uint16;
+    header->shnum = 0 as uint16;
+    header->shstrndx = 0 as uint16;
+}
+
+fn void elf_program_header_init(ElfProgramHeader* ph, uint32 type, uint32 flags, uint64 offset, uint64 vaddr, uint64 filesz, uint64 memsz, uint64 align) {
+    ph->type = type;
+    ph->flags = flags;
+    ph->offset = offset;
+    ph->vaddr = vaddr;
+    ph->paddr = vaddr;
+    ph->filesz = filesz;
+    ph->memsz = memsz;
+    ph->align = align;
+}
+
+// -----------------------------------------------------------------------------
+// Program Header Retrieval & Inspection
+// -----------------------------------------------------------------------------
+
+fn ElfProgramHeader* elf_get_program_header(uint8* elf_base, ElfHeader* header, uint16 index) {
+    if (header == null || elf_base == null || index >= header->phnum) {
+        return null;
+    }
+    uint64 offset = header->phoff + (index as uint64 * header->phentsize as uint64);
+    return (elf_base + offset) as ElfProgramHeader*;
+}
+
+fn ElfSectionHeader* elf_get_section_header(uint8* elf_base, ElfHeader* header, uint16 index) {
+    if (header == null || elf_base == null || index >= header->shnum) {
+        return null;
+    }
+    uint64 offset = header->shoff + (index as uint64 * header->shentsize as uint64);
+    return (elf_base + offset) as ElfSectionHeader*;
+}
+
+fn bool elf_is_loadable(ElfProgramHeader* ph) {
+    if (ph == null) {
+        return false;
+    }
+    return ph->type == PT_LOAD;
+}
+
+fn bool elf_is_executable(ElfProgramHeader* ph) {
+    if (ph == null) {
+        return false;
+    }
+    return (ph->flags & PF_X) != 0 as uint32;
+}
+
+fn bool elf_is_writable(ElfProgramHeader* ph) {
+    if (ph == null) {
+        return false;
+    }
+    return (ph->flags & PF_W) != 0 as uint32;
+}
+
+fn bool elf_is_readable(ElfProgramHeader* ph) {
+    if (ph == null) {
+        return false;
+    }
+    return (ph->flags & PF_R) != 0 as uint32;
+}
+
+// Translates ELF segment flags to 4-level paging VMM flags
+// Present (0x1), User-Accessible (0x4), Writable (0x2)
+fn uint64 elf_segment_vmm_flags(ElfProgramHeader* ph) {
+    uint64 vmm_flags = 1 as uint64; // Present
+    vmm_flags = vmm_flags | 4 as uint64; // User accessible (Ring 3)
+
+    if (elf_is_writable(ph)) {
+        vmm_flags = vmm_flags | 2 as uint64; // Writable
+    }
+    return vmm_flags;
+}
+
+// -----------------------------------------------------------------------------
+// Memory Bounds Calculation for Loadable Segments
+// -----------------------------------------------------------------------------
+
+fn bool elf_calculate_memory_bounds(uint8* elf_base, ElfHeader* header, uint64* out_min_vaddr, uint64* out_max_vaddr, uint64* out_total_size) {
+    if (header == null || elf_base == null || header->phnum == 0 as uint16) {
+        return false;
+    }
+
+    uint64 min_v = 18446744073709551615 as uint64; // 0xFFFFFFFFFFFFFFFF
+    uint64 max_v = 0 as uint64;
+    bool found_loadable = false;
+
+    uint16 i = 0 as uint16;
+    while (i < header->phnum) {
+        ElfProgramHeader* ph = elf_get_program_header(elf_base, header, i);
+        if (ph != null && ph->type == PT_LOAD) {
+            found_loadable = true;
+            if (ph->vaddr < min_v) {
+                min_v = ph->vaddr;
+            }
+            uint64 segment_end = ph->vaddr + ph->memsz;
+            if (segment_end > max_v) {
+                max_v = segment_end;
+            }
+        }
+        i = i + 1 as uint16;
+    }
+
+    if (!found_loadable || min_v >= max_v) {
+        return false;
+    }
+
+    *out_min_vaddr = min_v;
+    *out_max_vaddr = max_v;
+    *out_total_size = max_v - min_v;
+    return true;
+}
+
+// -----------------------------------------------------------------------------
+// In-Memory Segment Loading & BSS Zeroing
+// -----------------------------------------------------------------------------
+
+fn bool elf_load_segment(uint8* elf_base, ElfProgramHeader* ph, uint8* dest_mem, uint64 base_vaddr) {
+    if (elf_base == null || ph == null || dest_mem == null) {
+        return false;
+    }
+    if (ph->type != PT_LOAD) {
+        return false;
+    }
+    if (ph->vaddr < base_vaddr) {
+        return false;
+    }
+
+    uint64 dest_offset = ph->vaddr - base_vaddr;
+    uint8* src = elf_base + ph->offset;
+    uint8* dst = dest_mem + dest_offset;
+
+    // 1. Copy file data (filesz bytes)
+    uint64 j = 0 as uint64;
+    while (j < ph->filesz) {
+        dst[j] = src[j];
+        j = j + 1 as uint64;
+    }
+
+    // 2. Zero-fill remainder of segment memory (memsz - filesz bytes: .bss)
+    while (j < ph->memsz) {
+        dst[j] = 0 as uint8;
+        j = j + 1 as uint64;
+    }
+
+    return true;
+}
+
+fn bool elf_load_all_segments(uint8* elf_base, ElfHeader* header, uint8* dest_mem, uint64 base_vaddr) {
+    if (!elf_validate_header(header) || elf_base == null || dest_mem == null) {
+        return false;
+    }
+
+    uint16 i = 0 as uint16;
+    while (i < header->phnum) {
+        ElfProgramHeader* ph = elf_get_program_header(elf_base, header, i);
+        if (ph != null && ph->type == PT_LOAD) {
+            bool ok = elf_load_segment(elf_base, ph, dest_mem, base_vaddr);
+            if (!ok) {
+                return false;
+            }
+        }
+        i = i + 1 as uint16;
+    }
+    return true;
+}
+
+// -----------------------------------------------------------------------------
+// Dynamic Segment & Section Parsing
+// -----------------------------------------------------------------------------
+
+fn ElfSectionHeader* elf_find_section_by_type(uint8* elf_base, ElfHeader* header, uint32 sec_type) {
+    if (header == null || elf_base == null) {
+        return null;
+    }
+    uint16 i = 0 as uint16;
+    while (i < header->shnum) {
+        ElfSectionHeader* sh = elf_get_section_header(elf_base, header, i);
+        if (sh != null && sh->type == sec_type) {
+            return sh;
+        }
+        i = i + 1 as uint16;
+    }
+    return null;
+}
+
+fn bool elf_parse_dynamic(uint8* elf_base, ElfProgramHeader* ph, uint64* out_strtab, uint64* out_symtab, uint64* out_strsz) {
+    if (elf_base == null || ph == null || ph->type != PT_DYNAMIC) {
+        return false;
+    }
+
+    *out_strtab = 0 as uint64;
+    *out_symtab = 0 as uint64;
+    *out_strsz = 0 as uint64;
+
+    ElfDynamicEntry* dyn = (elf_base + ph->offset) as ElfDynamicEntry*;
+    uint64 entry_count = ph->filesz / 16 as uint64;
+    uint64 i = 0 as uint64;
+
+    while (i < entry_count) {
+        if (dyn[i].tag == DT_NULL) {
+            break;
+        }
+        if (dyn[i].tag == DT_STRTAB) {
+            *out_strtab = dyn[i].val;
+        } else if (dyn[i].tag == DT_SYMTAB) {
+            *out_symtab = dyn[i].val;
+        } else if (dyn[i].tag == DT_STRSZ) {
+            *out_strsz = dyn[i].val;
+        }
+        i = i + 1 as uint64;
+    }
+    return true;
+}

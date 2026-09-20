@@ -161,17 +161,24 @@ DATA_SEG_32 equ 0x10
 
 ; --- 64-bit GDT ---
 gdt64_start:
-    dq 0x0000000000000000
-    dw 0x0000, 0x0000, 0x9A00, 0x0020
-    dw 0x0000, 0x0000, 0x9200, 0x0000
+    dq 0x0000000000000000               ; 0x00: Null descriptor
+    dw 0x0000, 0x0000, 0x9A00, 0x0020   ; 0x08: Kernel Code (Ring 0, Long Mode)
+    dw 0x0000, 0x0000, 0x9200, 0x0000   ; 0x10: Kernel Data (Ring 0)
+    dw 0x0000, 0x0000, 0xFA00, 0x0020   ; 0x18: User Code (Ring 3, Long Mode)
+    dw 0x0000, 0x0000, 0xF200, 0x0000   ; 0x20: User Data (Ring 3)
+    dw 0x0067, 0x0000, 0x8900, 0x0000   ; 0x28: TSS Low (Limit 103 bytes, Present, DPL=0, Type 9)
+    dq 0x0000000000000000               ; 0x30: TSS High (Base 32..63, reserved)
 gdt64_end:
 
 gdt64_descriptor:
     dw gdt64_end - gdt64_start - 1
     dd gdt64_start
 
-CODE_SEG_64 equ 0x08
-DATA_SEG_64 equ 0x10
+CODE_SEG_64     equ 0x08
+DATA_SEG_64     equ 0x10
+USER_CODE_64    equ 0x18
+USER_DATA_64    equ 0x20
+TSS_SEG_64      equ 0x28
 
 boot_drive:     db 0
 msg_disk_fail:  db "Disk read error!", 0

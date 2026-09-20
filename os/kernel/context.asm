@@ -11,6 +11,8 @@ global cpu_read_cr3
 global cpu_enable_interrupts
 global cpu_disable_interrupts
 global cpu_halt
+global cpu_load_tr
+global switch_to_user_mode
 
 ; cpu_context_switch(CPUContext* old_ctx, CPUContext* new_ctx)
 ; Windows x64 ABI: RCX = old_ctx, RDX = new_ctx
@@ -104,3 +106,32 @@ cpu_disable_interrupts:
 cpu_halt:
     hlt
     ret
+
+; cpu_load_tr(uint16 selector)
+; Windows x64: RCX = selector
+cpu_load_tr:
+    ltr cx
+    ret
+
+; switch_to_user_mode(uint64 entry_point, uint64 user_rsp)
+; Windows x64 ABI: RCX = entry_point, RDX = user_rsp
+switch_to_user_mode:
+    ; Set user data segment registers (0x23 = 0x20 | 3)
+    mov ax, 0x23
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+
+    ; Construct iretq stack frame:
+    ; [rsp + 32] = SS     (0x23)
+    ; [rsp + 24] = RSP    (user_rsp in RDX)
+    ; [rsp + 16] = RFLAGS (0x202: Interrupts enabled)
+    ; [rsp + 8]  = CS     (0x1B)
+    ; [rsp + 0]  = RIP    (entry_point in RCX)
+    push qword 0x23
+    push rdx
+    push qword 0x202
+    push qword 0x1B
+    push rcx
+    iretq

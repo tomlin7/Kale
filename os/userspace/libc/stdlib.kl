@@ -1,0 +1,81 @@
+// os/userspace/libc/stdlib.kl
+// Standard Library Process Control and Memory Management for Kale User Space
+
+import "os/kernel/syscall.kl" as sys;
+import "os/userspace/libc/syscall.kl" as libc_sys;
+
+fn void exit(int32 status, sys.SyscallStatsTable* stats, sys.ProcessHeap* heap, uint32 pid, int32* out_exit_code, bool* out_terminated) {
+    sys.SyscallContext ctx;
+    libc_sys.user_syscall_context_init(&ctx, libc_sys.SYS_EXIT, status as uint64, 0 as uint64, 0 as uint64, 0 as uint64, 0 as uint64, 0 as uint64);
+    bool yielded = false;
+    libc_sys.user_syscall(&ctx, stats, heap, pid, 1 as uint32, 0 as uint64, 0 as uint64, 0 as uint64, out_exit_code, out_terminated, &yielded);
+}
+
+fn int32 getpid(sys.SyscallStatsTable* stats, sys.ProcessHeap* heap, uint32 pid) {
+    sys.SyscallContext ctx;
+    libc_sys.user_syscall_context_init(&ctx, libc_sys.SYS_GETPID, 0 as uint64, 0 as uint64, 0 as uint64, 0 as uint64, 0 as uint64, 0 as uint64);
+    int32 exit_code = 0;
+    bool term = false;
+    bool yielded = false;
+    int64 res = libc_sys.user_syscall(&ctx, stats, heap, pid, 1 as uint32, 0 as uint64, 0 as uint64, 0 as uint64, &exit_code, &term, &yielded);
+    return res as int32;
+}
+
+fn int32 getppid(sys.SyscallStatsTable* stats, sys.ProcessHeap* heap, uint32 pid, uint32 ppid) {
+    sys.SyscallContext ctx;
+    libc_sys.user_syscall_context_init(&ctx, libc_sys.SYS_GETPPID, 0 as uint64, 0 as uint64, 0 as uint64, 0 as uint64, 0 as uint64, 0 as uint64);
+    int32 exit_code = 0;
+    bool term = false;
+    bool yielded = false;
+    int64 res = libc_sys.user_syscall(&ctx, stats, heap, pid, ppid, 0 as uint64, 0 as uint64, 0 as uint64, &exit_code, &term, &yielded);
+    return res as int32;
+}
+
+fn int32 sched_yield(sys.SyscallStatsTable* stats, sys.ProcessHeap* heap, uint32 pid, bool* out_yielded) {
+    sys.SyscallContext ctx;
+    libc_sys.user_syscall_context_init(&ctx, libc_sys.SYS_SCHED_YIELD, 0 as uint64, 0 as uint64, 0 as uint64, 0 as uint64, 0 as uint64, 0 as uint64);
+    int32 exit_code = 0;
+    bool term = false;
+    int64 res = libc_sys.user_syscall(&ctx, stats, heap, pid, 1 as uint32, 0 as uint64, 0 as uint64, 0 as uint64, &exit_code, &term, out_yielded);
+    return res as int32;
+}
+
+fn uint64 brk(uint64 new_break, sys.SyscallStatsTable* stats, sys.ProcessHeap* heap, uint32 pid) {
+    sys.SyscallContext ctx;
+    libc_sys.user_syscall_context_init(&ctx, libc_sys.SYS_BRK, new_break, 0 as uint64, 0 as uint64, 0 as uint64, 0 as uint64, 0 as uint64);
+    int32 exit_code = 0;
+    bool term = false;
+    bool yielded = false;
+    int64 res = libc_sys.user_syscall(&ctx, stats, heap, pid, 1 as uint32, 0 as uint64, 0 as uint64, 0 as uint64, &exit_code, &term, &yielded);
+    if (res < 0) {
+        return 0 as uint64;
+    }
+    return ctx.return_value;
+}
+
+// Memory allocator using brk
+fn uint8* malloc(uint64 size, sys.SyscallStatsTable* stats, sys.ProcessHeap* heap, uint32 pid) {
+    if (size == 0 as uint64) {
+        return null;
+    }
+    // Align allocation size to 8 bytes
+    uint64 aligned_size = (size + 7 as uint64) & (~7 as uint64);
+
+    // Query current program break
+    uint64 current_brk = brk(0 as uint64, stats, heap, pid);
+    if (current_brk == 0 as uint64) {
+        return null;
+    }
+
+    uint64 new_brk = current_brk + aligned_size;
+    uint64 result_brk = brk(new_brk, stats, heap, pid);
+    if (result_brk != new_brk) {
+        return null; // ENOMEM or out of heap bounds
+    }
+
+    return current_brk as uint8*;
+}
+
+fn void mem_free(uint8* ptr) {
+    // Simple bump allocator; heap reclaim deferred to munmap / brk reduction
+}

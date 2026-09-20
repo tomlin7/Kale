@@ -1,0 +1,52 @@
+// os/userspace/libc/stdio.kl
+// Standard Input/Output Library for Kale User Space
+
+import "os/kernel/syscall.kl" as sys;
+import "os/userspace/libc/syscall.kl" as libc_sys;
+import "os/userspace/libc/string.kl" as str;
+
+// Standard POSIX File Descriptors
+int32 STDIN_FILENO  = 0;
+int32 STDOUT_FILENO = 1;
+int32 STDERR_FILENO = 2;
+
+fn int64 write(int32 fd, uint8* buf, uint64 count, sys.SyscallStatsTable* stats, sys.ProcessHeap* heap, uint32 pid) {
+    sys.SyscallContext ctx;
+    libc_sys.user_syscall_context_init(&ctx, libc_sys.SYS_WRITE, fd as uint64, buf as uint64, count, 0 as uint64, 0 as uint64, 0 as uint64);
+    int32 exit_code = 0;
+    bool term = false;
+    bool yielded = false;
+    return libc_sys.user_syscall(&ctx, stats, heap, pid, 1 as uint32, 0 as uint64, 0 as uint64, 0 as uint64, &exit_code, &term, &yielded);
+}
+
+fn int64 read(int32 fd, uint8* buf, uint64 count, sys.SyscallStatsTable* stats, sys.ProcessHeap* heap, uint32 pid) {
+    sys.SyscallContext ctx;
+    libc_sys.user_syscall_context_init(&ctx, libc_sys.SYS_READ, fd as uint64, buf as uint64, count, 0 as uint64, 0 as uint64, 0 as uint64);
+    int32 exit_code = 0;
+    bool term = false;
+    bool yielded = false;
+    return libc_sys.user_syscall(&ctx, stats, heap, pid, 1 as uint32, 0 as uint64, 0 as uint64, 0 as uint64, &exit_code, &term, &yielded);
+}
+
+fn int32 puts(char* s, sys.SyscallStatsTable* stats, sys.ProcessHeap* heap, uint32 pid) {
+    if (s == null) {
+        return -1;
+    }
+    uint64 len = str.strlen(s);
+    int64 written = write(STDOUT_FILENO, s as uint8*, len, stats, heap, pid);
+    if (written < 0) {
+        return -1;
+    }
+    uint8 newline = 10 as uint8; // '\n'
+    write(STDOUT_FILENO, &newline, 1 as uint64, stats, heap, pid);
+    return 0;
+}
+
+fn int32 putchar(char c, sys.SyscallStatsTable* stats, sys.ProcessHeap* heap, uint32 pid) {
+    uint8 ch = c as uint8;
+    int64 written = write(STDOUT_FILENO, &ch, 1 as uint64, stats, heap, pid);
+    if (written < 0) {
+        return -1;
+    }
+    return c as int32;
+}

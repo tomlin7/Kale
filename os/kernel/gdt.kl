@@ -21,8 +21,38 @@ struct GDTTable {
     GDTEntry kernel_data;
     GDTEntry user_code;
     GDTEntry user_data;
+    GDTEntry tss_low;
+    GDTEntry tss_high;
     GDTPointer pointer;
 }
+
+// 64-bit Task State Segment (TSS) Structure
+struct TSS64 {
+    uint32 reserved0;
+    uint64 rsp0;
+    uint64 rsp1;
+    uint64 rsp2;
+    uint64 reserved1;
+    uint64 ist1;
+    uint64 ist2;
+    uint64 ist3;
+    uint64 ist4;
+    uint64 ist5;
+    uint64 ist6;
+    uint64 ist7;
+    uint64 reserved2;
+    uint16 reserved3;
+    uint16 iopb_offset;
+}
+
+// Selector constants
+uint16 KERNEL_CODE_SELECTOR = 8 as uint16;    // 0x08
+uint16 KERNEL_DATA_SELECTOR = 16 as uint16;   // 0x10
+uint16 USER_CODE_SELECTOR = 24 as uint16;     // 0x18
+uint16 USER_DATA_SELECTOR = 32 as uint16;     // 0x20
+uint16 TSS_SELECTOR = 40 as uint16;           // 0x28
+uint16 USER_CS_RPL3 = 27 as uint16;           // 0x1B (0x18 | 3)
+uint16 USER_SS_RPL3 = 35 as uint16;           // 0x23 (0x20 | 3)
 
 fn GDTEntry gdt_create_entry(int base, int limit, int access, int gran) {
     GDTEntry entry;
@@ -33,6 +63,45 @@ fn GDTEntry gdt_create_entry(int base, int limit, int access, int gran) {
     entry.granularity = ((limit / 65536) & 15) | (gran & 240);
     entry.base_high = (base / 16777216) & 255;
     return entry;
+}
+
+fn void tss_init(TSS64* tss, uint64 kernel_rsp0) {
+    tss->reserved0 = 0 as uint32;
+    tss->rsp0 = kernel_rsp0;
+    tss->rsp1 = 0 as uint64;
+    tss->rsp2 = 0 as uint64;
+    tss->reserved1 = 0 as uint64;
+    tss->ist1 = 0 as uint64;
+    tss->ist2 = 0 as uint64;
+    tss->ist3 = 0 as uint64;
+    tss->ist4 = 0 as uint64;
+    tss->ist5 = 0 as uint64;
+    tss->ist6 = 0 as uint64;
+    tss->ist7 = 0 as uint64;
+    tss->reserved2 = 0 as uint64;
+    tss->reserved3 = 0 as uint16;
+    tss->iopb_offset = 104 as uint16; // 104 = size of TSS64 without I/O bitmap
+}
+
+fn void gdt_setup_tss(GDTTable* table, uint64 tss_base, uint32 tss_limit) {
+    // 0x28: 64-bit Task State Segment (TSS) Descriptor (16 bytes = 2 entries)
+    // Low 8 bytes: Access = 0x89 = 137 (Present=1, DPL=0, Type 9: 64-bit TSS Available)
+    uint64 low_base = tss_base & 4294967295 as uint64;
+    table->tss_low = gdt_create_entry(low_base as int, tss_limit as int, 137, 0);
+
+    // High 8 bytes: Base 63:32 in lower 32 bits, upper 32 bits reserved (0)
+    GDTEntry high_entry;
+    uint64 high_base = (tss_base >> 32) & 4294967295 as uint64;
+    high_entry.limit_low = (high_base & 65535 as uint64) as int;
+    high_entry.base_low = ((high_base >> 16) & 65535 as uint64) as int;
+    high_entry.base_mid = 0;
+    high_entry.access = 0;
+    high_entry.granularity = 0;
+    high_entry.base_high = 0;
+    table->tss_high = high_entry;
+
+    // With TSS, GDT has 7 entries: 7 * 8 - 1 = 55
+    table->pointer.limit = 55;
 }
 
 fn void gdt_init(GDTTable* table) {
@@ -50,6 +119,10 @@ fn void gdt_init(GDTTable* table) {
 
     // 0x20: User 64-bit Data Segment (Access: 0xF2 = 242, Granularity: 0)
     table->user_data = gdt_create_entry(0, 1048575, 242, 0);
+
+    // Default TSS entries are null until gdt_setup_tss is called
+    table->tss_low = gdt_create_entry(0, 0, 0, 0);
+    table->tss_high = gdt_create_entry(0, 0, 0, 0);
 
     table->pointer.limit = 39; // 5 * 8 - 1
     table->pointer.base = 0;

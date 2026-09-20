@@ -1,0 +1,58 @@
+// os/userspace/libc/syscall.kl
+// User Space System Call Interface & Calling Convention
+
+import "os/kernel/syscall.kl" as sys;
+
+// Standard System Call Identifiers
+uint64 SYS_READ         = 0 as uint64;
+uint64 SYS_WRITE        = 1 as uint64;
+uint64 SYS_OPEN         = 2 as uint64;
+uint64 SYS_CLOSE        = 3 as uint64;
+uint64 SYS_STAT         = 4 as uint64;
+uint64 SYS_MMAP         = 9 as uint64;
+uint64 SYS_MPROTECT     = 10 as uint64;
+uint64 SYS_MUNMAP       = 11 as uint64;
+uint64 SYS_BRK          = 12 as uint64;
+uint64 SYS_SCHED_YIELD  = 24 as uint64;
+uint64 SYS_GETPID       = 39 as uint64;
+uint64 SYS_EXECVE       = 59 as uint64;
+uint64 SYS_EXIT         = 60 as uint64;
+uint64 SYS_KILL         = 62 as uint64;
+uint64 SYS_UNAME        = 63 as uint64;
+uint64 SYS_GETTIMEOFDAY = 96 as uint64;
+uint64 SYS_SYSINFO      = 99 as uint64;
+uint64 SYS_GETPPID      = 110 as uint64;
+
+// Standard Error Codes
+int32 EPERM   = 1;
+int32 ENOENT  = 2;
+int32 ESRCH   = 3;
+int32 EINTR   = 4;
+int32 EBADF   = 9;
+int32 ENOMEM  = 12;
+int32 EACCES  = 13;
+int32 EFAULT  = 14;
+int32 EINVAL  = 22;
+int32 ENOSYS  = 38;
+
+// User Space Syscall Invocation Routine
+// Dispatches the syscall to the kernel dispatcher and returns result or negative error
+fn int64 user_syscall(sys.SyscallContext* ctx, sys.SyscallStatsTable* stats, sys.ProcessHeap* heap, uint32 pid, uint32 ppid, uint64 uptime, uint64 totalram, uint64 freeram, int32* exit_code, bool* terminated, bool* yielded) {
+    sys.syscall_dispatch_context(ctx, stats, heap, pid, ppid, uptime, totalram, freeram, exit_code, terminated, yielded);
+    if (ctx->error != 0) {
+        return (0 - (ctx->error as int64));
+    }
+    return ctx->return_value as int64;
+}
+
+fn void user_syscall_context_init(sys.SyscallContext* ctx, uint64 number, uint64 a1, uint64 a2, uint64 a3, uint64 a4, uint64 a5, uint64 a6) {
+    ctx->number = number;
+    ctx->arg1 = a1;
+    ctx->arg2 = a2;
+    ctx->arg3 = a3;
+    ctx->arg4 = a4;
+    ctx->arg5 = a5;
+    ctx->arg6 = a6;
+    ctx->return_value = 0 as uint64;
+    ctx->error = 0;
+}

@@ -1,0 +1,273 @@
+// os/kernel/process.kl
+// User Space Process Management, Memory Space Layout, Stack Initialization & Ring 3 Transition
+
+import "os/kernel/sched.kl" as sched;
+import "os/kernel/gdt.kl" as gdt;
+import "os/kernel/elf.kl" as elf;
+import "os/kernel/syscall.kl" as sys;
+
+// Standard 64-Bit User Space Virtual Memory Boundaries
+uint64 USER_SPACE_MIN   = 4194304 as uint64;              // 0x0000000000400000 (4 MB)
+uint64 USER_SPACE_MAX   = 140737488355327 as uint64;      // 0x00007FFFFFFFFFFF (128 TB - 1)
+uint64 USER_STACK_TOP   = 140737488351232 as uint64;      // 0x00007FFFFFFFF000 (Top of user stack page)
+uint64 USER_STACK_SIZE  = 65536 as uint64;                // 64 KB (16 x 4KB pages)
+uint64 USER_STACK_BASE  = 140737488285696 as uint64;      // 0x00007FFFFFFF0000 (Bottom of user stack)
+uint64 KERNEL_PML4_SLOT = 511 as uint64;                  // Higher-half identity mapping slot
+uint64 PAGE_SIZE_4K     = 4096 as uint64;
+
+// Auxiliary Vector Type Tags (System V AMD64 ABI)
+uint64 AT_NULL   = 0 as uint64;
+uint64 AT_IGNORE = 1 as uint64;
+uint64 AT_EXECFD = 2 as uint64;
+uint64 AT_PHDR   = 3 as uint64;  // Program headers virtual address
+uint64 AT_PHENT  = 4 as uint64;  // Program header entry size
+uint64 AT_PHNUM  = 5 as uint64;  // Program header entry count
+uint64 AT_PAGESZ = 6 as uint64;  // System page size (4096)
+uint64 AT_BASE   = 7 as uint64;  // Base address of interpreter
+uint64 AT_FLAGS  = 8 as uint64;  // Processor flags
+uint64 AT_ENTRY  = 9 as uint64;  // Program entry point address
+
+// Single Auxiliary Vector Entry (16 bytes)
+struct AuxVectorEntry {
+    uint64 a_type;
+    uint64 a_val;
+}
+
+// User Space Process Control Structure
+struct UserProcess {
+    sched.ProcessControlBlock pcb;
+    sched.CPUContext context;
+    sys.ProcessHeap heap;
+    uint64 user_stack_top;
+    uint64 user_stack_rsp;
+    uint64 entry_point;
+    uint64 image_base;
+    uint64 image_size;
+    bool is_alive;
+}
+
+// User Stack Inspection Layout
+struct UserStackInfo {
+    uint64 initial_rsp;
+    uint64 argc;
+    uint64 argv_table_addr;
+    uint64 envp_table_addr;
+    uint64 auxv_table_addr;
+}
+
+// -----------------------------------------------------------------------------
+// Address Space Isolation & Kernel Mapping
+// -----------------------------------------------------------------------------
+
+// Initializes a process PML4 page table:
+// 1. Clears lower-half user slots (0..510) ensuring user space isolation.
+// 2. Shares upper-half kernel slot (511) so interrupts and syscalls operate in Ring 0.
+fn bool create_user_address_space(uint64* user_pml4_entries, uint64* kernel_pml4_entries) {
+    if (user_pml4_entries == null || kernel_pml4_entries == null) {
+        return false;
+    }
+
+    // Clear user-space slots (0..510)
+    int i = 0;
+    while (i < 511) {
+        user_pml4_entries[i] = 0 as uint64;
+        i = i + 1;
+    }
+
+    // Share kernel-space slot 511 (Present + Writable: 0x03)
+    user_pml4_entries[511] = kernel_pml4_entries[511];
+    return true;
+}
+
+// -----------------------------------------------------------------------------
+// System V AMD64 ABI User Stack Frame Setup
+// -----------------------------------------------------------------------------
+
+// Builds user stack layout at user_stack_top (0x00007FFFFFFFF000):
+// [rsp + 0]: argc (uint64)
+// [rsp + 8 .. rsp + 8 + argc*8]: argv[0..argc-1] (uint64*)
+// [rsp + 8 + argc*8]: NULL (uint64)
+// [rsp + 16 + argc*8 ..]: envp[0..envc-1] (uint64*)
+// [...]: NULL (uint64)
+// [...]: auxv entries (AT_ENTRY, AT_PHDR, AT_PHENT, AT_PHNUM, AT_PAGESZ, AT_NULL)
+fn uint64 setup_user_stack(uint64* stack_buffer, uint64 buffer_capacity_words, uint64 stack_top_vaddr, int32 argc, uint64* argv_ptrs, int32 envc, uint64* envp_ptrs, uint64 entry_point, uint64 phdr_addr, uint16 phnum, uint16 phentsize, UserStackInfo* out_info) {
+    // Total words required:
+    // argc (1) + argv (argc + 1) + envp (envc + 1) + auxv (6 * 2) = 1 + argc + 1 + envc + 1 + 12 = argc + envc + 15 words
+    uint64 total_words = (argc as uint64) + (envc as uint64) + 15 as uint64;
+    
+    // Ensure 16-byte alignment (even number of 8-byte words)
+    if ((total_words % 2 as uint64) != 0 as uint64) {
+        total_words = total_words + 1 as uint64;
+    }
+
+    if (total_words > buffer_capacity_words) {
+        return 0 as uint64;
+    }
+
+    uint64 rsp_vaddr = stack_top_vaddr - (total_words * 8 as uint64);
+
+    // 1. Write argc
+    uint64 cursor = 0 as uint64;
+    stack_buffer[cursor] = argc as uint64;
+    cursor = cursor + 1 as uint64;
+
+    uint64 argv_vaddr = rsp_vaddr + (cursor * 8 as uint64);
+
+    // 2. Write argv pointers
+    int a = 0;
+    while (a < argc) {
+        if (argv_ptrs != null) {
+            stack_buffer[cursor] = argv_ptrs[a];
+        } else {
+            stack_buffer[cursor] = 0 as uint64;
+        }
+        cursor = cursor + 1 as uint64;
+        a = a + 1;
+    }
+    stack_buffer[cursor] = 0 as uint64; // NULL terminator
+    cursor = cursor + 1 as uint64;
+
+    uint64 envp_vaddr = rsp_vaddr + (cursor * 8 as uint64);
+
+    // 3. Write envp pointers
+    int e = 0;
+    while (e < envc) {
+        if (envp_ptrs != null) {
+            stack_buffer[cursor] = envp_ptrs[e];
+        } else {
+            stack_buffer[cursor] = 0 as uint64;
+        }
+        cursor = cursor + 1 as uint64;
+        e = e + 1;
+    }
+    stack_buffer[cursor] = 0 as uint64; // NULL terminator
+    cursor = cursor + 1 as uint64;
+
+    uint64 auxv_vaddr = rsp_vaddr + (cursor * 8 as uint64);
+
+    // 4. Write Auxiliary Vector
+    // AT_ENTRY
+    stack_buffer[cursor] = AT_ENTRY; cursor = cursor + 1 as uint64;
+    stack_buffer[cursor] = entry_point; cursor = cursor + 1 as uint64;
+
+    // AT_PHDR
+    stack_buffer[cursor] = AT_PHDR; cursor = cursor + 1 as uint64;
+    stack_buffer[cursor] = phdr_addr; cursor = cursor + 1 as uint64;
+
+    // AT_PHENT
+    stack_buffer[cursor] = AT_PHENT; cursor = cursor + 1 as uint64;
+    stack_buffer[cursor] = phentsize as uint64; cursor = cursor + 1 as uint64;
+
+    // AT_PHNUM
+    stack_buffer[cursor] = AT_PHNUM; cursor = cursor + 1 as uint64;
+    stack_buffer[cursor] = phnum as uint64; cursor = cursor + 1 as uint64;
+
+    // AT_PAGESZ (4096)
+    stack_buffer[cursor] = AT_PAGESZ; cursor = cursor + 1 as uint64;
+    stack_buffer[cursor] = PAGE_SIZE_4K; cursor = cursor + 1 as uint64;
+
+    // AT_NULL (End of auxv)
+    stack_buffer[cursor] = AT_NULL; cursor = cursor + 1 as uint64;
+    stack_buffer[cursor] = 0 as uint64; cursor = cursor + 1 as uint64;
+
+    // Pad remaining alignment word if needed
+    while (cursor < total_words) {
+        stack_buffer[cursor] = 0 as uint64;
+        cursor = cursor + 1 as uint64;
+    }
+
+    if (out_info != null) {
+        out_info->initial_rsp = rsp_vaddr;
+        out_info->argc = argc as uint64;
+        out_info->argv_table_addr = argv_vaddr;
+        out_info->envp_table_addr = envp_vaddr;
+        out_info->auxv_table_addr = auxv_vaddr;
+    }
+
+    return rsp_vaddr;
+}
+
+// -----------------------------------------------------------------------------
+// User Space Process Creation & Initialization
+// -----------------------------------------------------------------------------
+
+fn bool create_user_process(sched.Scheduler* scheduler, UserProcess* proc, uint8* elf_data, uint64 elf_size, uint64 kernel_stack, uint64 page_table_phys, int32 argc, uint64* argv_ptrs, int32 envc, uint64* envp_ptrs, uint64* stack_scratch_buf, uint64 stack_scratch_words) {
+    if (scheduler == null || proc == null || elf_data == null || elf_size < 64 as uint64) {
+        return false;
+    }
+
+    elf.ElfHeader* header = elf_data as elf.ElfHeader*;
+    if (!elf.elf_validate_header(header)) {
+        return false;
+    }
+
+    uint64 min_vaddr = 0 as uint64;
+    uint64 max_vaddr = 0 as uint64;
+    uint64 total_size = 0 as uint64;
+    bool bounds_ok = elf.elf_calculate_memory_bounds(elf_data, header, &min_vaddr, &max_vaddr, &total_size);
+    if (!bounds_ok) {
+        return false;
+    }
+
+    proc->image_base = min_vaddr;
+    proc->image_size = total_size;
+    proc->entry_point = header->entry;
+    proc->user_stack_top = USER_STACK_TOP;
+
+    // Setup initial user stack layout
+    UserStackInfo stack_info;
+    uint64 phdr_vaddr = min_vaddr + header->phoff;
+    uint64 initial_rsp = setup_user_stack(
+        stack_scratch_buf,
+        stack_scratch_words,
+        USER_STACK_TOP,
+        argc,
+        argv_ptrs,
+        envc,
+        envp_ptrs,
+        header->entry,
+        phdr_vaddr,
+        header->phnum,
+        header->phentsize,
+        &stack_info
+    );
+
+    if (initial_rsp == 0 as uint64) {
+        return false;
+    }
+    proc->user_stack_rsp = initial_rsp;
+
+    // Initialize user process heap right above the loaded binary image
+    uint64 heap_start = (max_vaddr + 4095 as uint64) & (~4095 as uint64);
+    uint64 heap_max = heap_start + 268435456 as uint64; // 256 MB user heap limit
+    sys.process_heap_init(&proc->heap, heap_start, heap_max);
+
+    // Initialize CPU context for Ring 3 user mode execution:
+    // RIP = ELF entry point
+    // RSP = initial user stack pointer (0x00007FFFFFFFF000 - frame)
+    // CS = 0x1B (User Code RPL 3)
+    // SS = 0x23 (User Data RPL 3)
+    // RFLAGS = 0x202 (IF bit 9 enabled)
+    sched.cpu_context_init(&proc->context, header->entry, initial_rsp, true);
+
+    // Initialize Process Control Block (PCB)
+    uint32 pid = sched.sched_generate_pid();
+    sched.pcb_init(&proc->pcb, pid, 10 as uint8, scheduler->default_time_slice, kernel_stack, page_table_phys);
+    proc->pcb.user_stack = initial_rsp;
+    proc->pcb.registers = &proc->context;
+
+    // Register process in scheduler ready queue
+    sched.sched_add_ready(scheduler, &proc->pcb);
+    scheduler->total_processes = scheduler->total_processes + 1;
+
+    proc->is_alive = true;
+    return true;
+}
+
+fn void terminate_user_process(sched.Scheduler* scheduler, UserProcess* proc, int32 exit_code) {
+    if (scheduler == null || proc == null || !proc->is_alive) {
+        return;
+    }
+    sched.sched_terminate_process(scheduler, &proc->pcb, exit_code);
+    proc->is_alive = false;
+}

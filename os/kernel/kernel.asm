@@ -194,6 +194,13 @@ shell_execute_command:
     test eax, eax
     jnz .run_stats
 
+    ; Compare "user"
+    mov rsi, cmd_buffer
+    mov rdi, str_cmd_user
+    call str_equals
+    test eax, eax
+    jnz .run_user
+
     ; Compare "reboot"
     mov rsi, cmd_buffer
     mov rdi, str_cmd_reboot
@@ -319,6 +326,12 @@ shell_execute_command:
     mov cl, [term_color]
     call vga_print_str
     call vga_newline
+    jmp .cmd_done
+
+.run_user:
+    mov rsi, msg_user_text
+    mov cl, 0x0B                ; Light Cyan
+    call vga_print_str
     jmp .cmd_done
 
 .run_reboot:
@@ -991,6 +1004,7 @@ msg_help_text:
     db "  clear    - Clear terminal shell area", 10
     db "  color    - Cycle shell text color (Cyan/Green/Yellow/White/Pink)", 10
     db "  echo     - Echo arguments back to the terminal", 10
+    db "  user     - Show User Space & Ring 3 privilege architecture", 10
     db "  reboot   - Hardware reboot via 8042 keyboard controller", 10
     db "  halt     - Halt system execution (cli; hlt)", 10, 0
 
@@ -1045,9 +1059,17 @@ str_cmd_color:      db "color", 0
 str_cmd_int3:       db "int3", 0
 str_cmd_ticks:      db "ticks", 0
 str_cmd_stats:      db "stats", 0
+str_cmd_user:       db "user", 0
 str_cmd_reboot:     db "reboot", 0
 str_cmd_halt:       db "halt", 0
 str_cmd_echo:       db "echo ", 0
+
+msg_user_text:
+    db "User Space Architecture (Milestone 5):", 10
+    db "  TSS Descriptor  : Selector 0x28 (64-Bit Available TSS)", 10
+    db "  Ring 3 Selectors: User CS=0x1B, User SS=0x23", 10
+    db "  User Stack Top  : 0x00007FFFFFFFF000 (SysV AMD64 ABI)", 10
+    db "  Binary Loader   : 64-Bit ELF Loader (PT_LOAD, PF_R/W/X)", 10, 0
 
 ; Scancode Set 1 Translation Table (128 entries)
 scancode_ascii_table:

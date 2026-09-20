@@ -1,0 +1,70 @@
+// os/userspace/libc/string.kl
+// Standard String and Memory Operations for Kale User Space
+
+fn uint64 strlen(char* s) {
+    if (s == null) {
+        return 0 as uint64;
+    }
+    uint64 len = 0 as uint64;
+    while (s[len] != 0 as char) {
+        len = len + 1 as uint64;
+    }
+    return len;
+}
+
+fn int32 strcmp(char* s1, char* s2) {
+    if (s1 == null && s2 == null) {
+        return 0;
+    }
+    if (s1 == null) {
+        return -1;
+    }
+    if (s2 == null) {
+        return 1;
+    }
+    uint64 i = 0 as uint64;
+    while (s1[i] != 0 as char && s2[i] != 0 as char) {
+        if (s1[i] != s2[i]) {
+            return (s1[i] as int32) - (s2[i] as int32);
+        }
+        i = i + 1 as uint64;
+    }
+    return (s1[i] as int32) - (s2[i] as int32);
+}
+
+fn char* strcpy(char* dest, char* src) {
+    if (dest == null || src == null) {
+        return dest;
+    }
+    uint64 i = 0 as uint64;
+    while (src[i] != 0 as char) {
+        dest[i] = src[i];
+        i = i + 1 as uint64;
+    }
+    dest[i] = 0 as char;
+    return dest;
+}
+
+fn void* memset(uint8* dest, uint8 val, uint64 count) {
+    if (dest == null) {
+        return dest as void*;
+    }
+    uint64 i = 0 as uint64;
+    while (i < count) {
+        dest[i] = val;
+        i = i + 1 as uint64;
+    }
+    return dest as void*;
+}
+
+fn void* memcpy(uint8* dest, uint8* src, uint64 count) {
+    if (dest == null || src == null) {
+        return dest as void*;
+    }
+    uint64 i = 0 as uint64;
+    while (i < count) {
+        dest[i] = src[i];
+        i = i + 1 as uint64;
+    }
+    return dest as void*;
+}
