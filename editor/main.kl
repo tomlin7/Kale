@@ -115,6 +115,19 @@ fn void run_editor() {
     int key_delay = 0;
 
     while (app.begin_frame() != 0) {
+        // Dynamically adjust component bounds to window dimensions
+        float cur_w = (float)app.width;
+        float cur_h = (float)app.height;
+        content_h = cur_h - header_h - status_h;
+        if (content_h < 50.0f) { content_h = 50.0f; }
+        visible_rows = (int)(content_h / line_h);
+
+        gutter.height = content_h;
+        viewport.width = cur_w - gutter_w;
+        viewport.height = content_h;
+        status_bar.y = cur_h - status_h;
+        status_bar.width = cur_w;
+
         // Mouse click navigation in viewport
         if (app.ui_ctx.mouse_pressed != 0) {
             float mx = app.ui_ctx.mouse_x;
@@ -210,11 +223,23 @@ fn void run_editor() {
         }
 
         // Render Header bar & Active File Tab
-        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, 0.0f, (float)app.width, header_h, header_bg);
-        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 12.0f, 6.0f, 220.0f, header_h - 6.0f, header_tab_bg);
-        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 12.0f, 6.0f, 220.0f, 2.0f, header_accent);
+        rmath.Color header_divider = rmath.color_rgba(0.22f, 0.24f, 0.28f, 1.0f);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, 0.0f, cur_w, header_h, header_bg);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, header_h - 1.0f, cur_w, 1.0f, header_divider);
 
-        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "editor_main.kl", 28.0f, 14.0f, header_fg);
+        // Tab item
+        float tab_w = 230.0f;
+        float tab_x = 10.0f;
+        float tab_y = 6.0f;
+        float tab_h = header_h - 6.0f;
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, tab_x, tab_y, tab_w, tab_h, header_tab_bg);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, tab_x, tab_y, tab_w, 2.0f, header_accent);
+
+        string tab_title = "editor_main.kl";
+        if (state.is_dirty) {
+            tab_title = "editor_main.kl *";
+        }
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, tab_title, tab_x + 16.0f, tab_y + 8.0f, header_fg);
 
         // Render Components
         int total_lines = state.buffer.line_count();
@@ -223,7 +248,7 @@ fn void run_editor() {
         status_bar.render(&app.ui_ctx.renderer, &app.gl_ctx, &app.ui_ctx.font, state.cursor_row, state.cursor_col, total_lines, state.is_dirty);
 
         // Render Command Bar Overlay if active
-        cmd_bar.render(&app.ui_ctx.renderer, &app.gl_ctx, &app.ui_ctx.font, (float)app.width, (float)app.height);
+        cmd_bar.render(&app.ui_ctx.renderer, &app.gl_ctx, &app.ui_ctx.font, cur_w, cur_h);
 
         app.end_frame();
     }

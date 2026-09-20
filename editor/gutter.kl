@@ -50,6 +50,8 @@ fn void Gutter.render(
     float divider_x = this->x + this->width - 1.0f;
     renderer->push_quad(gl_ctx, divider_x, this->y, 1.0f, this->height, this->divider_color);
 
+    renderer->set_clip_rect(gl_ctx, this->x, this->y, this->width, this->height);
+
     int visible_lines = (int)(this->height / this->line_height);
     int idx = 0;
 
@@ -68,12 +70,14 @@ fn void Gutter.render(
                 num_color = this->active_fg;
             }
 
-            float num_x = this->x + this->width - 16.0f - ((float)strlen(num_str) * 11.0f);
-            if (num_x < this->x + 6.0f) {
-                num_x = this->x + 6.0f;
+            float num_w = font->measure_text(num_str);
+            float num_x = this->x + this->width - 12.0f - num_w;
+            if (num_x < this->x + 4.0f) {
+                num_x = this->x + 4.0f;
             }
 
             font->draw_text(renderer, gl_ctx, num_str, num_x, cur_y + 2.0f, num_color);
+            free((void*)num_str);
             num_sb.destroy();
         } else {
             font->draw_text(renderer, gl_ctx, "~", this->x + 16.0f, cur_y + 2.0f, this->fg);
@@ -81,4 +85,6 @@ fn void Gutter.render(
 
         idx = idx + 1;
     }
+
+    renderer->reset_clip(gl_ctx);
 }

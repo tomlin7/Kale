@@ -73,9 +73,14 @@ fn void TextViewport.render(
     // Fill viewport background panel
     renderer->push_quad(gl_ctx, this->x, this->y, this->width, this->height, this->bg_color);
 
+    // Apply hardware scissor clipping for viewport
+    renderer->set_clip_rect(gl_ctx, this->x, this->y, this->width, this->height);
+
     int total_lines = buffer->line_count();
     int visible_lines = (int)(this->height / this->line_height);
     int row_idx = 0;
+
+    char* token_buf = alloc(char, 1024);
 
     while (row_idx < visible_lines) {
         int current_line_num = scroll_row + row_idx;
@@ -103,18 +108,19 @@ fn void TextViewport.render(
                     syn.TokenSpan span = hl.get_span(s_idx);
                     rmath.Color token_color = this->get_token_color(span.token_type);
 
-                    sb.StringBuilder span_sb;
-                    span_sb.init(span.length + 1);
+                    int span_len = span.length;
+                    if (span_len > 1020) {
+                        span_len = 1020;
+                    }
                     int ch_i = 0;
-                    while (ch_i < span.length && span.start_col + ch_i < len) {
-                        span_sb.append_char(line_str[span.start_col + ch_i]);
+                    while (ch_i < span_len && span.start_col + ch_i < len) {
+                        token_buf[ch_i] = line_str[span.start_col + ch_i];
                         ch_i = ch_i + 1;
                     }
-                    string token_text = span_sb.to_string();
-                    float token_x = this->x + 12.0f + ((float)span.start_col * this->char_width);
+                    token_buf[ch_i] = (char)0;
 
-                    font->draw_text(renderer, gl_ctx, token_text, token_x, cur_y + 2.0f, token_color);
-                    span_sb.destroy();
+                    float token_x = this->x + 12.0f + ((float)span.start_col * this->char_width);
+                    font->draw_text(renderer, gl_ctx, (string)token_buf, token_x, cur_y + 2.0f, token_color);
                     s_idx = s_idx + 1;
                 }
             }
@@ -123,6 +129,8 @@ fn void TextViewport.render(
         row_idx = row_idx + 1;
     }
 
+    free(token_buf);
+
     // Render active caret (cursor)
     int cursor_visual_row = cursor_row - scroll_row;
     if (cursor_visual_row >= 0 && cursor_visual_row < visible_lines) {
@@ -130,4 +138,6 @@ fn void TextViewport.render(
         float caret_y = this->y + ((float)cursor_visual_row * this->line_height) + 2.0f;
         renderer->push_quad(gl_ctx, caret_x, caret_y, 2.0f, this->line_height - 4.0f, this->cursor_color);
     }
+
+    renderer->reset_clip(gl_ctx);
 }

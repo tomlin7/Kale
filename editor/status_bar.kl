@@ -44,6 +44,7 @@ fn void StatusBar.render(
 ) {
     // Fill status bar background
     renderer->push_quad(gl_ctx, this->x, this->y, this->width, this->height, this->bg);
+    renderer->push_quad(gl_ctx, this->x, this->y, this->width, 1.0f, this->border);
 
     float text_y = this->y + 4.0f;
 
@@ -55,8 +56,8 @@ fn void StatusBar.render(
     font->draw_text(renderer, gl_ctx, status_tag, this->x + 12.0f, text_y, this->fg);
 
     // Center help
-    string help_msg = " [Arrows] Navigate   [Type] Edit   [Enter] Newline   [Bksp] Delete";
-    font->draw_text(renderer, gl_ctx, help_msg, this->x + 240.0f, text_y, this->accent_fg);
+    string help_msg = " [Arrows] Navigate   [Type] Edit   [Enter] Newline   [Bksp] Delete   [Ctrl+P] Command";
+    font->draw_text(renderer, gl_ctx, help_msg, this->x + 220.0f, text_y, this->accent_fg);
 
     // Right info: Ln X, Col Y, UTF-8, Kale
     sb.StringBuilder pos_sb;
@@ -68,9 +69,11 @@ fn void StatusBar.render(
     pos_sb.append("  |  UTF-8  |  Kale (OpenGL 3.3)");
     string pos_str = pos_sb.to_string();
 
-    float right_x = this->x + this->width - ((float)strlen(pos_str) * 11.0f) - 20.0f;
-    if (right_x > this->x + 500.0f) {
+    float right_w = font->measure_text(pos_str);
+    float right_x = this->x + this->width - right_w - 16.0f;
+    if (right_x > this->x + 480.0f) {
         font->draw_text(renderer, gl_ctx, pos_str, right_x, text_y, this->fg);
     }
+    free((void*)pos_str);
     pos_sb.destroy();
 }
