@@ -1,0 +1,199 @@
+// os/drivers/nvme.kl
+// Non-Volatile Memory Express (NVMe 1.4) Storage Driver for Kale OS
+// Supports PCIe BAR0 MMIO registers, 64-byte Submission Queues, 16-byte Completion Queues,
+// Doorbell register addressing, and PRP DMA command submission.
+
+// Controller Configuration Bits
+uint32 NVME_CC_EN              = 0x00000001 as uint32; // Enable
+uint32 NVME_CC_CSS_NVM         = 0x00000000 as uint32; // NVM Command Set
+uint32 NVME_CC_IOSQES_64       = 0x00060000 as uint32; // IOSQES = 6 (2^6 = 64 bytes)
+uint32 NVME_CC_IOCQES_16       = 0x00400000 as uint32; // IOCQES = 4 (2^4 = 16 bytes)
+
+// Controller Status Bits
+uint32 NVME_CSTS_RDY           = 0x00000001 as uint32; // Controller Ready
+uint32 NVME_CSTS_CFS           = 0x00000002 as uint32; // Controller Fatal Status
+
+// Admin Opcodes
+uint8 NVME_ADMIN_CMD_CREATE_SQ = 0x01 as uint8;
+uint8 NVME_ADMIN_CMD_CREATE_CQ = 0x05 as uint8;
+uint8 NVME_ADMIN_CMD_IDENTIFY  = 0x06 as uint8;
+
+// NVM I/O Opcodes
+uint8 NVME_CMD_FLUSH           = 0x00 as uint8;
+uint8 NVME_CMD_WRITE           = 0x01 as uint8;
+uint8 NVME_CMD_READ            = 0x02 as uint8;
+
+// ==============================================================================
+// Data Structures
+// ==============================================================================
+
+// 64-byte NVMe Submission Queue Entry
+struct NVMESQE {
+    uint8 opcode;
+    uint8 flags;
+    uint16 cid;        // Command Identifier
+    uint32 nsid;       // Namespace Identifier (e.g. 1)
+    uint64 mptr;       // Metadata Pointer
+    uint64 prp1;       // Data Pointer 1 (Physical Address)
+    uint64 prp2;       // Data Pointer 2 or PRP list
+    uint32 cdw10;      // Starting LBA low 32 bits
+    uint32 cdw11;      // Starting LBA high 32 bits
+    uint16 num_blocks; // CDW12 bits 15:0 (0-based: 0 = 1 block)
+    uint16 cdw12_flags;
+    uint32 cdw13;
+    uint32 cdw14;
+    uint32 cdw15;
+}
+
+// 16-byte NVMe Completion Queue Entry
+struct NVMECQE {
+    uint32 result;
+    uint16 sq_head;
+    uint16 sq_id;
+    uint16 cid;        // Matching Command Identifier
+    uint16 status;     // Bit 0: Phase Tag P, Bits 14:1: Status Code SC
+}
+
+struct NVMEQueue {
+    int qid;
+    uint64 sq_base;
+    uint64 cq_base;
+    int size;
+    int sq_tail;
+    int cq_head;
+    bool cq_phase;
+}
+
+struct NVMEController {
+    uint64 base_addr;
+    uint32 cap_low;
+    uint32 cap_high;
+    uint32 vs;
+    uint32 cc;
+    uint32 csts;
+    int dstrd;             // Doorbell stride
+    int max_queue_entries; // MQES + 1
+    bool is_ready;
+    NVMEQueue admin_queue;
+    NVMEQueue io_queue;
+}
+
+// ==============================================================================
+// Doorbell Register Calculations
+// ==============================================================================
+
+// Submission Queue Tail Doorbell offset:
+// 0x1000 + (2 * qid) * (4 << dstrd)
+fn uint64 nvme_calc_sq_doorbell(NVMEController* ctrl, int qid) {
+    if (ctrl == null) {
+        return 0 as uint64;
+    }
+    uint64 stride_bytes = (4 as uint64) << (ctrl->dstrd as uint64);
+    uint64 offset = (0x1000 as uint64) + ((2 * qid) as uint64) * stride_bytes;
+    return ctrl->base_addr + offset;
+}
+
+// Completion Queue Head Doorbell offset:
+// 0x1000 + ((2 * qid) + 1) * (4 << dstrd)
+fn uint64 nvme_calc_cq_doorbell(NVMEController* ctrl, int qid) {
+    if (ctrl == null) {
+        return 0 as uint64;
+    }
+    uint64 stride_bytes = (4 as uint64) << (ctrl->dstrd as uint64);
+    uint64 offset = (0x1000 as uint64) + (((2 * qid) + 1) as uint64) * stride_bytes;
+    return ctrl->base_addr + offset;
+}
+
+// ==============================================================================
+// Controller & Queue Initialization
+// ==============================================================================
+
+fn void nvme_init_controller(NVMEController* ctrl, uint64 base_addr, uint32 cap_lo, uint32 cap_hi, uint32 vs) {
+    if (ctrl == null) {
+        return;
+    }
+    ctrl->base_addr = base_addr;
+    ctrl->cap_low = cap_lo;
+    ctrl->cap_high = cap_hi;
+    ctrl->vs = vs;
+
+    // Doorbell stride DSTRD is in CAP bits 35:32 (cap_hi bits 3:0)
+    ctrl->dstrd = (cap_hi & (0x0F as uint32)) as int;
+
+    // Max Queue Entries Supported MQES is in CAP bits 15:0 (cap_lo bits 15:0)
+    uint32 mqes = cap_lo & (0xFFFF as uint32);
+    ctrl->max_queue_entries = (mqes as int) + 1;
+
+    // Configure standard CC value: Enable | IOSQES=6 (64B) | IOCQES=4 (16B)
+    ctrl->cc = NVME_CC_EN | NVME_CC_IOSQES_64 | NVME_CC_IOCQES_16;
+    ctrl->csts = NVME_CSTS_RDY;
+    ctrl->is_ready = true;
+
+    // Init Admin Queue (qid 0)
+    ctrl->admin_queue.qid = 0;
+    ctrl->admin_queue.sq_base = 0 as uint64;
+    ctrl->admin_queue.cq_base = 0 as uint64;
+    ctrl->admin_queue.size = 64;
+    ctrl->admin_queue.sq_tail = 0;
+    ctrl->admin_queue.cq_head = 0;
+    ctrl->admin_queue.cq_phase = true;
+
+    // Init I/O Queue (qid 1)
+    ctrl->io_queue.qid = 1;
+    ctrl->io_queue.sq_base = 0 as uint64;
+    ctrl->io_queue.cq_base = 0 as uint64;
+    ctrl->io_queue.size = 256;
+    ctrl->io_queue.sq_tail = 0;
+    ctrl->io_queue.cq_head = 0;
+    ctrl->io_queue.cq_phase = true;
+}
+
+// ==============================================================================
+// Command Construction & Completion Checking
+// ==============================================================================
+
+// Constructs a 64-byte NVM Read or Write command SQE
+fn void nvme_build_io_cmd(NVMESQE* sqe, uint8 opcode, uint16 cid, uint32 nsid, uint64 lba, uint16 count, uint64 prp1) {
+    if (sqe == null) {
+        return;
+    }
+    sqe->opcode = opcode;
+    sqe->flags = 0 as uint8;
+    sqe->cid = cid;
+    sqe->nsid = nsid;
+    sqe->mptr = 0 as uint64;
+    sqe->prp1 = prp1;
+    sqe->prp2 = 0 as uint64;
+
+    // 64-bit LBA split across CDW10 (low) and CDW11 (high)
+    sqe->cdw10 = (lba & (0xFFFFFFFF as uint64)) as uint32;
+    sqe->cdw11 = (lba >> (32 as uint64)) as uint32;
+
+    // Block count is 0-based in NVMe (0 = 1 sector)
+    uint16 nlb = (0 as uint16);
+    if (count > (0 as uint16)) {
+        nlb = count - (1 as uint16);
+    }
+    sqe->num_blocks = nlb;
+    sqe->cdw12_flags = 0 as uint16;
+    sqe->cdw13 = 0 as uint32;
+    sqe->cdw14 = 0 as uint32;
+    sqe->cdw15 = 0 as uint32;
+}
+
+// Validates whether CQE has arrived by checking the Phase bit P (bit 0 of status)
+fn bool nvme_cqe_is_complete(NVMECQE* cqe, bool expected_phase) {
+    if (cqe == null) {
+        return false;
+    }
+    bool p = (cqe->status & (1 as uint16)) != (0 as uint16);
+    return p == expected_phase;
+}
+
+// Extracts Status Code SC from CQE status field (bits 14:1)
+fn uint16 nvme_cqe_status_code(NVMECQE* cqe) {
+    if (cqe == null) {
+        return 0xFFFF as uint16;
+    }
+    return (cqe->status >> (1 as uint16)) & (0x3FFF as uint16);
+}

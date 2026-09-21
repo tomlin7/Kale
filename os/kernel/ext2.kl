@@ -1,0 +1,221 @@
+// os/kernel/ext2.kl
+// Second Extended File System (Ext2) Subsystem for Kale OS
+// Supports Superblock decoding, Block Group Descriptors, Inode location,
+// direct/indirect block pointers, and Ext2 directory table parsing.
+
+uint16 EXT2_MAGIC           = 0xEF53 as uint16;
+uint32 EXT2_ROOT_INO        = 2 as uint32;
+
+// File Modes
+uint16 EXT2_S_IFDIR         = 0x4000 as uint16; // Directory
+uint16 EXT2_S_IFREG         = 0x8000 as uint16; // Regular file
+uint16 EXT2_S_IFLNK         = 0xA000 as uint16; // Symbolic link
+
+// Directory Entry File Types
+uint8 EXT2_FT_UNKNOWN       = 0 as uint8;
+uint8 EXT2_FT_REG_FILE      = 1 as uint8;
+uint8 EXT2_FT_DIR           = 2 as uint8;
+uint8 EXT2_FT_SYMLINK       = 7 as uint8;
+
+// ==============================================================================
+// Data Structures
+// ==============================================================================
+
+struct Ext2Superblock {
+    uint32 s_inodes_count;
+    uint32 s_blocks_count;
+    uint32 s_r_blocks_count;
+    uint32 s_free_blocks_count;
+    uint32 s_free_inodes_count;
+    uint32 s_first_data_block;
+    uint32 s_log_block_size;
+    uint32 s_blocks_per_group;
+    uint32 s_inodes_per_group;
+    uint16 s_magic;
+    uint16 s_state;
+    uint32 block_size;
+    uint32 group_count;
+    bool is_valid;
+}
+
+struct Ext2BlockGroupDesc {
+    uint32 bg_block_bitmap;
+    uint32 bg_inode_bitmap;
+    uint32 bg_inode_table;
+    uint16 bg_free_blocks_count;
+    uint16 bg_free_inodes_count;
+    uint16 bg_used_dirs_count;
+}
+
+struct Ext2Inode {
+    uint16 i_mode;
+    uint16 i_uid;
+    uint32 i_size;
+    uint32 i_atime;
+    uint32 i_ctime;
+    uint32 i_mtime;
+    uint16 i_gid;
+    uint16 i_links_count;
+    uint32 i_blocks;
+    uint32[15] i_block;
+    bool is_dir;
+    bool is_reg;
+}
+
+struct Ext2DirEntry {
+    uint32 inode;
+    uint16 rec_len;
+    uint8 name_len;
+    uint8 file_type;
+    uint8[64] name;
+    bool is_valid;
+}
+
+// ==============================================================================
+// Superblock & Block Group Math
+// ==============================================================================
+
+// Helper: read 16-bit little-endian
+fn uint16 ext2_read_u16(uint8* buf, int offset) {
+    uint32 b0 = buf[offset] as uint32;
+    uint32 b1 = buf[offset + 1] as uint32;
+    return (b0 | (b1 << 8)) as uint16;
+}
+
+// Helper: read 32-bit little-endian
+fn uint32 ext2_read_u32(uint8* buf, int offset) {
+    uint32 b0 = buf[offset] as uint32;
+    uint32 b1 = buf[offset + 1] as uint32;
+    uint32 b2 = buf[offset + 2] as uint32;
+    uint32 b3 = buf[offset + 3] as uint32;
+    return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
+}
+
+// Parses the 1024-byte Ext2 Superblock (located at byte offset 1024 on disk)
+fn void ext2_parse_superblock(Ext2Superblock* sb, uint8* data_1024) {
+    if (sb == null || data_1024 == null) {
+        return;
+    }
+    sb->s_magic = ext2_read_u16(data_1024, 56);
+    if (sb->s_magic != EXT2_MAGIC) {
+        sb->is_valid = false;
+        return;
+    }
+
+    sb->s_inodes_count = ext2_read_u32(data_1024, 0);
+    sb->s_blocks_count = ext2_read_u32(data_1024, 4);
+    sb->s_r_blocks_count = ext2_read_u32(data_1024, 8);
+    sb->s_free_blocks_count = ext2_read_u32(data_1024, 12);
+    sb->s_free_inodes_count = ext2_read_u32(data_1024, 16);
+    sb->s_first_data_block = ext2_read_u32(data_1024, 20);
+    sb->s_log_block_size = ext2_read_u32(data_1024, 24);
+    sb->s_blocks_per_group = ext2_read_u32(data_1024, 32);
+    sb->s_inodes_per_group = ext2_read_u32(data_1024, 40);
+    sb->s_state = ext2_read_u16(data_1024, 58);
+
+    // block_size = 1024 << s_log_block_size
+    sb->block_size = (1024 as uint32) << (sb->s_log_block_size as uint32);
+
+    // Number of block groups = ceil(s_blocks_count / s_blocks_per_group)
+    if (sb->s_blocks_per_group > (0 as uint32)) {
+        sb->group_count = (sb->s_blocks_count + sb->s_blocks_per_group - (1 as uint32)) / sb->s_blocks_per_group;
+    } else {
+        sb->group_count = 1 as uint32;
+    }
+
+    sb->is_valid = true;
+}
+
+// Inode indices in Ext2 are 1-based (root inode is 2)
+// block_group = (inode - 1) / s_inodes_per_group
+fn uint32 ext2_get_group_for_inode(Ext2Superblock* sb, uint32 inode_idx) {
+    if (sb == null || inode_idx == (0 as uint32)) {
+        return 0 as uint32;
+    }
+    return (inode_idx - (1 as uint32)) / sb->s_inodes_per_group;
+}
+
+// index_in_group = (inode - 1) % s_inodes_per_group
+fn uint32 ext2_get_index_in_group(Ext2Superblock* sb, uint32 inode_idx) {
+    if (sb == null || inode_idx == (0 as uint32)) {
+        return 0 as uint32;
+    }
+    return (inode_idx - (1 as uint32)) % sb->s_inodes_per_group;
+}
+
+// Calculates block number of the inode within the group's inode table
+// Each standard Ext2 inode is 128 bytes
+fn uint32 ext2_get_inode_block(Ext2Superblock* sb, uint32 bg_inode_table, uint32 index_in_group) {
+    if (sb == null) {
+        return 0 as uint32;
+    }
+    uint32 offset_bytes = index_in_group * (128 as uint32);
+    return bg_inode_table + (offset_bytes / sb->block_size);
+}
+
+// Byte offset of inode within that block
+fn uint32 ext2_get_inode_offset(Ext2Superblock* sb, uint32 index_in_group) {
+    if (sb == null) {
+        return 0 as uint32;
+    }
+    uint32 offset_bytes = index_in_group * (128 as uint32);
+    return offset_bytes % sb->block_size;
+}
+
+// ==============================================================================
+// Inode & Directory Parsing
+// ==============================================================================
+
+// Unpacks a 128-byte Ext2 inode structure
+fn void ext2_parse_inode(Ext2Inode* node, uint8* raw_128) {
+    if (node == null || raw_128 == null) {
+        return;
+    }
+    node->i_mode = ext2_read_u16(raw_128, 0);
+    node->i_uid = ext2_read_u16(raw_128, 2);
+    node->i_size = ext2_read_u32(raw_128, 4);
+    node->i_atime = ext2_read_u32(raw_128, 8);
+    node->i_ctime = ext2_read_u32(raw_128, 12);
+    node->i_mtime = ext2_read_u32(raw_128, 16);
+    node->i_gid = ext2_read_u16(raw_128, 24);
+    node->i_links_count = ext2_read_u16(raw_128, 26);
+    node->i_blocks = ext2_read_u32(raw_128, 28);
+
+    // Parse 15 block pointers (offset 40 to 100)
+    int i = 0;
+    while (i < 15) {
+        node->i_block[i] = ext2_read_u32(raw_128, 40 + (i * 4));
+        i = i + 1;
+    }
+
+    node->is_dir = (node->i_mode & (0xF000 as uint16)) == EXT2_S_IFDIR;
+    node->is_reg = (node->i_mode & (0xF000 as uint16)) == EXT2_S_IFREG;
+}
+
+// Parses an Ext2 directory table entry (variable length, at least 8 bytes header)
+fn void ext2_parse_dirent(Ext2DirEntry* ent, uint8* raw_bytes) {
+    if (ent == null || raw_bytes == null) {
+        return;
+    }
+    ent->inode = ext2_read_u32(raw_bytes, 0);
+    ent->rec_len = ext2_read_u16(raw_bytes, 4);
+    ent->name_len = raw_bytes[6];
+    ent->file_type = raw_bytes[7];
+
+    if (ent->inode == (0 as uint32) || ent->rec_len < (8 as uint16)) {
+        ent->is_valid = false;
+        return;
+    }
+
+    // Copy filename
+    int len = ent->name_len as int;
+    if (len > 63) len = 63;
+
+    int i = 0;
+    while (i < len) {
+        ent->name[i] = raw_bytes[8 + i];
+        i = i + 1;
+    }
+    ent->name[len] = 0 as uint8;
+    ent->is_valid = true;
+}

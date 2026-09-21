@@ -1,0 +1,328 @@
+// os/kernel/unix_sock.kl
+// Unix Domain Sockets (AF_UNIX) IPC Subsystem for Kale OS
+// Supports connection-oriented stream sockets (SOCK_STREAM), filesystem path binding,
+// client connect / server accept connection handshakes, and bidirectional ring buffer data transfer.
+
+int AF_UNIX                     = 1;
+int SOCK_STREAM                 = 1;
+int SOCK_DGRAM                  = 2;
+
+// Socket States
+int UNIX_SOCK_STATE_CLOSED      = 0;
+int UNIX_SOCK_STATE_UNBOUND     = 1;
+int UNIX_SOCK_STATE_BOUND       = 2;
+int UNIX_SOCK_STATE_LISTENING   = 3;
+int UNIX_SOCK_STATE_CONNECTED   = 4;
+
+// Error Codes
+int UNIX_ERR_OK                 = 0;
+int UNIX_ERR_INVAL              = -22;
+int UNIX_ERR_ADDRINUSE          = -98;
+int UNIX_ERR_NOTCONN            = -107;
+int UNIX_ERR_CONNREFUSED        = -111;
+int UNIX_ERR_PIPE               = -32;
+
+int UNIX_BUF_SIZE               = 512;
+int UNIX_MAX_SOCKETS            = 16;
+int UNIX_MAX_BACKLOG            = 8;
+
+// ==============================================================================
+// Data Structures
+// ==============================================================================
+
+struct UnixSocket {
+    int id;
+    int type;
+    int state;
+    uint8[108] path;
+    int peer_id;
+    int[8] backlog;
+    int backlog_head;
+    int backlog_tail;
+    int backlog_count;
+    int backlog_max;
+    uint8[512] rx_buf;
+    int rx_head;
+    int rx_tail;
+    int rx_count;
+    bool is_peer_closed;
+}
+
+struct UnixSocketTable {
+    UnixSocket[16] sockets;
+    int active_count;
+}
+
+// ==============================================================================
+// Helper Functions
+// ==============================================================================
+
+fn bool unix_path_equals(uint8* a, uint8* b) {
+    if (a == null || b == null) {
+        return false;
+    }
+    int i = 0;
+    while (i < 108) {
+        if (a[i] != b[i]) {
+            return false;
+        }
+        if (a[i] == (0 as uint8)) {
+            return true;
+        }
+        i = i + 1;
+    }
+    return true;
+}
+
+fn void unix_copy_path(uint8* dst, uint8* src) {
+    if (dst == null || src == null) {
+        return;
+    }
+    int i = 0;
+    while (i < 107 && src[i] != (0 as uint8)) {
+        dst[i] = src[i];
+        i = i + 1;
+    }
+    dst[i] = 0 as uint8;
+}
+
+// ==============================================================================
+// Table & Socket Lifecycle
+// ==============================================================================
+
+fn void unix_sock_table_init(UnixSocketTable* tbl) {
+    if (tbl == null) {
+        return;
+    }
+    tbl->active_count = 0;
+    int i = 0;
+    while (i < UNIX_MAX_SOCKETS) {
+        tbl->sockets[i].id = i;
+        tbl->sockets[i].type = SOCK_STREAM;
+        tbl->sockets[i].state = UNIX_SOCK_STATE_CLOSED;
+        tbl->sockets[i].path[0] = 0 as uint8;
+        tbl->sockets[i].peer_id = -1;
+        tbl->sockets[i].backlog_head = 0;
+        tbl->sockets[i].backlog_tail = 0;
+        tbl->sockets[i].backlog_count = 0;
+        tbl->sockets[i].backlog_max = 0;
+        tbl->sockets[i].rx_head = 0;
+        tbl->sockets[i].rx_tail = 0;
+        tbl->sockets[i].rx_count = 0;
+        tbl->sockets[i].is_peer_closed = false;
+        i = i + 1;
+    }
+}
+
+// Allocates a new socket
+fn int unix_sock_create(UnixSocketTable* tbl, int type) {
+    if (tbl == null) {
+        return UNIX_ERR_INVAL;
+    }
+    int i = 0;
+    while (i < UNIX_MAX_SOCKETS) {
+        if (tbl->sockets[i].state == UNIX_SOCK_STATE_CLOSED) {
+            tbl->sockets[i].type = type;
+            tbl->sockets[i].state = UNIX_SOCK_STATE_UNBOUND;
+            tbl->sockets[i].peer_id = -1;
+            tbl->sockets[i].rx_head = 0;
+            tbl->sockets[i].rx_tail = 0;
+            tbl->sockets[i].rx_count = 0;
+            tbl->sockets[i].is_peer_closed = false;
+            tbl->active_count = tbl->active_count + 1;
+            return i;
+        }
+        i = i + 1;
+    }
+    return -1; // Out of socket descriptors
+}
+
+// Binds socket to a filesystem path
+fn int unix_sock_bind(UnixSocketTable* tbl, int id, uint8* path) {
+    if (tbl == null || id < 0 || id >= UNIX_MAX_SOCKETS || path == null) {
+        return UNIX_ERR_INVAL;
+    }
+    UnixSocket* sock = &tbl->sockets[id];
+    if (sock->state != UNIX_SOCK_STATE_UNBOUND) {
+        return UNIX_ERR_INVAL;
+    }
+
+    // Check if path already in use
+    int i = 0;
+    while (i < UNIX_MAX_SOCKETS) {
+        if (tbl->sockets[i].state != UNIX_SOCK_STATE_CLOSED && tbl->sockets[i].state != UNIX_SOCK_STATE_UNBOUND) {
+            if (unix_path_equals(&tbl->sockets[i].path[0], path)) {
+                return UNIX_ERR_ADDRINUSE;
+            }
+        }
+        i = i + 1;
+    }
+
+    unix_copy_path(&sock->path[0], path);
+    sock->state = UNIX_SOCK_STATE_BOUND;
+    return UNIX_ERR_OK;
+}
+
+// Marks bound socket as listening for connections
+fn int unix_sock_listen(UnixSocketTable* tbl, int id, int backlog) {
+    if (tbl == null || id < 0 || id >= UNIX_MAX_SOCKETS) {
+        return UNIX_ERR_INVAL;
+    }
+    UnixSocket* sock = &tbl->sockets[id];
+    if (sock->state != UNIX_SOCK_STATE_BOUND) {
+        return UNIX_ERR_INVAL;
+    }
+
+    int b = backlog;
+    if (b <= 0) b = 1;
+    if (b > UNIX_MAX_BACKLOG) b = UNIX_MAX_BACKLOG;
+
+    sock->backlog_max = b;
+    sock->backlog_head = 0;
+    sock->backlog_tail = 0;
+    sock->backlog_count = 0;
+    sock->state = UNIX_SOCK_STATE_LISTENING;
+    return UNIX_ERR_OK;
+}
+
+// Client initiates connection to a bound server socket path
+fn int unix_sock_connect(UnixSocketTable* tbl, int client_id, uint8* target_path) {
+    if (tbl == null || client_id < 0 || client_id >= UNIX_MAX_SOCKETS || target_path == null) {
+        return UNIX_ERR_INVAL;
+    }
+    UnixSocket* client = &tbl->sockets[client_id];
+    if (client->state != UNIX_SOCK_STATE_UNBOUND && client->state != UNIX_SOCK_STATE_BOUND) {
+        return UNIX_ERR_INVAL;
+    }
+
+    // Locate listening server socket
+    int server_id = -1;
+    int i = 0;
+    while (i < UNIX_MAX_SOCKETS) {
+        if (tbl->sockets[i].state == UNIX_SOCK_STATE_LISTENING) {
+            if (unix_path_equals(&tbl->sockets[i].path[0], target_path)) {
+                server_id = i;
+                break;
+            }
+        }
+        i = i + 1;
+    }
+
+    if (server_id == -1) {
+        return UNIX_ERR_CONNREFUSED;
+    }
+
+    UnixSocket* server = &tbl->sockets[server_id];
+    if (server->backlog_count >= server->backlog_max) {
+        return UNIX_ERR_CONNREFUSED; // Backlog full
+    }
+
+    // Enqueue client ID into server backlog
+    server->backlog[server->backlog_head] = client_id;
+    server->backlog_head = (server->backlog_head + 1) % UNIX_MAX_BACKLOG;
+    server->backlog_count = server->backlog_count + 1;
+
+    client->peer_id = -1; // Waiting for accept()
+    return UNIX_ERR_OK;
+}
+
+// Server accepts a pending connection from backlog, creating an interconnected socket endpoint
+fn int unix_sock_accept(UnixSocketTable* tbl, int server_id) {
+    if (tbl == null || server_id < 0 || server_id >= UNIX_MAX_SOCKETS) {
+        return UNIX_ERR_INVAL;
+    }
+    UnixSocket* server = &tbl->sockets[server_id];
+    if (server->state != UNIX_SOCK_STATE_LISTENING || server->backlog_count == 0) {
+        return -1; // Nothing to accept
+    }
+
+    // Dequeue connecting client
+    int client_id = server->backlog[server->backlog_tail];
+    server->backlog_tail = (server->backlog_tail + 1) % UNIX_MAX_BACKLOG;
+    server->backlog_count = server->backlog_count - 1;
+
+    // Allocate new accepted socket on server side
+    int accepted_id = unix_sock_create(tbl, server->type);
+    if (accepted_id < 0) {
+        return -1;
+    }
+
+    UnixSocket* client = &tbl->sockets[client_id];
+    UnixSocket* accepted = &tbl->sockets[accepted_id];
+
+    // Link peers together
+    client->peer_id = accepted_id;
+    client->state = UNIX_SOCK_STATE_CONNECTED;
+
+    accepted->peer_id = client_id;
+    accepted->state = UNIX_SOCK_STATE_CONNECTED;
+
+    return accepted_id;
+}
+
+// Sends data across the Unix domain socket connection
+fn int unix_sock_send(UnixSocketTable* tbl, int sock_id, uint8* src, int len) {
+    if (tbl == null || sock_id < 0 || sock_id >= UNIX_MAX_SOCKETS || src == null || len <= 0) {
+        return UNIX_ERR_INVAL;
+    }
+    UnixSocket* sock = &tbl->sockets[sock_id];
+    if (sock->state != UNIX_SOCK_STATE_CONNECTED || sock->peer_id < 0) {
+        return UNIX_ERR_NOTCONN;
+    }
+
+    UnixSocket* peer = &tbl->sockets[sock->peer_id];
+    if (peer->state != UNIX_SOCK_STATE_CONNECTED) {
+        return UNIX_ERR_PIPE; // Broken pipe
+    }
+
+    int written = 0;
+    while (written < len && peer->rx_count < UNIX_BUF_SIZE) {
+        peer->rx_buf[peer->rx_head] = src[written];
+        peer->rx_head = (peer->rx_head + 1) % UNIX_BUF_SIZE;
+        peer->rx_count = peer->rx_count + 1;
+        written = written + 1;
+    }
+    return written;
+}
+
+// Receives data from this socket's RX queue
+fn int unix_sock_recv(UnixSocketTable* tbl, int sock_id, uint8* dst, int max_len) {
+    if (tbl == null || sock_id < 0 || sock_id >= UNIX_MAX_SOCKETS || dst == null || max_len <= 0) {
+        return UNIX_ERR_INVAL;
+    }
+    UnixSocket* sock = &tbl->sockets[sock_id];
+
+    if (sock->rx_count == 0 && sock->is_peer_closed) {
+        return 0; // EOF
+    }
+
+    int read_count = 0;
+    while (read_count < max_len && sock->rx_count > 0) {
+        dst[read_count] = sock->rx_buf[sock->rx_tail];
+        sock->rx_tail = (sock->rx_tail + 1) % UNIX_BUF_SIZE;
+        sock->rx_count = sock->rx_count - 1;
+        read_count = read_count + 1;
+    }
+    return read_count;
+}
+
+// Closes socket and notifies connected peer
+fn void unix_sock_close(UnixSocketTable* tbl, int sock_id) {
+    if (tbl == null || sock_id < 0 || sock_id >= UNIX_MAX_SOCKETS) {
+        return;
+    }
+    UnixSocket* sock = &tbl->sockets[sock_id];
+    if (sock->state == UNIX_SOCK_STATE_CLOSED) {
+        return;
+    }
+
+    if (sock->peer_id >= 0 && sock->peer_id < UNIX_MAX_SOCKETS) {
+        UnixSocket* peer = &tbl->sockets[sock->peer_id];
+        peer->is_peer_closed = true;
+    }
+
+    sock->state = UNIX_SOCK_STATE_CLOSED;
+    sock->peer_id = -1;
+    sock->rx_count = 0;
+    tbl->active_count = tbl->active_count - 1;
+}
