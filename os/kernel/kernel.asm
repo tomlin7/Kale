@@ -42,6 +42,17 @@ kernel_start:
     mov rsi, msg_idt_banner
     call serial_print
 
+    ; Check if BootInfo at 0x7000 indicates VBE graphics mode
+    cmp dword [0x7000], 0x4B414C45  ; Magic: 'KALE'
+    jne .start_text_mode
+    cmp dword [0x7004], 1           ; 1 = VBE LFB Graphics
+    jne .start_text_mode
+
+    ; Boot directly into 64-bit Graphical Desktop!
+    call gui_init_desktop
+    jmp gui_main_loop
+
+.start_text_mode:
     ; Initialize VGA Display and draw system dashboard
     call vga_init_display
 
@@ -404,10 +415,8 @@ shell_execute_command:
     jmp .cmd_done
 
 .run_gui:
-    mov rsi, msg_gui_text
-    mov cl, 0x0D                ; Light Magenta
-    call vga_print_str
-    jmp .cmd_done
+    call gui_init_desktop
+    jmp gui_main_loop
 
 .run_net:
     mov rsi, msg_net_text
@@ -958,9 +967,9 @@ tss_init:
     ; 3. Set IOPB offset (offset 102) = 104 (no I/O bitmap)
     mov word [tss64_structure + 102], 104
 
-    ; 4. Query current GDT base via SGDT
-    sgdt [gdt_reg]
-    mov rdi, [gdt_reg + 2]      ; RDI = GDT Base Address
+    ; 4. Load full Kernel 64-bit GDT
+    lgdt [kernel_gdt64_descriptor]
+    mov rdi, kernel_gdt64_start
 
     ; 5. Program 16-byte TSS descriptor at GDT offset 0x28 (Selector 0x28)
     ; Address of TSS structure
@@ -1294,9 +1303,20 @@ align 16
 tss64_structure:
     times 104 db 0
 
-gdt_reg:
-    dw 0
-    dq 0
+align 16
+kernel_gdt64_start:
+    dq 0x0000000000000000               ; 0x00: Null descriptor
+    dw 0x0000, 0x0000, 0x9A00, 0x0020   ; 0x08: Kernel Code (Ring 0, Long Mode)
+    dw 0x0000, 0x0000, 0x9200, 0x0000   ; 0x10: Kernel Data (Ring 0)
+    dw 0x0000, 0x0000, 0xFA00, 0x0020   ; 0x18: User Code (Ring 3, Long Mode)
+    dw 0x0000, 0x0000, 0xF200, 0x0000   ; 0x20: User Data (Ring 3)
+    dw 0x0067, 0x0000, 0x8900, 0x0000   ; 0x28: TSS Low (Limit 103, Present, DPL=0, Type 9)
+    dq 0x0000000000000000               ; 0x30: TSS High
+kernel_gdt64_end:
+
+kernel_gdt64_descriptor:
+    dw kernel_gdt64_end - kernel_gdt64_start - 1
+    dq kernel_gdt64_start
 
 msg_tss_banner:
     db 13, 10, "  [OK] TSS Initialized: Selector 0x28 Loaded (ltr) | RSP0 = 0x00200000", 13, 10, 0
@@ -1319,4 +1339,10 @@ msg_idt_banner:
 ; Include Interrupt Service Routine (ISR) Framework Stubs
 ; ==============================================================================
 %include "os/kernel/isr.asm"
+
+; ==============================================================================
+; Include Graphical User Interface (GUI) Desktop Subsystem
+; ==============================================================================
+%include "os/kernel/gui.asm"
+
 

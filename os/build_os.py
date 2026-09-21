@@ -62,8 +62,8 @@ def build_image():
     with open(KERNEL_BIN, "rb") as f:
         kernel_bytes = f.read()
 
-    # 4. Pad kernel to 48 sectors (24,576 bytes)
-    target_sectors = 48
+    # 4. Pad kernel to 60 sectors (30,720 bytes)
+    target_sectors = 60
     target_kernel_size = target_sectors * 512
     if len(kernel_bytes) > target_kernel_size:
         print(f"[!] Error: Kernel size {len(kernel_bytes)} exceeds {target_kernel_size} bytes")

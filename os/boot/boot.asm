@@ -18,9 +18,48 @@ start:
     mov sp, 0x7C00              ; Stack below bootloader
     cld
 
-    ; Set standard VGA 80x25 color text mode (Mode 03h)
+    ; Query VBE Mode Info for Mode 0x0115 (800x600)
+    mov ax, 0x4F01
+    mov cx, 0x0115
+    mov di, 0x7100              ; Temporary VBE Mode Info buffer (256 bytes)
+    int 0x10
+    cmp ax, 0x004F
+    jne .vbe_fail
+
+    ; Set VBE Mode with Linear Frame Buffer (bit 14: 0x4000)
+    mov ax, 0x4F02
+    mov bx, 0x4115              ; Mode 0x115 + LFB (0x4000)
+    int 0x10
+    cmp ax, 0x004F
+    jne .vbe_fail
+
+    ; Write BootInfo at 0x7000 from VBE info at 0x7100
+    mov dword [0x7004], 1       ; 1 = VBE LFB Graphics
+    mov eax, [di + 0x28]        ; PhysBasePtr
+    mov [0x7008], eax
+    movzx eax, word [di + 0x12] ; Width (800)
+    mov [0x7010], eax
+    movzx eax, word [di + 0x14] ; Height (600)
+    mov [0x7014], eax
+    movzx eax, word [di + 0x10] ; Pitch (3200)
+    mov [0x7018], eax
+    movzx eax, byte [di + 0x19] ; BPP (32)
+    mov [0x701C], eax
+    jmp .video_done
+
+.vbe_fail:
+    ; Fallback to VGA Text Mode 03h
     mov ax, 0x0003
     int 0x10
+    mov dword [0x7004], 0       ; 0 = VGA text fallback
+    mov dword [0x7008], 0xB8000
+    mov dword [0x7010], 80
+    mov dword [0x7014], 25
+    mov dword [0x7018], 160
+    mov dword [0x701C], 16
+
+.video_done:
+    mov dword [0x7000], 0x4B414C45  ; Magic: 'KALE'
 
     ; Save BIOS boot drive number passed in DL
     mov [boot_drive], dl
@@ -34,7 +73,7 @@ start:
     ; Read sectors 2..49 (48 sectors = 24KB) from boot disk to 0x0000:0x8000
     mov di, 3                   ; Retry counter
 .disk_read_loop:
-    mov ax, 0x0230              ; AH=0x02 (read), AL=48 sectors (0x30)
+    mov ax, 0x023C              ; AH=0x02 (read), AL=60 sectors (0x3C = 30KB)
     mov cx, 0x0002              ; CH=0 (Cylinder 0), CL=2 (Sector 2)
     mov dh, 0                   ; Head 0
     mov dl, [boot_drive]
@@ -123,22 +162,31 @@ init_pm32:
     jmp CODE_SEG_64:0x8000
 
 setup_paging_64:
-    ; Zero out 16KB of paging structures at 0x1000
+    ; Zero out 24KB of paging structures at 0x1000..0x6FFF
     mov edi, 0x1000
     mov cr3, edi
     xor eax, eax
-    mov ecx, 4096
+    mov ecx, 6144
     rep stosd
 
     ; PML4[0] -> PDPT (0x2000) (Present + Writable: 0x3)
     mov dword [0x1000], 0x2003
 
-    ; PDPT[0] -> PD (0x3000) (Present + Writable: 0x3)
-    mov dword [0x2000], 0x3003
+    ; PDPT[0..3] -> PDs at 0x3000, 0x4000, 0x5000, 0x6000 (0..4GB)
+    mov dword [0x2000], 0x3003   ; 0..1 GB
+    mov dword [0x2008], 0x4003   ; 1..2 GB
+    mov dword [0x2010], 0x5003   ; 2..3 GB
+    mov dword [0x2018], 0x6003   ; 3..4 GB
 
-    ; PD[0] -> 2MB huge page (0x83: Present + Writable + Page Size)
-    ; Maps first 2MB: 0x00000000 -> 0x00200000
-    mov dword [0x3000], 0x00000083
+    ; Populate 2048 entries of 2MB huge pages across 0x3000..0x6FFF
+    mov edi, 0x3000
+    mov eax, 0x00000083         ; Present + Writable + Page Size (bit 7: 2MB huge page)
+    mov ecx, 2048
+.map_loop:
+    mov [edi], eax
+    add eax, 0x00200000          ; Next 2MB
+    add edi, 8
+    loop .map_loop
     ret
 
 ; ==============================================================================
@@ -159,29 +207,22 @@ gdt32_descriptor:
 CODE_SEG_32 equ 0x08
 DATA_SEG_32 equ 0x10
 
-; --- 64-bit GDT ---
+; --- 64-bit GDT (Minimal for kernel handoff) ---
 gdt64_start:
     dq 0x0000000000000000               ; 0x00: Null descriptor
     dw 0x0000, 0x0000, 0x9A00, 0x0020   ; 0x08: Kernel Code (Ring 0, Long Mode)
     dw 0x0000, 0x0000, 0x9200, 0x0000   ; 0x10: Kernel Data (Ring 0)
-    dw 0x0000, 0x0000, 0xFA00, 0x0020   ; 0x18: User Code (Ring 3, Long Mode)
-    dw 0x0000, 0x0000, 0xF200, 0x0000   ; 0x20: User Data (Ring 3)
-    dw 0x0067, 0x0000, 0x8900, 0x0000   ; 0x28: TSS Low (Limit 103 bytes, Present, DPL=0, Type 9)
-    dq 0x0000000000000000               ; 0x30: TSS High (Base 32..63, reserved)
 gdt64_end:
 
 gdt64_descriptor:
     dw gdt64_end - gdt64_start - 1
     dd gdt64_start
 
-CODE_SEG_64     equ 0x08
-DATA_SEG_64     equ 0x10
-USER_CODE_64    equ 0x18
-USER_DATA_64    equ 0x20
-TSS_SEG_64      equ 0x28
+CODE_SEG_64 equ 0x08
+DATA_SEG_64 equ 0x10
 
 boot_drive:     db 0
-msg_disk_fail:  db "Disk read error!", 0
+msg_disk_fail:  db "Disk fail!", 0
 
 ; Pad up to 510 bytes, then append MBR boot signature 0xAA55
 times 510 - ($ - $$) db 0
