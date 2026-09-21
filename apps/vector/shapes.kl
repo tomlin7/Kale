@@ -1,0 +1,92 @@
+// apps/vector/shapes.kl
+// Vector graphic primitives and document data structure
+
+int SHAPE_PATH()   { return 0; }
+int SHAPE_RECT()   { return 1; }
+int SHAPE_CIRCLE() { return 2; }
+int SHAPE_STAR()   { return 3; }
+
+struct VectorShape {
+    int   shape_type;
+    float x;
+    float y;
+    float w;
+    float h;
+    float* pts_x;
+    float* pts_y;
+    int   pt_count;
+    int   stroke_color;
+    int   fill_color;
+    float stroke_width;
+    string name;
+    int   visible;
+}
+
+fn void VectorShape.init(int st, float x, float y, float w, float h, int sc, int fc, string name) {
+    this->shape_type    = st;
+    this->x             = x;
+    this->y             = y;
+    this->w             = w;
+    this->h             = h;
+    this->stroke_color  = sc;
+    this->fill_color    = fc;
+    this->stroke_width  = 2.0f;
+    this->name          = name;
+    this->visible       = 1;
+    this->pt_count      = 0;
+    this->pts_x         = alloc(float, 32);
+    this->pts_y         = alloc(float, 32);
+}
+
+fn void VectorShape.add_pt(float px, float py) {
+    if (this->pt_count >= 32) { return; }
+    int i = this->pt_count;
+    this->pts_x[i] = px;
+    this->pts_y[i] = py;
+    this->pt_count = i + 1;
+}
+
+fn void VectorShape.destroy() {
+    if (this->pts_x != (float*)0) {
+        free(this->pts_x);
+        this->pts_x = (float*)0;
+    }
+    if (this->pts_y != (float*)0) {
+        free(this->pts_y);
+        this->pts_y = (float*)0;
+    }
+}
+
+struct VectorDoc {
+    VectorShape* shapes;
+    int          count;
+    int          capacity;
+    int          selected_idx;
+}
+
+fn void VectorDoc.init() {
+    this->capacity = 32;
+    this->count    = 0;
+    this->selected_idx = 0;
+    this->shapes   = alloc(VectorShape, 32);
+}
+
+fn void VectorDoc.add_shape(int st, float x, float y, float w, float h, int sc, int fc, string name) {
+    if (this->count >= this->capacity) { return; }
+    int i = this->count;
+    this->shapes[i].init(st, x, y, w, h, sc, fc, name);
+    this->selected_idx = i;
+    this->count = i + 1;
+}
+
+fn void VectorDoc.destroy() {
+    int i = 0;
+    while (i < this->count) {
+        this->shapes[i].destroy();
+        i = i + 1;
+    }
+    if (this->shapes != (VectorShape*)0) {
+        free(this->shapes);
+        this->shapes = (VectorShape*)0;
+    }
+}

@@ -1,0 +1,135 @@
+// apps/audio_tracker/pattern_grid.kl
+// 16-step 4-channel pattern matrix for Kale Audio Tracker
+
+import "libs/gl/loader.kl" as glloader;
+import "libs/render/math.kl" as rmath;
+import "libs/render/batch.kl" as rbatch;
+import "libs/render/font.kl" as rfont;
+
+struct PatternCell {
+    string note;
+    int octave;
+    int volume;
+}
+
+struct PatternGrid {
+    PatternCell* cells; // 16 rows * 4 channels = 64 cells
+    int current_step;
+    int cursor_row;
+    int cursor_col;
+}
+
+fn void PatternGrid.init() {
+    this->current_step = 0;
+    this->cursor_row = 0;
+    this->cursor_col = 0;
+    this->cells = alloc(PatternCell, 64);
+
+    int r = 0;
+    while (r < 16) {
+        int c = 0;
+        while (c < 4) {
+            int idx = r * 4 + c;
+            this->cells[idx].note = "---";
+            this->cells[idx].octave = 4;
+            this->cells[idx].volume = 64;
+            c = c + 1;
+        }
+        r = r + 1;
+    }
+
+    // Populate a sample groove
+    this->cells[0 * 4 + 0].note = "C-"; this->cells[0 * 4 + 0].octave = 5;
+    this->cells[4 * 4 + 0].note = "D#"; this->cells[4 * 4 + 0].octave = 5;
+    this->cells[8 * 4 + 0].note = "G-"; this->cells[8 * 4 + 0].octave = 5;
+    this->cells[12 * 4 + 0].note = "A#"; this->cells[12 * 4 + 0].octave = 5;
+
+    this->cells[0 * 4 + 1].note = "C-"; this->cells[0 * 4 + 1].octave = 3;
+    this->cells[2 * 4 + 1].note = "C-"; this->cells[2 * 4 + 1].octave = 3;
+    this->cells[8 * 4 + 1].note = "G-"; this->cells[8 * 4 + 1].octave = 2;
+    this->cells[10 * 4 + 1].note = "G-"; this->cells[10 * 4 + 1].octave = 2;
+
+    this->cells[0 * 4 + 3].note = "KCK"; this->cells[0 * 4 + 3].octave = 1;
+    this->cells[4 * 4 + 3].note = "SNR"; this->cells[4 * 4 + 3].octave = 1;
+    this->cells[8 * 4 + 3].note = "KCK"; this->cells[8 * 4 + 3].octave = 1;
+    this->cells[12 * 4 + 3].note = "SNR"; this->cells[12 * 4 + 3].octave = 1;
+}
+
+fn void PatternGrid.destroy() {
+    if (this->cells != (PatternCell*)0) {
+        free(this->cells);
+        this->cells = (PatternCell*)0;
+    }
+}
+
+fn void PatternGrid.step_forward() {
+    this->current_step = this->current_step + 1;
+    if (this->current_step >= 16) {
+        this->current_step = 0;
+    }
+}
+
+fn void PatternGrid.render(rbatch.BatchRenderer* r, glloader.GLContext* gl_ctx, rfont.FontAtlas* font, float x, float y, float w, float h) {
+    // Grid Background
+    r->push_quad(gl_ctx, x, y, w, h, rmath.color_rgba(0.09f, 0.10f, 0.12f, 1.0f));
+
+    // Header row
+    r->push_quad(gl_ctx, x, y, w, 24.0f, rmath.color_rgba(0.14f, 0.15f, 0.19f, 1.0f));
+    font->draw_text(r, gl_ctx, "STEP", x + 8.0f, y + 5.0f, rmath.color_rgba(0.55f, 0.60f, 0.70f, 1.0f));
+
+    float col_w = (w - 60.0f) / 4.0f;
+    font->draw_text(r, gl_ctx, "01 LEAD", x + 60.0f + 0.0f * col_w, y + 5.0f, rmath.color_rgba(0.40f, 0.75f, 0.95f, 1.0f));
+    font->draw_text(r, gl_ctx, "02 BASS", x + 60.0f + 1.0f * col_w, y + 5.0f, rmath.color_rgba(0.95f, 0.65f, 0.35f, 1.0f));
+    font->draw_text(r, gl_ctx, "03 CHORDS", x + 60.0f + 2.0f * col_w, y + 5.0f, rmath.color_rgba(0.75f, 0.50f, 0.95f, 1.0f));
+    font->draw_text(r, gl_ctx, "04 DRUMS", x + 60.0f + 3.0f * col_w, y + 5.0f, rmath.color_rgba(0.45f, 0.85f, 0.55f, 1.0f));
+
+    float row_h = (h - 26.0f) / 16.0f;
+    int row = 0;
+    while (row < 16) {
+        float ry = y + 26.0f + (float)row * row_h;
+
+        // Active playhead highlight
+        rmath.Color row_bg = rmath.color_rgba(0.10f, 0.11f, 0.14f, 1.0f);
+        if (row % 4 == 0) {
+            row_bg = rmath.color_rgba(0.13f, 0.14f, 0.18f, 1.0f);
+        }
+        if (row == this->current_step) {
+            row_bg = rmath.color_rgba(0.20f, 0.32f, 0.52f, 0.85f);
+        }
+        r->push_quad(gl_ctx, x, ry, w, row_h - 1.0f, row_bg);
+
+        // Row index
+        string num_s = "00";
+        if (row == 0) { num_s = "00"; } if (row == 1) { num_s = "01"; }
+        if (row == 2) { num_s = "02"; } if (row == 3) { num_s = "03"; }
+        if (row == 4) { num_s = "04"; } if (row == 5) { num_s = "05"; }
+        if (row == 6) { num_s = "06"; } if (row == 7) { num_s = "07"; }
+        if (row == 8) { num_s = "08"; } if (row == 9) { num_s = "09"; }
+        if (row == 10) { num_s = "10"; } if (row == 11) { num_s = "11"; }
+        if (row == 12) { num_s = "12"; } if (row == 13) { num_s = "13"; }
+        if (row == 14) { num_s = "14"; } if (row == 15) { num_s = "15"; }
+        font->draw_text(r, gl_ctx, num_s, x + 12.0f, ry + 4.0f, rmath.color_rgba(0.50f, 0.55f, 0.65f, 1.0f));
+
+        // Render each channel cell
+        int col = 0;
+        while (col < 4) {
+            float cx = x + 60.0f + (float)col * col_w;
+            int idx = row * 4 + col;
+            string n = this->cells[idx].note;
+
+            // Cursor highlight
+            if (row == this->cursor_row && col == this->cursor_col) {
+                r->push_quad(gl_ctx, cx - 2.0f, ry, col_w - 4.0f, row_h - 1.0f, rmath.color_rgba(0.35f, 0.50f, 0.85f, 0.40f));
+            }
+
+            rmath.Color note_col = rmath.color_rgba(0.85f, 0.85f, 0.90f, 1.0f);
+            if (n[0] == '-') {
+                note_col = rmath.color_rgba(0.35f, 0.38f, 0.45f, 1.0f);
+            }
+            font->draw_text(r, gl_ctx, n, cx + 4.0f, ry + 4.0f, note_col);
+            col = col + 1;
+        }
+
+        row = row + 1;
+    }
+}

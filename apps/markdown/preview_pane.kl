@@ -1,0 +1,68 @@
+// apps/markdown/preview_pane.kl
+// Rich-text Markdown Document Renderer for Right Viewport
+
+import "libs/gl/loader.kl" as glloader;
+import "libs/render/math.kl" as rmath;
+import "libs/render/batch.kl" as rbatch;
+import "libs/render/font.kl" as rfont;
+import "apps/markdown/md_parser.kl" as mp;
+
+fn void render_preview(
+    mp.MarkdownDocument* doc,
+    rbatch.BatchRenderer* r,
+    glloader.GLContext* gl_ctx,
+    rfont.FontAtlas* font,
+    float x, float y, float w, float h
+) {
+    // Background
+    r->push_quad(gl_ctx, x, y, w, h, rmath.color_rgba(0.12f, 0.13f, 0.16f, 1.0f));
+
+    // Header bar
+    r->push_quad(gl_ctx, x, y, w, 32.0f, rmath.color_rgba(0.16f, 0.17f, 0.21f, 1.0f));
+    font->draw_text(r, gl_ctx, "LIVE PREVIEW", x + 16.0f, y + 8.0f, rmath.color_rgba(0.60f, 0.65f, 0.75f, 1.0f));
+
+    float pen_y = y + 48.0f;
+    int i = 0;
+    while (i < doc->count) {
+        int b_type = doc->blocks[i].block_type;
+        string text = doc->blocks[i].content;
+
+        if (b_type == 1) { // H1
+            pen_y = pen_y + 10.0f;
+            r->push_quad(gl_ctx, x + 20.0f, pen_y + 24.0f, w - 40.0f, 2.0f, rmath.color_rgba(0.35f, 0.65f, 0.95f, 0.8f));
+            font->draw_text(r, gl_ctx, text, x + 20.0f, pen_y, rmath.color_rgba(0.98f, 0.98f, 1.0f, 1.0f));
+            pen_y = pen_y + 36.0f;
+        } else if (b_type == 2) { // H2
+            pen_y = pen_y + 8.0f;
+            r->push_quad(gl_ctx, x + 20.0f, pen_y + 20.0f, w - 40.0f, 1.0f, rmath.color_rgba(0.25f, 0.27f, 0.35f, 1.0f));
+            font->draw_text(r, gl_ctx, text, x + 20.0f, pen_y, rmath.color_rgba(0.40f, 0.80f, 0.95f, 1.0f));
+            pen_y = pen_y + 30.0f;
+        } else if (b_type == 3) { // H3
+            pen_y = pen_y + 6.0f;
+            font->draw_text(r, gl_ctx, text, x + 20.0f, pen_y, rmath.color_rgba(0.80f, 0.85f, 0.95f, 1.0f));
+            pen_y = pen_y + 24.0f;
+        } else if (b_type == 4) { // Blockquote
+            r->push_quad(gl_ctx, x + 20.0f, pen_y - 2.0f, 4.0f, 24.0f, rmath.color_rgba(0.40f, 0.70f, 0.95f, 1.0f));
+            r->push_quad(gl_ctx, x + 24.0f, pen_y - 2.0f, w - 50.0f, 24.0f, rmath.color_rgba(0.15f, 0.17f, 0.22f, 0.6f));
+            font->draw_text(r, gl_ctx, text, x + 34.0f, pen_y + 2.0f, rmath.color_rgba(0.75f, 0.80f, 0.90f, 1.0f));
+            pen_y = pen_y + 30.0f;
+        } else if (b_type == 5) { // List item
+            r->push_quad(gl_ctx, x + 26.0f, pen_y + 6.0f, 5.0f, 5.0f, rmath.color_rgba(0.35f, 0.75f, 0.95f, 1.0f));
+            font->draw_text(r, gl_ctx, text, x + 40.0f, pen_y, rmath.color_rgba(0.85f, 0.88f, 0.92f, 1.0f));
+            pen_y = pen_y + 22.0f;
+        } else if (b_type == 6) { // Code block
+            r->push_quad(gl_ctx, x + 20.0f, pen_y - 2.0f, w - 40.0f, 22.0f, rmath.color_rgba(0.08f, 0.09f, 0.12f, 1.0f));
+            font->draw_text(r, gl_ctx, text, x + 32.0f, pen_y + 2.0f, rmath.color_rgba(0.45f, 0.90f, 0.60f, 1.0f));
+            pen_y = pen_y + 22.0f;
+        } else if (b_type == 7) { // Horizontal rule
+            pen_y = pen_y + 6.0f;
+            r->push_quad(gl_ctx, x + 20.0f, pen_y, w - 40.0f, 1.0f, rmath.color_rgba(0.24f, 0.26f, 0.32f, 1.0f));
+            pen_y = pen_y + 12.0f;
+        } else { // Paragraph
+            font->draw_text(r, gl_ctx, text, x + 20.0f, pen_y, rmath.color_rgba(0.82f, 0.84f, 0.90f, 1.0f));
+            pen_y = pen_y + 24.0f;
+        }
+
+        i = i + 1;
+    }
+}

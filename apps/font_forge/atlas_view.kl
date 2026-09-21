@@ -1,0 +1,71 @@
+// apps/font_forge/atlas_view.kl
+// SDF Atlas generation preview and grid visualization
+
+import "libs/render/batch.kl" as rbatch;
+import "libs/render/font.kl" as rfont;
+import "libs/render/math.kl" as rmath;
+import "libs/gl/loader.kl" as glloader;
+
+struct AtlasConfig {
+    int atlas_width;
+    int atlas_height;
+    int cell_size;
+    int padding;
+    int sdf_radius;
+}
+
+fn AtlasConfig atlas_config_default() {
+    AtlasConfig c;
+    c.atlas_width  = 512;
+    c.atlas_height = 512;
+    c.cell_size    = 64;
+    c.padding      = 4;
+    c.sdf_radius   = 8;
+    return c;
+}
+
+fn void draw_atlas_grid(rbatch.BatchRenderer* r, glloader.GLContext* gl_ctx,
+                        float x, float y, float w, float h,
+                        AtlasConfig* cfg, int selected_glyph) {
+    rmath.Color col_bg     = rmath.color_hex(0x161B22);
+    rmath.Color col_grid   = rmath.color_rgba(0.2f, 0.25f, 0.32f, 1.0f);
+    rmath.Color col_sel    = rmath.color_hex(0x1F6FEB);
+    rmath.Color col_sample = rmath.color_rgba(0.35f, 0.45f, 0.7f, 0.6f);
+
+    r->push_quad(gl_ctx, x, y, w, h, col_bg);
+
+    int cols = 8;
+    int rows = 8;
+    float cw = w / (float)cols;
+    float ch = h / (float)rows;
+
+    int r_idx = 0;
+    while (r_idx < rows) {
+        int c_idx = 0;
+        while (c_idx < cols) {
+            float cx = x + (float)c_idx * cw;
+            float cy = y + (float)r_idx * ch;
+            int cell_id = r_idx * cols + c_idx;
+
+            if (cell_id == selected_glyph) {
+                r->push_quad(gl_ctx, cx + 1.0f, cy + 1.0f, cw - 2.0f, ch - 2.0f, col_sel);
+            }
+
+            // Draw miniature SDF silhouette simulation
+            if (cell_id < 6) {
+                r->push_quad(gl_ctx, cx + 8.0f, cy + 8.0f, cw - 16.0f, ch - 16.0f, col_sample);
+            }
+
+            // Cell border
+            r->push_quad(gl_ctx, cx, cy, cw, 1.0f, col_grid);
+            r->push_quad(gl_ctx, cx, cy, 1.0f, ch, col_grid);
+
+            c_idx = c_idx + 1;
+        }
+        r_idx = r_idx + 1;
+    }
+
+    // Outer border
+    r->push_quad(gl_ctx, x, y + h - 1.0f, w, 1.0f, col_grid);
+    r->push_quad(gl_ctx, x + w - 1.0f, y, 1.0f, h, col_grid);
+}

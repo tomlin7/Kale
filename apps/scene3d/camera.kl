@@ -1,0 +1,53 @@
+// apps/scene3d/camera.kl
+// Orbit camera: azimuth/elevation/radius, project 3D->2D for overlay rendering
+
+struct Camera {
+    float azimuth;   // horizontal rotation angle (radians)
+    float elevation; // vertical tilt angle (radians)
+    float radius;    // distance from origin
+    float cx;        // screen center X
+    float cy;        // screen center Y
+    float scale;     // pixels per unit
+}
+
+fn Camera camera_default(float screen_w, float screen_h) {
+    Camera c;
+    c.azimuth   = 0.6f;
+    c.elevation = 0.4f;
+    c.radius    = 2.5f;
+    c.cx        = screen_w * 0.5f;
+    c.cy        = screen_h * 0.5f;
+    c.scale     = screen_h * 0.35f;
+    return c;
+}
+
+// Project a 3D point into 2D screen space using simple isometric-style projection
+// (no perspective divide — uses orthographic side-on view via orbit angles)
+fn void camera_project(Camera* cam, float wx, float wy, float wz, float* sx, float* sy) {
+    // Rotate around Y axis (azimuth)
+    float cosA = 1.0f;
+    float sinA = 0.0f;
+    // Approximate cos/sin with simple series (enough for interactive display)
+    // cos(a) ≈ 1 - a²/2 + a⁴/24
+    float a = cam->azimuth;
+    float a2 = a * a;
+    cosA = 1.0f - a2 * 0.5f + a2 * a2 * 0.041667f;
+    sinA = a - a2 * a * 0.16667f + a2 * a2 * a * 0.008333f;
+
+    float rx = wx * cosA + wz * sinA;
+    float rz = -wx * sinA + wz * cosA;
+
+    // Rotate around X axis (elevation)
+    float e = cam->elevation;
+    float e2 = e * e;
+    float cosE = 1.0f - e2 * 0.5f + e2 * e2 * 0.041667f;
+    float sinE = e - e2 * e * 0.16667f + e2 * e2 * e * 0.008333f;
+
+    float ry2 = wy * cosE - rz * sinE;
+    float rz2 = wy * sinE + rz * cosE;
+
+    // Orthographic projection to screen (drop rz2 depth)
+    float scale = cam->scale;
+    *sx = cam->cx + rx * scale;
+    *sy = cam->cy - ry2 * scale;
+}

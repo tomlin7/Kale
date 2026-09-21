@@ -1,0 +1,101 @@
+// apps/markdown/main.kl
+// Kale Markdown — Dual-Pane Live Rich-Text Notebook & Editor
+// Layout: [ Top Toolbar | Left: Raw Source Buffer | Right: Live Preview ]
+
+import "libs/framework/app.kl" as fw;
+import "libs/glfw/glfw.kl" as glfw;
+import "libs/glfw/constants.kl" as glc;
+import "libs/glfw/input.kl" as ginput;
+import "libs/render/math.kl" as rmath;
+import "apps/markdown/md_parser.kl" as mp;
+import "apps/markdown/preview_pane.kl" as pp;
+
+extern int printf(string fmt, ...);
+
+fn void run_markdown_app() {
+    fw.AppConfig config;
+    config.init("Kale Markdown — Dual-Pane Live Notebook", 1280, 768);
+
+    fw.App app;
+    int ok = app.init(config);
+    if (ok == 0) {
+        printf("Fatal: could not open Markdown window\n");
+        return;
+    }
+
+    mp.MarkdownDocument doc;
+    doc.init();
+    doc.parse_sample_doc();
+
+    while (glfw.glfwWindowShouldClose(app.window) == 0) {
+        app.begin_frame();
+        void* win = app.window;
+
+        float cur_w = (float)app.width;
+        float cur_h = (float)app.height;
+
+        float top_h = 42.0f;
+        float pane_w = cur_w * 0.5f;
+        float pane_h = cur_h - top_h;
+
+        // 1. Draw Top Toolbar
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, 0.0f, cur_w, top_h, rmath.color_rgba(0.14f, 0.15f, 0.19f, 1.0f));
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, top_h - 1.0f, cur_w, 1.0f, rmath.color_rgba(0.22f, 0.24f, 0.29f, 1.0f));
+
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "KALE MARKDOWN", 16.0f, 11.0f, rmath.color_rgba(0.95f, 0.95f, 0.98f, 1.0f));
+
+        // Action Buttons
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 180.0f, 7.0f, 80.0f, 26.0f, rmath.color_rgba(0.20f, 0.24f, 0.32f, 1.0f));
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Save (Ctrl+S)", 188.0f, 12.0f, rmath.color_rgba(0.85f, 0.90f, 0.98f, 1.0f));
+
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 270.0f, 7.0f, 90.0f, 26.0f, rmath.color_rgba(0.22f, 0.35f, 0.25f, 1.0f));
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Export HTML", 280.0f, 12.0f, rmath.color_rgba(0.85f, 0.98f, 0.88f, 1.0f));
+
+        // Document stats
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Words: 142  |  Chars: 890  |  Reading: 1 min", cur_w - 280.0f, 12.0f, rmath.color_rgba(0.55f, 0.60f, 0.70f, 1.0f));
+
+        // 2. Left Pane: Raw Markdown Buffer
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, top_h, pane_w, pane_h, rmath.color_rgba(0.09f, 0.10f, 0.12f, 1.0f));
+        // Split Divider
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, pane_w - 1.0f, top_h, 2.0f, pane_h, rmath.color_rgba(0.22f, 0.24f, 0.29f, 1.0f));
+
+        // Left Pane Header
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, top_h, pane_w - 1.0f, 32.0f, rmath.color_rgba(0.13f, 0.14f, 0.18f, 1.0f));
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "MARKDOWN SOURCE — notebook.md", 16.0f, top_h + 8.0f, rmath.color_rgba(0.60f, 0.65f, 0.75f, 1.0f));
+
+        // Left Pane Lines with Gutter
+        float edit_y = top_h + 48.0f;
+        int li = 0;
+        while (li < doc.count) {
+            // Line number
+            string lnum = "01";
+            if (li == 0) { lnum = " 1"; } if (li == 1) { lnum = " 2"; }
+            if (li == 2) { lnum = " 3"; } if (li == 3) { lnum = " 4"; }
+            if (li == 4) { lnum = " 5"; } if (li == 5) { lnum = " 6"; }
+            if (li == 6) { lnum = " 7"; } if (li == 7) { lnum = " 8"; }
+            if (li == 8) { lnum = " 9"; } if (li == 9) { lnum = "10"; }
+            if (li == 10) { lnum = "11"; } if (li == 11) { lnum = "12"; }
+
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, lnum, 16.0f, edit_y, rmath.color_rgba(0.35f, 0.38f, 0.45f, 1.0f));
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, doc.blocks[li].content, 48.0f, edit_y, rmath.color_rgba(0.85f, 0.88f, 0.95f, 1.0f));
+
+            edit_y = edit_y + 24.0f;
+            li = li + 1;
+        }
+
+        // 3. Right Pane: Live Rich Preview
+        pp.render_preview(&doc, &app.ui_ctx.renderer, &app.gl_ctx, &app.ui_ctx.font, pane_w + 1.0f, top_h, pane_w - 1.0f, pane_h);
+
+        app.end_frame();
+    }
+
+    doc.destroy();
+    app.close();
+}
+
+fn int main_entry() {
+    run_markdown_app();
+    return 0;
+}
+
+main_entry();

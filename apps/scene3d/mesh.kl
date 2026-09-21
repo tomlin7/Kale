@@ -1,0 +1,138 @@
+// apps/scene3d/mesh.kl
+// Simple 3D mesh data structures and procedural generators
+
+struct Vec3 {
+    float x;
+    float y;
+    float z;
+}
+
+fn Vec3 vec3(float x, float y, float z) {
+    Vec3 v;
+    v.x = x;
+    v.y = y;
+    v.z = z;
+    return v;
+}
+
+fn Vec3 vec3_add(Vec3 a, Vec3 b) {
+    return vec3(a.x + b.x, a.y + b.y, a.z + b.z);
+}
+
+fn Vec3 vec3_scale(Vec3 v, float s) {
+    return vec3(v.x * s, v.y * s, v.z * s);
+}
+
+// A face is 4 indices (we store quads, decompose to tris for rendering)
+struct Face {
+    int a;
+    int b;
+    int c;
+    int d;
+    int is_tri; // 1 = triangle (d unused), 0 = quad
+}
+
+struct Mesh {
+    Vec3* verts;
+    int   vert_count;
+    Face* faces;
+    int   face_count;
+}
+
+fn Mesh mesh_make_cube() {
+    Mesh m;
+    m.vert_count = 8;
+    m.face_count = 6;
+    m.verts = alloc(Vec3, 8);
+    m.faces = alloc(Face, 6);
+
+    float s = 0.5f;
+    // front face  (z = +s)
+    m.verts[0] = vec3(-s, -s,  s);
+    m.verts[1] = vec3( s, -s,  s);
+    m.verts[2] = vec3( s,  s,  s);
+    m.verts[3] = vec3(-s,  s,  s);
+    // back face   (z = -s)
+    m.verts[4] = vec3(-s, -s, -s);
+    m.verts[5] = vec3( s, -s, -s);
+    m.verts[6] = vec3( s,  s, -s);
+    m.verts[7] = vec3(-s,  s, -s);
+
+    // 6 quads
+    m.faces[0].a = 0; m.faces[0].b = 1; m.faces[0].c = 2; m.faces[0].d = 3; m.faces[0].is_tri = 0; // front
+    m.faces[1].a = 5; m.faces[1].b = 4; m.faces[1].c = 7; m.faces[1].d = 6; m.faces[1].is_tri = 0; // back
+    m.faces[2].a = 4; m.faces[2].b = 0; m.faces[2].c = 3; m.faces[2].d = 7; m.faces[2].is_tri = 0; // left
+    m.faces[3].a = 1; m.faces[3].b = 5; m.faces[3].c = 6; m.faces[3].d = 2; m.faces[3].is_tri = 0; // right
+    m.faces[4].a = 3; m.faces[4].b = 2; m.faces[4].c = 6; m.faces[4].d = 7; m.faces[4].is_tri = 0; // top
+    m.faces[5].a = 4; m.faces[5].b = 5; m.faces[5].c = 1; m.faces[5].d = 0; m.faces[5].is_tri = 0; // bottom
+
+    return m;
+}
+
+fn Mesh mesh_make_pyramid() {
+    Mesh m;
+    m.vert_count = 5;
+    m.face_count = 5;
+    m.verts = alloc(Vec3, 5);
+    m.faces = alloc(Face, 5);
+
+    float s = 0.5f;
+    float h = 0.8f;
+    // base
+    m.verts[0] = vec3(-s, -s, -s);
+    m.verts[1] = vec3( s, -s, -s);
+    m.verts[2] = vec3( s, -s,  s);
+    m.verts[3] = vec3(-s, -s,  s);
+    // apex
+    m.verts[4] = vec3(0.0f, h, 0.0f);
+
+    // base quad
+    m.faces[0].a = 0; m.faces[0].b = 1; m.faces[0].c = 2; m.faces[0].d = 3; m.faces[0].is_tri = 0;
+    // 4 tris
+    m.faces[1].a = 0; m.faces[1].b = 1; m.faces[1].c = 4; m.faces[1].d = 0; m.faces[1].is_tri = 1;
+    m.faces[2].a = 1; m.faces[2].b = 2; m.faces[2].c = 4; m.faces[2].d = 0; m.faces[2].is_tri = 1;
+    m.faces[3].a = 2; m.faces[3].b = 3; m.faces[3].c = 4; m.faces[3].d = 0; m.faces[3].is_tri = 1;
+    m.faces[4].a = 3; m.faces[4].b = 0; m.faces[4].c = 4; m.faces[4].d = 0; m.faces[4].is_tri = 1;
+
+    return m;
+}
+
+fn Mesh mesh_make_diamond() {
+    Mesh m;
+    m.vert_count = 6;
+    m.face_count = 8;
+    m.verts = alloc(Vec3, 6);
+    m.faces = alloc(Face, 8);
+
+    float s = 0.5f;
+    // octahedron vertices
+    m.verts[0] = vec3( 0.0f,  s, 0.0f); // top
+    m.verts[1] = vec3( 0.0f, -s, 0.0f); // bottom
+    m.verts[2] = vec3( s,  0.0f,  0.0f);
+    m.verts[3] = vec3(-s,  0.0f,  0.0f);
+    m.verts[4] = vec3( 0.0f,  0.0f,  s);
+    m.verts[5] = vec3( 0.0f,  0.0f, -s);
+
+    // 8 triangles (top half x4, bottom half x4)
+    m.faces[0].a = 0; m.faces[0].b = 2; m.faces[0].c = 4; m.faces[0].d = 0; m.faces[0].is_tri = 1;
+    m.faces[1].a = 0; m.faces[1].b = 4; m.faces[1].c = 3; m.faces[1].d = 0; m.faces[1].is_tri = 1;
+    m.faces[2].a = 0; m.faces[2].b = 3; m.faces[2].c = 5; m.faces[2].d = 0; m.faces[2].is_tri = 1;
+    m.faces[3].a = 0; m.faces[3].b = 5; m.faces[3].c = 2; m.faces[3].d = 0; m.faces[3].is_tri = 1;
+    m.faces[4].a = 1; m.faces[4].b = 4; m.faces[4].c = 2; m.faces[4].d = 0; m.faces[4].is_tri = 1;
+    m.faces[5].a = 1; m.faces[5].b = 3; m.faces[5].c = 4; m.faces[5].d = 0; m.faces[5].is_tri = 1;
+    m.faces[6].a = 1; m.faces[6].b = 5; m.faces[6].c = 3; m.faces[6].d = 0; m.faces[6].is_tri = 1;
+    m.faces[7].a = 1; m.faces[7].b = 2; m.faces[7].c = 5; m.faces[7].d = 0; m.faces[7].is_tri = 1;
+
+    return m;
+}
+
+fn void mesh_free(Mesh* m) {
+    if (m->verts != (Vec3*)0) {
+        free(m->verts);
+        m->verts = (Vec3*)0;
+    }
+    if (m->faces != (Face*)0) {
+        free(m->faces);
+        m->faces = (Face*)0;
+    }
+}

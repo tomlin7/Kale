@@ -1,0 +1,142 @@
+// apps/audio_tracker/main.kl
+// Kale Audio Tracker — GPU-Accelerated Multi-Channel Step Sequencer
+// Layout: [ Oscilloscope & Transport | Pattern Matrix | Synth Mixer ]
+
+import "libs/framework/app.kl" as fw;
+import "libs/glfw/glfw.kl" as glfw;
+import "libs/glfw/constants.kl" as glc;
+import "libs/glfw/input.kl" as ginput;
+import "libs/render/math.kl" as rmath;
+import "apps/audio_tracker/synth_panel.kl" as sp;
+import "apps/audio_tracker/pattern_grid.kl" as pg;
+
+extern int printf(string fmt, ...);
+
+fn void run_audio_tracker() {
+    fw.AppConfig config;
+    config.init("Kale Audio Tracker — Multi-Channel Sequencer", 1280, 768);
+
+    fw.App app;
+    int ok = app.init(config);
+    if (ok == 0) {
+        printf("Fatal: could not open Audio Tracker window\n");
+        return;
+    }
+
+    sp.SynthPanel synth_panel;
+    synth_panel.init();
+
+    pg.PatternGrid grid;
+    grid.init();
+
+    bool is_playing = true;
+    int step_counter = 0;
+    int key_delay = 0;
+
+    while (glfw.glfwWindowShouldClose(app.window) == 0) {
+        app.begin_frame();
+        void* win = app.window;
+
+        float cur_w = (float)app.width;
+        float cur_h = (float)app.height;
+
+        float top_h = 100.0f;
+        float btm_h = 160.0f;
+        float mid_h = cur_h - top_h - btm_h;
+
+        // Input handling
+        if (key_delay <= 0) {
+            // Space: Play / Pause
+            if (ginput.glfwGetKey(win, glc.GLFW_KEY_SPACE()) == glc.GLFW_PRESS()) {
+                if (is_playing) {
+                    is_playing = false;
+                } else {
+                    is_playing = true;
+                }
+                key_delay = 14;
+            }
+            // Arrow Keys
+            if (ginput.glfwGetKey(win, glc.GLFW_KEY_UP()) == glc.GLFW_PRESS()) {
+                if (grid.cursor_row > 0) { grid.cursor_row = grid.cursor_row - 1; }
+                key_delay = 8;
+            }
+            if (ginput.glfwGetKey(win, glc.GLFW_KEY_DOWN()) == glc.GLFW_PRESS()) {
+                if (grid.cursor_row < 15) { grid.cursor_row = grid.cursor_row + 1; }
+                key_delay = 8;
+            }
+            if (ginput.glfwGetKey(win, glc.GLFW_KEY_LEFT()) == glc.GLFW_PRESS()) {
+                if (grid.cursor_col > 0) { grid.cursor_col = grid.cursor_col - 1; }
+                key_delay = 8;
+            }
+            if (ginput.glfwGetKey(win, glc.GLFW_KEY_RIGHT()) == glc.GLFW_PRESS()) {
+                if (grid.cursor_col < 3) { grid.cursor_col = grid.cursor_col + 1; }
+                key_delay = 8;
+            }
+        }
+        if (key_delay > 0) {
+            key_delay = key_delay - 1;
+        }
+
+        // Stepper timer (at 60fps, 128 BPM = ~7.5 frames per 16th note)
+        if (is_playing) {
+            step_counter = step_counter + 1;
+            if (step_counter >= 8) {
+                step_counter = 0;
+                grid.step_forward();
+            }
+        }
+
+        // 1. Draw Top Bar (Header & Oscilloscope)
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, 0.0f, cur_w, top_h, rmath.color_rgba(0.10f, 0.11f, 0.13f, 1.0f));
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, top_h - 1.0f, cur_w, 1.0f, rmath.color_rgba(0.20f, 0.22f, 0.27f, 1.0f));
+
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "KALE AUDIO TRACKER", 16.0f, 12.0f, rmath.color_rgba(0.95f, 0.95f, 0.98f, 1.0f));
+
+        string status_s = "PAUSED [SPACE to play]";
+        rmath.Color status_col = rmath.color_rgba(0.85f, 0.40f, 0.40f, 1.0f);
+        if (is_playing) {
+            status_s = "PLAYING (128 BPM)";
+            status_col = rmath.color_rgba(0.35f, 0.85f, 0.45f, 1.0f);
+        }
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, status_s, 220.0f, 15.0f, status_col);
+
+        // Simulated Oscilloscope Waveform
+        float osc_x = 420.0f;
+        float osc_y = 10.0f;
+        float osc_w = cur_w - 440.0f;
+        float osc_h = 75.0f;
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, osc_x, osc_y, osc_w, osc_h, rmath.color_rgba(0.06f, 0.07f, 0.09f, 1.0f));
+
+        float mid_y = osc_y + osc_h * 0.5f;
+        int pt = 0;
+        int total_pts = 64;
+        float pt_w = osc_w / 64.0f;
+        while (pt < total_pts) {
+            float phase = (float)(pt + step_counter * 8) * 0.2f;
+            float wave_amp = 20.0f;
+            if (!is_playing) { wave_amp = 2.0f; }
+            float dy = mid_y + ((float)(pt % 7) - 3.0f) * (wave_amp * 0.2f);
+            app.ui_ctx.renderer.push_quad(&app.gl_ctx, osc_x + (float)pt * pt_w, dy, pt_w - 1.0f, 3.0f, rmath.color_rgba(0.35f, 0.85f, 0.95f, 0.85f));
+            pt = pt + 1;
+        }
+
+        // 2. Draw Pattern Grid
+        grid.render(&app.ui_ctx.renderer, &app.gl_ctx, &app.ui_ctx.font, 0.0f, top_h, cur_w, mid_h);
+
+        // 3. Draw Bottom Synth & Mixer Panel
+        synth_panel.render(&app.ui_ctx.renderer, &app.gl_ctx, &app.ui_ctx.font, 0.0f, top_h + mid_h, cur_w, btm_h);
+
+        app.end_frame();
+    }
+
+    grid.destroy();
+    synth_panel.destroy();
+    app.close();
+}
+
+fn int main_entry() {
+    run_audio_tracker();
+    return 0;
+}
+
+main_entry();

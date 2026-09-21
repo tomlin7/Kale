@@ -1,0 +1,139 @@
+// apps/node_graph/main.kl
+// Kale Node Graph — Visual Shader & Dataflow Graph Editor
+// Layout: [ Top Toolbar | Canvas Area | Right Inspector Sidebar ]
+
+import "libs/framework/app.kl" as fw;
+import "libs/glfw/glfw.kl" as glfw;
+import "libs/glfw/constants.kl" as glc;
+import "libs/glfw/input.kl" as ginput;
+import "libs/render/math.kl" as rmath;
+import "apps/node_graph/node_types.kl" as nt;
+import "apps/node_graph/graph_canvas.kl" as gc;
+
+extern int printf(string fmt, ...);
+
+fn void run_node_graph() {
+    fw.AppConfig config;
+    config.init("Kale Node Graph — Visual Dataflow & Shader Editor", 1280, 768);
+
+    fw.App app;
+    int ok = app.init(config);
+    if (ok == 0) {
+        printf("Fatal: could not open Node Graph window\n");
+        return;
+    }
+
+    nt.NodeGraph graph;
+    graph.init();
+
+    bool is_dragging = false;
+    float drag_offset_x = 0.0f;
+    float drag_offset_y = 0.0f;
+
+    while (glfw.glfwWindowShouldClose(app.window) == 0) {
+        app.begin_frame();
+        void* win = app.window;
+
+        float cur_w = (float)app.width;
+        float cur_h = (float)app.height;
+
+        float top_h = 42.0f;
+        float sidebar_w = 260.0f;
+        float canvas_w = cur_w - sidebar_w;
+        float canvas_h = cur_h - top_h;
+
+        // Mouse handling
+        double mouse_dx = 0.0;
+        double mouse_dy = 0.0;
+        ginput.glfwGetCursorPos(win, &mouse_dx, &mouse_dy);
+        float mx = (float)mouse_dx;
+        float my = (float)mouse_dy;
+        int lmb = ginput.glfwGetMouseButton(win, glc.GLFW_MOUSE_BUTTON_LEFT());
+
+        // Node dragging logic
+        if (lmb == glc.GLFW_PRESS()) {
+            if (!is_dragging && mx < canvas_w && my > top_h) {
+                // Check if clicking inside a node
+                int i = graph.node_count - 1;
+                while (i >= 0) {
+                    float nx = graph.pan_x + graph.nodes[i].x;
+                    float ny = top_h + graph.pan_y + graph.nodes[i].y;
+                    float nw = graph.nodes[i].width;
+                    float nh = graph.nodes[i].height;
+
+                    if (mx >= nx && mx <= nx + nw && my >= ny && my <= ny + nh) {
+                        // Unselect all, select this
+                        int u = 0;
+                        while (u < graph.node_count) {
+                            graph.nodes[u].is_selected = false;
+                            u = u + 1;
+                        }
+                        graph.nodes[i].is_selected = true;
+                        graph.selected_node_idx = i;
+                        is_dragging = true;
+                        drag_offset_x = mx - nx;
+                        drag_offset_y = my - ny;
+                        i = -1; // break
+                    }
+                    i = i - 1;
+                }
+            } else if (is_dragging && graph.selected_node_idx >= 0) {
+                int sel = graph.selected_node_idx;
+                graph.nodes[sel].x = mx - graph.pan_x - drag_offset_x;
+                graph.nodes[sel].y = my - top_h - graph.pan_y - drag_offset_y;
+            }
+        } else {
+            is_dragging = false;
+        }
+
+        // 1. Draw Top Toolbar
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, 0.0f, cur_w, top_h, rmath.color_rgba(0.14f, 0.15f, 0.19f, 1.0f));
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, top_h - 1.0f, cur_w, 1.0f, rmath.color_rgba(0.22f, 0.24f, 0.29f, 1.0f));
+
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "KALE NODE GRAPH", 16.0f, 11.0f, rmath.color_rgba(0.95f, 0.95f, 0.98f, 1.0f));
+
+        // Toolbar Action Buttons
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 220.0f, 7.0f, 90.0f, 26.0f, rmath.color_rgba(0.20f, 0.24f, 0.32f, 1.0f));
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "+ Add Node", 232.0f, 12.0f, rmath.color_rgba(0.85f, 0.90f, 0.98f, 1.0f));
+
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 320.0f, 7.0f, 110.0f, 26.0f, rmath.color_rgba(0.22f, 0.45f, 0.30f, 1.0f));
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Compile Shader", 328.0f, 12.0f, rmath.color_rgba(0.90f, 0.98f, 0.92f, 1.0f));
+
+        // 2. Draw Canvas (Nodes, Wires, Grid)
+        gc.render_canvas(&graph, &app.ui_ctx.renderer, &app.gl_ctx, &app.ui_ctx.font, 0.0f, top_h, canvas_w, canvas_h);
+
+        // 3. Draw Right Sidebar (Inspector)
+        float sx = canvas_w;
+        float sy = top_h;
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, sx, sy, sidebar_w, canvas_h, rmath.color_rgba(0.13f, 0.14f, 0.18f, 1.0f));
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, sx, sy, 1.0f, canvas_h, rmath.color_rgba(0.22f, 0.24f, 0.29f, 1.0f));
+
+        // Sidebar Header
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, sx, sy, sidebar_w, 32.0f, rmath.color_rgba(0.17f, 0.18f, 0.23f, 1.0f));
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "NODE PROPERTIES", sx + 14.0f, sy + 8.0f, rmath.color_rgba(0.65f, 0.70f, 0.82f, 1.0f));
+
+        if (graph.selected_node_idx >= 0 && graph.selected_node_idx < graph.node_count) {
+            int sel = graph.selected_node_idx;
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, graph.nodes[sel].title, sx + 14.0f, sy + 48.0f, rmath.color_rgba(0.95f, 0.95f, 0.98f, 1.0f));
+
+            // Property rows
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Operation: Multiply", sx + 14.0f, sy + 76.0f, rmath.color_rgba(0.70f, 0.75f, 0.85f, 1.0f));
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Precision: HighP Float", sx + 14.0f, sy + 98.0f, rmath.color_rgba(0.70f, 0.75f, 0.85f, 1.0f));
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Input Pins: 2", sx + 14.0f, sy + 120.0f, rmath.color_rgba(0.70f, 0.75f, 0.85f, 1.0f));
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Output Pins: 1", sx + 14.0f, sy + 142.0f, rmath.color_rgba(0.70f, 0.75f, 0.85f, 1.0f));
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "GLSL: (A * B)", sx + 14.0f, sy + 164.0f, rmath.color_rgba(0.40f, 0.75f, 0.95f, 1.0f));
+        }
+
+        app.end_frame();
+    }
+
+    graph.destroy();
+    app.close();
+}
+
+fn int main_entry() {
+    run_node_graph();
+    return 0;
+}
+
+main_entry();

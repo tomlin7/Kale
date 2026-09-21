@@ -1,0 +1,122 @@
+// apps/audio_tracker/synth_panel.kl
+// Synthesizer & Channel Control Panel for Kale Audio Tracker
+
+import "libs/gl/loader.kl" as glloader;
+import "libs/render/math.kl" as rmath;
+import "libs/render/batch.kl" as rbatch;
+import "libs/render/font.kl" as rfont;
+
+struct SynthChannel {
+    string name;
+    int waveform; // 0=Sine, 1=Square, 2=Saw, 3=Noise
+    float volume;
+    float pan;
+    bool is_muted;
+    bool is_solo;
+    float current_peak;
+}
+
+struct SynthPanel {
+    SynthChannel* channels;
+    int channel_count;
+    int selected_channel;
+}
+
+fn void SynthPanel.init() {
+    this->channel_count = 4;
+    this->selected_channel = 0;
+    this->channels = alloc(SynthChannel, 4);
+
+    this->channels[0].name = "CH1: Lead Synth";
+    this->channels[0].waveform = 1; // Square
+    this->channels[0].volume = 0.85f;
+    this->channels[0].pan = 0.0f;
+    this->channels[0].is_muted = false;
+    this->channels[0].is_solo = false;
+    this->channels[0].current_peak = 0.65f;
+
+    this->channels[1].name = "CH2: Bass Line";
+    this->channels[1].waveform = 2; // Saw
+    this->channels[1].volume = 0.90f;
+    this->channels[1].pan = -0.2f;
+    this->channels[1].is_muted = false;
+    this->channels[1].is_solo = false;
+    this->channels[1].current_peak = 0.80f;
+
+    this->channels[2].name = "CH3: Arp Chords";
+    this->channels[2].waveform = 0; // Sine
+    this->channels[2].volume = 0.75f;
+    this->channels[2].pan = 0.3f;
+    this->channels[2].is_muted = false;
+    this->channels[2].is_solo = false;
+    this->channels[2].current_peak = 0.50f;
+
+    this->channels[3].name = "CH4: Noise Drums";
+    this->channels[3].waveform = 3; // Noise
+    this->channels[3].volume = 0.70f;
+    this->channels[3].pan = 0.0f;
+    this->channels[3].is_muted = false;
+    this->channels[3].is_solo = false;
+    this->channels[3].current_peak = 0.40f;
+}
+
+fn void SynthPanel.destroy() {
+    if (this->channels != (SynthChannel*)0) {
+        free(this->channels);
+        this->channels = (SynthChannel*)0;
+    }
+}
+
+fn void SynthPanel.render(rbatch.BatchRenderer* r, glloader.GLContext* gl_ctx, rfont.FontAtlas* font, float x, float y, float w, float h) {
+    // Background
+    r->push_quad(gl_ctx, x, y, w, h, rmath.color_rgba(0.12f, 0.13f, 0.16f, 1.0f));
+    r->push_quad(gl_ctx, x, y, w, 28.0f, rmath.color_rgba(0.16f, 0.18f, 0.22f, 1.0f));
+    font->draw_text(r, gl_ctx, "SYNTHESIZER & MIXER", x + 12.0f, y + 6.0f, rmath.color_rgba(0.70f, 0.75f, 0.85f, 1.0f));
+
+    float ch_w = (w - 20.0f) / 4.0f;
+    int i = 0;
+    while (i < this->channel_count) {
+        float cx = x + 10.0f + (float)i * ch_w;
+        float cy = y + 36.0f;
+        float ch_h = h - 46.0f;
+
+        rmath.Color card_bg = rmath.color_rgba(0.15f, 0.16f, 0.20f, 1.0f);
+        if (i == this->selected_channel) {
+            card_bg = rmath.color_rgba(0.19f, 0.22f, 0.28f, 1.0f);
+        }
+        r->push_quad(gl_ctx, cx, cy, ch_w - 6.0f, ch_h, card_bg);
+
+        // Channel Name
+        font->draw_text(r, gl_ctx, this->channels[i].name, cx + 8.0f, cy + 8.0f, rmath.color_rgba(0.95f, 0.95f, 0.98f, 1.0f));
+
+        // Waveform tag
+        string wf_name = "SINE";
+        if (this->channels[i].waveform == 1) { wf_name = "SQUARE"; }
+        if (this->channels[i].waveform == 2) { wf_name = "SAWTOOTH"; }
+        if (this->channels[i].waveform == 3) { wf_name = "NOISE"; }
+        font->draw_text(r, gl_ctx, wf_name, cx + 8.0f, cy + 26.0f, rmath.color_rgba(0.40f, 0.75f, 0.95f, 1.0f));
+
+        // Peak Meter
+        float meter_y = cy + 46.0f;
+        float meter_w = ch_w - 22.0f;
+        float meter_h = 10.0f;
+        r->push_quad(gl_ctx, cx + 8.0f, meter_y, meter_w, meter_h, rmath.color_rgba(0.08f, 0.09f, 0.11f, 1.0f));
+        float peak_w = meter_w * this->channels[i].current_peak;
+        r->push_quad(gl_ctx, cx + 8.0f, meter_y, peak_w, meter_h, rmath.color_rgba(0.25f, 0.85f, 0.45f, 1.0f));
+
+        // Volume label
+        font->draw_text(r, gl_ctx, "VOL", cx + 8.0f, cy + 64.0f, rmath.color_rgba(0.65f, 0.70f, 0.80f, 1.0f));
+        float vol_w = (ch_w - 50.0f) * this->channels[i].volume;
+        r->push_quad(gl_ctx, cx + 36.0f, cy + 66.0f, ch_w - 50.0f, 8.0f, rmath.color_rgba(0.08f, 0.09f, 0.11f, 1.0f));
+        r->push_quad(gl_ctx, cx + 36.0f, cy + 66.0f, vol_w, 8.0f, rmath.color_rgba(0.35f, 0.65f, 0.95f, 1.0f));
+
+        // Mute / Solo badges
+        r->push_quad(gl_ctx, cx + 8.0f, cy + 86.0f, 32.0f, 18.0f, rmath.color_rgba(0.22f, 0.24f, 0.29f, 1.0f));
+        font->draw_text(r, gl_ctx, "MUTE", cx + 11.0f, cy + 89.0f, rmath.color_rgba(0.70f, 0.75f, 0.85f, 1.0f));
+
+        r->push_quad(gl_ctx, cx + 46.0f, cy + 86.0f, 32.0f, 18.0f, rmath.color_rgba(0.22f, 0.24f, 0.29f, 1.0f));
+        font->draw_text(r, gl_ctx, "SOLO", cx + 49.0f, cy + 89.0f, rmath.color_rgba(0.95f, 0.80f, 0.30f, 1.0f));
+
+        i = i + 1;
+    }
+}

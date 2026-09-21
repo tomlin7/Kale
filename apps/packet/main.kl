@@ -1,0 +1,345 @@
+// apps/packet/main.kl
+// Kale Packet — Real-time Network Packet Inspector & Stream Visualizer
+
+import "libs/framework/app.kl" as fw;
+import "libs/glfw/glfw.kl" as glfw;
+import "libs/glfw/constants.kl" as glc;
+import "libs/glfw/input.kl" as ginput;
+import "libs/render/math.kl" as rmath;
+import "apps/packet/packet_capture.kl" as cap;
+
+extern int printf(string fmt, ...);
+
+// ─── Main ─────────────────────────────────────────────────────────────────────
+
+fn int main() {
+    fw.AppConfig cfg;
+    cfg.init("Kale Packet — Network Inspector", 1200, 760);
+
+    fw.App app;
+    int ok = app.init(cfg);
+    if (ok == 0) {
+        printf("Fatal: could not open Packet window\n");
+        return 1;
+    }
+
+    cap.PacketLog log;
+    cap.packetlog_init(&log);
+    cap.packetlog_seed(&log);
+
+    // Simulate live capture counter
+    int live_seq   = log.count + 1;
+    float live_ts  = 0.22f;
+    int frame_ctr  = 0;
+    int add_frame  = 0;
+
+    // Colors
+    rmath.Color col_bg      = rmath.color_hex(0x0D1117);
+    rmath.Color col_panel   = rmath.color_rgba(0.08f, 0.09f, 0.12f, 1.0f);
+    rmath.Color col_header  = rmath.color_hex(0x161B22);
+    rmath.Color col_text    = rmath.color_hex(0xE6EDF3);
+    rmath.Color col_dim     = rmath.color_hex(0x6E7681);
+    rmath.Color col_accent  = rmath.color_hex(0x58A6FF);
+    rmath.Color col_sel     = rmath.color_hex(0x3FB950);
+    rmath.Color col_warn    = rmath.color_hex(0xF78166);
+    rmath.Color col_grid    = rmath.color_rgba(0.15f, 0.17f, 0.22f, 1.0f);
+    rmath.Color col_bar     = rmath.color_hex(0x21262D);
+    rmath.Color col_row_a   = rmath.color_rgba(0.09f, 0.10f, 0.14f, 1.0f);
+    rmath.Color col_row_b   = rmath.color_rgba(0.07f, 0.08f, 0.11f, 1.0f);
+    rmath.Color col_sel_row = rmath.color_hex(0x1F3652);
+    rmath.Color col_tcp     = rmath.color_hex(0x58A6FF);
+    rmath.Color col_udp     = rmath.color_hex(0x3FB950);
+    rmath.Color col_icmp    = rmath.color_hex(0xF0A060);
+    rmath.Color col_http    = rmath.color_hex(0xA371F7);
+    rmath.Color col_dns     = rmath.color_hex(0xF78166);
+
+    // Key state
+    int pk_up = 0; int pk_dn = 0; int pk_esc = 0;
+    int pk_r = 0;  // R = clear
+
+    void* win = app.window;
+
+    while (glfw.glfwWindowShouldClose(app.window) == 0) {
+        app.begin_frame();
+        win = app.window;
+        float W = (float)app.width;
+        float H = (float)app.height;
+
+        // Simulate live packet arrival every ~45 frames
+        frame_ctr = frame_ctr + 1;
+        if (frame_ctr >= 45) {
+            frame_ctr = 0;
+            // add a random-ish packet
+            int proto = live_seq % 5;
+            int src   = 1024 + (live_seq * 17) % 50000;
+            int dst   = 80 + (live_seq * 7) % 8000;
+            int len   = 64 + (live_seq * 31) % 1400;
+            int dir   = live_seq % 2;
+            int flag  = 0;
+            if ((live_seq % 8) == 0) { flag = 1; }
+            cap.packetlog_push(&log, live_seq, proto, src, dst, len, live_ts, dir, flag);
+            live_seq = live_seq + 1;
+            live_ts  = live_ts + 0.011f;
+        }
+
+        // Keyboard
+        int k_up = ginput.glfwGetKey(win, glc.GLFW_KEY_UP());
+        if (k_up == glc.GLFW_PRESS() && pk_up == 0) {
+            if (log.selected > 0) { log.selected = log.selected - 1; }
+        }
+        pk_up = k_up;
+
+        int k_dn = ginput.glfwGetKey(win, glc.GLFW_KEY_DOWN());
+        if (k_dn == glc.GLFW_PRESS() && pk_dn == 0) {
+            if (log.selected < log.count - 1) { log.selected = log.selected + 1; }
+        }
+        pk_dn = k_dn;
+
+        int k_r = ginput.glfwGetKey(win, glc.GLFW_KEY_R());
+        if (k_r == glc.GLFW_PRESS() && pk_r == 0) {
+            // clear and re-seed
+            cap.packetlog_init(&log);
+            cap.packetlog_seed(&log);
+            live_seq = log.count + 1;
+            live_ts  = 0.22f;
+        }
+        pk_r = k_r;
+
+        int k_esc = ginput.glfwGetKey(win, glc.GLFW_KEY_ESCAPE());
+        if (k_esc == glc.GLFW_PRESS() && pk_esc == 0) {
+            glfw.glfwSetWindowShouldClose(app.window, 1);
+        }
+        pk_esc = k_esc;
+
+        // Mouse selection
+        double mdx = 0.0; double mdy = 0.0;
+        ginput.glfwGetCursorPos(win, &mdx, &mdy);
+        float mx = (float)mdx; float my = (float)mdy;
+        int mb = ginput.glfwGetMouseButton(win, glc.GLFW_MOUSE_BUTTON_LEFT());
+
+        // Click on table row
+        float table_top = 88.0f;
+        float row_h     = 22.0f;
+        float table_bot = H - 200.0f;
+        if (mb == glc.GLFW_PRESS() && my > table_top && my < table_bot) {
+            int clicked = (int)((my - table_top) / row_h);
+            if (clicked >= 0 && clicked < log.count) {
+                log.selected = clicked;
+            }
+        }
+
+        // ── Background ────────────────────────────────────────────────────────
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, 0.0f, W, H, col_bg);
+
+        // ── Top header ────────────────────────────────────────────────────────
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, 0.0f, W, 44.0f, col_header);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "KALE PACKET", 18.0f, 12.0f, col_accent);
+
+        // Live indicator
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 180.0f, 16.0f, 10.0f, 10.0f, col_sel);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "LIVE", 196.0f, 12.0f, col_sel);
+
+        // Stats
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "Packets:", 290.0f, 12.0f, col_dim);
+
+        // R to clear
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "R=Reset  ESC=Quit  UP/DN=Select", W - 320.0f, 12.0f, col_dim);
+
+        // ── Column headers ────────────────────────────────────────────────────
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, 44.0f, W, 42.0f, col_bar);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, 85.0f, W, 1.0f,  col_grid);
+
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "#",       12.0f,  54.0f, col_dim);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Proto",   52.0f,  54.0f, col_dim);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Src",    120.0f,  54.0f, col_dim);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Dst",    200.0f,  54.0f, col_dim);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Len",    280.0f,  54.0f, col_dim);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Dir",    340.0f,  54.0f, col_dim);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Time",   390.0f,  54.0f, col_dim);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Status", 470.0f,  54.0f, col_dim);
+
+        // ── Packet rows ───────────────────────────────────────────────────────
+        float ty = table_top;
+        int max_rows = (int)((table_bot - table_top) / row_h);
+        int start_row = 0;
+        if (log.selected >= max_rows) { start_row = log.selected - max_rows + 1; }
+
+        int ri = start_row;
+        while (ri < log.count && (ty + row_h) < table_bot) {
+            cap.PacketEntry e = log.entries[ri];
+
+            // Row background
+            rmath.Color rbg = col_row_a;
+            if ((ri % 2) == 0) { rbg = col_row_b; }
+            if (ri == log.selected) { rbg = col_sel_row; }
+            app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, ty, W, row_h, rbg);
+
+            // Flagged highlight stripe
+            if (e.flagged == 1) {
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, ty, 3.0f, row_h, col_warn);
+            }
+
+            // Protocol color
+            rmath.Color pcol = col_tcp;
+            if (e.proto == 1) { pcol = col_udp; }
+            if (e.proto == 2) { pcol = col_icmp; }
+            if (e.proto == 3) { pcol = col_http; }
+            if (e.proto == 4) { pcol = col_dns; }
+
+            // Protocol badge
+            app.ui_ctx.renderer.push_quad(&app.gl_ctx, 48.0f, ty + 4.0f, 48.0f, 14.0f, pcol);
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+                cap.proto_name(e.proto), 52.0f, ty + 5.0f, col_bg);
+
+            // Direction arrow
+            rmath.Color dcol = col_sel;
+            if (e.direction == 0) { dcol = col_accent; }
+
+            // Data columns
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Len",   282.0f, ty + 4.0f, col_dim);
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+                "-->", 344.0f, ty + 4.0f, dcol);
+
+            // Length bar (visual)
+            float lbar = (float)e.length / 1460.0f * 60.0f;
+            if (lbar > 60.0f) { lbar = 60.0f; }
+            app.ui_ctx.renderer.push_quad(&app.gl_ctx, 390.0f, ty + 6.0f, lbar, 10.0f, pcol);
+
+            // Status
+            if (e.flagged == 1) {
+                app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+                    "ANOMALY", 474.0f, ty + 4.0f, col_warn);
+            } else {
+                app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+                    "OK", 474.0f, ty + 4.0f, col_sel);
+            }
+
+            // Separator
+            app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, ty + row_h - 1.0f, W, 1.0f, col_grid);
+
+            ty = ty + row_h;
+            ri = ri + 1;
+        }
+
+        // ── Right side: stream visualizer ─────────────────────────────────────
+        float vx = W - 310.0f;
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, vx - 1.0f, 86.0f, 1.0f, H - 200.0f - 86.0f, col_grid);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, vx, 86.0f, 310.0f, H - 200.0f - 86.0f, col_panel);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "Byte Stream", vx + 10.0f, 96.0f, col_dim);
+
+        // Sparkline: one bar per packet (most recent 50)
+        int spark_start = log.count - 50;
+        if (spark_start < 0) { spark_start = 0; }
+        int si = spark_start;
+        float sx = vx + 10.0f;
+        float spark_y = H - 200.0f - 12.0f;
+        while (si < log.count) {
+            cap.PacketEntry se = log.entries[si];
+            rmath.Color sc = col_tcp;
+            if (se.proto == 1) { sc = col_udp; }
+            if (se.proto == 2) { sc = col_icmp; }
+            if (se.proto == 3) { sc = col_http; }
+            if (se.proto == 4) { sc = col_dns; }
+            float sh = (float)se.length / 1460.0f * 60.0f;
+            if (sh < 3.0f) { sh = 3.0f; }
+            app.ui_ctx.renderer.push_quad(&app.gl_ctx, sx, spark_y - sh, 4.0f, sh, sc);
+            sx = sx + 5.5f;
+            si = si + 1;
+        }
+
+        // ── Detail panel ──────────────────────────────────────────────────────
+        float dp_y = H - 195.0f;
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, dp_y, W, 1.0f, col_grid);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, dp_y + 1.0f, W, 195.0f, col_panel);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, dp_y + 1.0f, W, 28.0f, col_header);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "Packet Detail", 14.0f, dp_y + 8.0f, col_text);
+
+        if (log.selected >= 0 && log.selected < log.count) {
+            cap.PacketEntry sel = log.entries[log.selected];
+            float dy = dp_y + 38.0f;
+            float col1 = 14.0f;
+            float col2 = 180.0f;
+            float col3 = 380.0f;
+            float col4 = 560.0f;
+
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Protocol", col1, dy, col_dim);
+            rmath.Color pc2 = col_tcp;
+            if (sel.proto == 1) { pc2 = col_udp; }
+            if (sel.proto == 2) { pc2 = col_icmp; }
+            if (sel.proto == 3) { pc2 = col_http; }
+            if (sel.proto == 4) { pc2 = col_dns; }
+            app.ui_ctx.renderer.push_quad(&app.gl_ctx, col2, dy - 2.0f, 40.0f, 16.0f, pc2);
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+                cap.proto_name(sel.proto), col2 + 4.0f, dy, col_bg);
+
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Src Port",  col3, dy, col_dim);
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Dst Port",  col4, dy, col_dim);
+
+            dy = dy + 22.0f;
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Length",    col1, dy, col_dim);
+            // length bar
+            float lbw = (float)sel.length / 1460.0f * 160.0f;
+            app.ui_ctx.renderer.push_quad(&app.gl_ctx, col2, dy + 2.0f, lbw, 10.0f, pc2);
+
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Direction", col3, dy, col_dim);
+            rmath.Color dirc = col_sel;
+            if (sel.direction == 0) { dirc = col_accent; }
+            if (sel.direction == 0) {
+                app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "INBOUND",  col4, dy, dirc);
+            } else {
+                app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "OUTBOUND", col4, dy, dirc);
+            }
+
+            dy = dy + 22.0f;
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Status",    col1, dy, col_dim);
+            if (sel.flagged == 1) {
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, col2, dy - 2.0f, 70.0f, 16.0f, col_warn);
+                app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "ANOMALY", col2 + 4.0f, dy, col_bg);
+            } else {
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, col2, dy - 2.0f, 36.0f, 16.0f, col_sel);
+                app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "OK", col2 + 4.0f, dy, col_bg);
+            }
+
+            // Hex dump simulation: show bytes as color blocks
+            dy = dy + 26.0f;
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Hex", col1, dy, col_dim);
+            int bi = 0;
+            float hex_x = col2;
+            while (bi < 32 && bi < sel.length) {
+                int bv = (sel.src_port + sel.dst_port + bi * 31) % 256;
+                float bintensity = (float)bv / 255.0f;
+                rmath.Color bc = rmath.color_rgba(bintensity * 0.4f, bintensity * 0.7f, bintensity, 1.0f);
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, hex_x, dy - 2.0f, 10.0f, 16.0f, bc);
+                hex_x = hex_x + 11.0f;
+                bi = bi + 1;
+            }
+        } else {
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+                "Click a packet row to inspect", 14.0f, dp_y + 50.0f, col_dim);
+        }
+
+        // Proto legend in top bar
+        float lx = 400.0f;
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, lx,         14.0f, 12.0f, 12.0f, col_tcp);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "TCP",  lx + 15.0f, 12.0f, col_dim);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, lx + 54.0f, 14.0f, 12.0f, 12.0f, col_udp);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "UDP",  lx + 69.0f, 12.0f, col_dim);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, lx +108.0f, 14.0f, 12.0f, 12.0f, col_icmp);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "ICMP", lx +123.0f, 12.0f, col_dim);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, lx +168.0f, 14.0f, 12.0f, 12.0f, col_http);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "HTTP", lx +183.0f, 12.0f, col_dim);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, lx +228.0f, 14.0f, 12.0f, 12.0f, col_dns);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "DNS",  lx +243.0f, 12.0f, col_dim);
+
+        app.end_frame();
+    }
+
+    app.close();
+    return 0;
+}

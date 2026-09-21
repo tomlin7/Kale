@@ -1,0 +1,370 @@
+// apps/ui_designer/main.kl
+// Kale UI Designer — WYSIWYG UI builder exporting native Kale UI code
+
+import "libs/framework/app.kl" as fw;
+import "libs/glfw/glfw.kl" as glfw;
+import "libs/glfw/constants.kl" as glc;
+import "libs/glfw/input.kl" as ginput;
+import "libs/render/math.kl" as rmath;
+import "apps/ui_designer/widget_model.kl" as wm;
+
+extern int printf(string fmt, ...);
+extern int sprintf(char* buf, string fmt, ...);
+extern void* malloc(int size);
+
+fn int btn_hit(float bx, float by, float bw, float bh, float mx, float my) {
+    if (mx >= bx && mx <= bx + bw && my >= by && my <= by + bh) { return 1; }
+    return 0;
+}
+
+fn int main() {
+    fw.AppConfig cfg;
+    cfg.init("Kale UI Designer — WYSIWYG Visual Builder", 1280, 768);
+
+    fw.App app;
+    int ok = app.init(cfg);
+    if (ok == 0) {
+        printf("Fatal: could not open UI Designer window\n");
+        return 1;
+    }
+
+    wm.WidgetCanvas canvas;
+    canvas.init();
+
+    // Seed canvas with initial widgets
+    canvas.add_widget(wm.WIDGET_PANEL(),    260.0f,  80.0f, 400.0f, 320.0f, "Main Panel");
+    canvas.add_widget(wm.WIDGET_LABEL(),    280.0f, 100.0f, 200.0f,  24.0f, "User Settings");
+    canvas.add_widget(wm.WIDGET_INPUT(),    280.0f, 140.0f, 320.0f,  32.0f, "Enter username...");
+    canvas.add_widget(wm.WIDGET_SLIDER(),   280.0f, 190.0f, 260.0f,  20.0f, "Volume");
+    canvas.add_widget(wm.WIDGET_CHECKBOX(), 280.0f, 230.0f, 180.0f,  22.0f, "Enable Notifications");
+    canvas.add_widget(wm.WIDGET_BUTTON(),   280.0f, 270.0f, 120.0f,  36.0f, "Save Changes");
+    canvas.selected_idx = 5; // Default select button
+
+    // Inspector buffers
+    char* b_x = (char*)malloc(32);
+    char* b_y = (char*)malloc(32);
+    char* b_w = (char*)malloc(32);
+    char* b_h = (char*)malloc(32);
+    char* b_code1 = (char*)malloc(128);
+    char* b_code2 = (char*)malloc(128);
+
+    // Color definitions
+    rmath.Color col_bg      = rmath.color_hex(0x0D1117);
+    rmath.Color col_header  = rmath.color_hex(0x161B22);
+    rmath.Color col_panel   = rmath.color_rgba(0.08f, 0.09f, 0.12f, 1.0f);
+    rmath.Color col_card    = rmath.color_hex(0x21262D);
+    rmath.Color col_card_h  = rmath.color_hex(0x30363D);
+    rmath.Color col_text    = rmath.color_hex(0xE6EDF3);
+    rmath.Color col_dim     = rmath.color_hex(0x6E7681);
+    rmath.Color col_grid    = rmath.color_rgba(0.16f, 0.19f, 0.24f, 1.0f);
+    rmath.Color col_accent  = rmath.color_hex(0x58A6FF);
+    rmath.Color col_btn_bg  = rmath.color_hex(0x1F6FEB);
+    rmath.Color col_sel_box = rmath.color_hex(0x3FB950);
+    rmath.Color col_border  = rmath.color_hex(0x30363D);
+    rmath.Color col_code_bg = rmath.color_hex(0x0A0D12);
+
+    int last_mb = 0;
+    int is_dragging = 0;
+    float drag_off_x = 0.0f;
+    float drag_off_y = 0.0f;
+    int pk_esc = 0;
+
+    void* win = app.window;
+
+    while (glfw.glfwWindowShouldClose(app.window) == 0) {
+        app.begin_frame();
+        win = app.window;
+        float W = (float)app.width;
+        float H = (float)app.height;
+
+        // Mouse handling
+        double mdx = 0.0; double mdy = 0.0;
+        ginput.glfwGetCursorPos(win, &mdx, &mdy);
+        float mx = (float)mdx; float my = (float)mdy;
+        int mb = ginput.glfwGetMouseButton(win, glc.GLFW_MOUSE_BUTTON_LEFT());
+        int mb_click = 0;
+        if (mb == glc.GLFW_PRESS() && last_mb == 0) { mb_click = 1; }
+        last_mb = mb;
+
+        // Escape
+        int ke = ginput.glfwGetKey(win, glc.GLFW_KEY_ESCAPE());
+        if (ke == glc.GLFW_PRESS() && pk_esc == 0) {
+            glfw.glfwSetWindowShouldClose(app.window, 1);
+        }
+        pk_esc = ke;
+
+        // ── Layout Geometry ───────────────────────────────────────────────────
+        float palette_w = 200.0f;
+        float insp_w    = 240.0f;
+        float code_h    = 130.0f;
+        float top_h     = 46.0f;
+        float canvas_w  = W - palette_w - insp_w;
+        float canvas_h  = H - top_h - code_h;
+        float canvas_x  = palette_w;
+        float canvas_y  = top_h;
+
+        // ── Component Selection / Dragging ────────────────────────────────────
+        if (mb_click == 1) {
+            if (mx >= canvas_x && mx <= canvas_x + canvas_w && my >= canvas_y && my <= canvas_y + canvas_h) {
+                int hit = canvas.hit_test(mx, my);
+                canvas.selected_idx = hit;
+                if (hit >= 0) {
+                    is_dragging = 1;
+                    drag_off_x = mx - canvas.widgets[hit].x;
+                    drag_off_y = my - canvas.widgets[hit].y;
+                }
+            }
+        }
+        if (mb == glc.GLFW_RELEASE()) {
+            is_dragging = 0;
+        }
+        if (is_dragging == 1 && canvas.selected_idx >= 0) {
+            wm.Widget* sw = &canvas.widgets[canvas.selected_idx];
+            sw->x = mx - drag_off_x;
+            sw->y = my - drag_off_y;
+        }
+
+        // ── Background ────────────────────────────────────────────────────────
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, 0.0f, W, H, col_bg);
+
+        // ── Top Header Bar ────────────────────────────────────────────────────
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, 0.0f, W, top_h, col_header);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "KALE UI DESIGNER", 18.0f, 13.0f, col_accent);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "WYSIWYG Interface Builder & Native Code Generator", 200.0f, 14.0f, col_dim);
+
+        // ── Left Palette Sidebar ──────────────────────────────────────────────
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, top_h, palette_w, H - top_h, col_panel);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, palette_w - 1.0f, top_h, 1.0f, H - top_h, col_grid);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "PALETTE", 16.0f, top_h + 14.0f, col_dim);
+
+        string pal_names[6];
+        pal_names[0] = "+ Panel";
+        pal_names[1] = "+ Button";
+        pal_names[2] = "+ Label";
+        pal_names[3] = "+ Input Box";
+        pal_names[4] = "+ Slider";
+        pal_names[5] = "+ Checkbox";
+
+        int pi = 0;
+        float pby = top_h + 40.0f;
+        while (pi < 6) {
+            float bx = 16.0f;
+            float bw = palette_w - 32.0f;
+            float bh = 34.0f;
+
+            rmath.Color pbc = col_card;
+            if (btn_hit(bx, pby, bw, bh, mx, my) == 1) { pbc = col_card_h; }
+
+            app.ui_ctx.renderer.push_quad(&app.gl_ctx, bx, pby, bw, bh, pbc);
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+                pal_names[pi], bx + 12.0f, pby + 8.0f, col_text);
+
+            if (mb_click == 1 && btn_hit(bx, pby, bw, bh, mx, my) == 1) {
+                // Add widget to canvas center
+                float nwx = canvas_x + 60.0f + (float)canvas.count * 10.0f;
+                float nwy = canvas_y + 60.0f + (float)canvas.count * 10.0f;
+                if (pi == 0) { canvas.add_widget(wm.WIDGET_PANEL(), nwx, nwy, 240.0f, 160.0f, "Panel"); }
+                if (pi == 1) { canvas.add_widget(wm.WIDGET_BUTTON(), nwx, nwy, 110.0f, 36.0f, "New Button"); }
+                if (pi == 2) { canvas.add_widget(wm.WIDGET_LABEL(), nwx, nwy, 140.0f, 22.0f, "New Label"); }
+                if (pi == 3) { canvas.add_widget(wm.WIDGET_INPUT(), nwx, nwy, 220.0f, 32.0f, "Input text..."); }
+                if (pi == 4) { canvas.add_widget(wm.WIDGET_SLIDER(), nwx, nwy, 200.0f, 20.0f, "Slider"); }
+                if (pi == 5) { canvas.add_widget(wm.WIDGET_CHECKBOX(), nwx, nwy, 160.0f, 22.0f, "Checkbox Option"); }
+            }
+
+            pby = pby + bh + 8.0f;
+            pi = pi + 1;
+        }
+
+        // ── Canvas Area ───────────────────────────────────────────────────────
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, canvas_x, canvas_y, canvas_w, canvas_h, col_bg);
+
+        // Dot grid
+        int dgi = 0;
+        while (dgi < 24) {
+            int dgj = 0;
+            while (dgj < 14) {
+                float gx = canvas_x + 20.0f + (float)dgi * 36.0f;
+                float gy = canvas_y + 20.0f + (float)dgj * 36.0f;
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, gx, gy, 1.5f, 1.5f, col_grid);
+                dgj = dgj + 1;
+            }
+            dgi = dgi + 1;
+        }
+
+        // Render placed widgets
+        int wi = 0;
+        while (wi < canvas.count) {
+            wm.Widget w = canvas.widgets[wi];
+
+            if (w.widget_type == wm.WIDGET_PANEL()) {
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, w.x, w.y, w.w, w.h, col_panel);
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, w.x, w.y, w.w, 1.0f, col_border);
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, w.x, w.y + w.h - 1.0f, w.w, 1.0f, col_border);
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, w.x, w.y, 1.0f, w.h, col_border);
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, w.x + w.w - 1.0f, w.y, 1.0f, w.h, col_border);
+            } else if (w.widget_type == wm.WIDGET_BUTTON()) {
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, w.x, w.y, w.w, w.h, col_btn_bg);
+                app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+                    w.caption, w.x + 12.0f, w.y + w.h * 0.5f - 6.0f, col_text);
+            } else if (w.widget_type == wm.WIDGET_LABEL()) {
+                app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+                    w.caption, w.x, w.y + 4.0f, col_text);
+            } else if (w.widget_type == wm.WIDGET_INPUT()) {
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, w.x, w.y, w.w, w.h, col_card);
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, w.x, w.y, w.w, 1.0f, col_border);
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, w.x, w.y + w.h - 1.0f, w.w, 1.0f, col_border);
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, w.x, w.y, 1.0f, w.h, col_border);
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, w.x + w.w - 1.0f, w.y, 1.0f, w.h, col_border);
+                app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+                    w.caption, w.x + 8.0f, w.y + 8.0f, col_dim);
+            } else if (w.widget_type == wm.WIDGET_SLIDER()) {
+                float track_y = w.y + w.h * 0.5f - 2.0f;
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, w.x, track_y, w.w, 4.0f, col_border);
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, w.x, track_y, w.w * 0.5f, 4.0f, col_accent);
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, w.x + w.w * 0.5f - 6.0f, w.y, 12.0f, w.h, col_accent);
+            } else if (w.widget_type == wm.WIDGET_CHECKBOX()) {
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, w.x, w.y + 2.0f, 16.0f, 16.0f, col_card);
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, w.x + 3.0f, w.y + 5.0f, 10.0f, 10.0f, col_sel_box);
+                app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+                    w.caption, w.x + 24.0f, w.y + 3.0f, col_text);
+            }
+
+            // Selection bounding box highlight
+            if (wi == canvas.selected_idx) {
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, w.x - 2.0f, w.y - 2.0f, w.w + 4.0f, 2.0f, col_sel_box);
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, w.x - 2.0f, w.y + w.h, w.w + 4.0f, 2.0f, col_sel_box);
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, w.x - 2.0f, w.y - 2.0f, 2.0f, w.h + 4.0f, col_sel_box);
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, w.x + w.w, w.y - 2.0f, 2.0f, w.h + 4.0f, col_sel_box);
+
+                // Corner handles
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, w.x - 4.0f, w.y - 4.0f, 6.0f, 6.0f, col_sel_box);
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, w.x + w.w - 2.0f, w.y - 4.0f, 6.0f, 6.0f, col_sel_box);
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, w.x - 4.0f, w.y + w.h - 2.0f, 6.0f, 6.0f, col_sel_box);
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, w.x + w.w - 2.0f, w.y + w.h - 2.0f, 6.0f, 6.0f, col_sel_box);
+            }
+
+            wi = wi + 1;
+        }
+
+        // ── Right Inspector Panel ─────────────────────────────────────────────
+        float insp_x = W - insp_w;
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, insp_x, top_h, insp_w, H - top_h, col_panel);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, insp_x, top_h, 1.0f, H - top_h, col_grid);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, insp_x, top_h, insp_w, 36.0f, col_header);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "PROPERTIES", insp_x + 14.0f, top_h + 10.0f, col_text);
+
+        if (canvas.selected_idx >= 0 && canvas.selected_idx < canvas.count) {
+            wm.Widget sw = canvas.widgets[canvas.selected_idx];
+            float py = top_h + 50.0f;
+
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Type:", insp_x + 14.0f, py, col_dim);
+            string tn = "Panel";
+            if (sw.widget_type == wm.WIDGET_BUTTON())   { tn = "Button"; }
+            if (sw.widget_type == wm.WIDGET_LABEL())    { tn = "Label"; }
+            if (sw.widget_type == wm.WIDGET_INPUT())    { tn = "Input Box"; }
+            if (sw.widget_type == wm.WIDGET_SLIDER())   { tn = "Slider"; }
+            if (sw.widget_type == wm.WIDGET_CHECKBOX()) { tn = "Checkbox"; }
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, tn, insp_x + 80.0f, py, col_accent);
+
+            py = py + 26.0f;
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Caption:", insp_x + 14.0f, py, col_dim);
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, sw.caption, insp_x + 80.0f, py, col_text);
+
+            py = py + 26.0f;
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "X Pos:", insp_x + 14.0f, py, col_dim);
+            sprintf(b_x, "%.0f px", sw.x);
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, (string)b_x, insp_x + 80.0f, py, col_text);
+
+            py = py + 26.0f;
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Y Pos:", insp_x + 14.0f, py, col_dim);
+            sprintf(b_y, "%.0f px", sw.y);
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, (string)b_y, insp_x + 80.0f, py, col_text);
+
+            py = py + 26.0f;
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Width:", insp_x + 14.0f, py, col_dim);
+            sprintf(b_w, "%.0f px", sw.w);
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, (string)b_w, insp_x + 80.0f, py, col_text);
+
+            py = py + 26.0f;
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Height:", insp_x + 14.0f, py, col_dim);
+            sprintf(b_h, "%.0f px", sw.h);
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, (string)b_h, insp_x + 80.0f, py, col_text);
+
+            // Size nudge buttons
+            py = py + 34.0f;
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Resize Width:", insp_x + 14.0f, py, col_dim);
+            float nw_m = insp_x + 14.0f;
+            float nw_p = insp_x + 70.0f;
+            app.ui_ctx.renderer.push_quad(&app.gl_ctx, nw_m, py + 18.0f, 48.0f, 26.0f, col_card);
+            app.ui_ctx.renderer.push_quad(&app.gl_ctx, nw_p, py + 18.0f, 48.0f, 26.0f, col_card);
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "-10", nw_m + 14.0f, py + 23.0f, col_text);
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "+10", nw_p + 14.0f, py + 23.0f, col_text);
+            if (mb_click == 1) {
+                if (btn_hit(nw_m, py + 18.0f, 48.0f, 26.0f, mx, my) == 1) {
+                    canvas.widgets[canvas.selected_idx].w = canvas.widgets[canvas.selected_idx].w - 10.0f;
+                }
+                if (btn_hit(nw_p, py + 18.0f, 48.0f, 26.0f, mx, my) == 1) {
+                    canvas.widgets[canvas.selected_idx].w = canvas.widgets[canvas.selected_idx].w + 10.0f;
+                }
+            }
+        } else {
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+                "Click a widget to inspect", insp_x + 14.0f, top_h + 50.0f, col_dim);
+        }
+
+        // ── Bottom Code Drawer ────────────────────────────────────────────────
+        float cy_bot = H - code_h;
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, palette_w, cy_bot, canvas_w, code_h, col_code_bg);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, palette_w, cy_bot, canvas_w, 1.0f, col_grid);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, palette_w, cy_bot, canvas_w, 24.0f, col_header);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "GENERATED KALE UI CODE", palette_w + 14.0f, cy_bot + 4.0f, col_dim);
+
+        if (canvas.selected_idx >= 0 && canvas.selected_idx < canvas.count) {
+            wm.Widget sw2 = canvas.widgets[canvas.selected_idx];
+            sprintf(b_code1, "// %s: (%.0f, %.0f) [%.0fx%.0f]", sw2.caption, sw2.x, sw2.y, sw2.w, sw2.h);
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+                (string)b_code1, palette_w + 14.0f, cy_bot + 34.0f, col_dim);
+
+            if (sw2.widget_type == wm.WIDGET_BUTTON()) {
+                sprintf(b_code2, "if (app.ui_ctx.button(win, &app.gl_ctx, \"%.16s\", %.0ff, %.0ff, %.0ff, %.0ff)) {", sw2.caption, sw2.x, sw2.y, sw2.w, sw2.h);
+            } else if (sw2.widget_type == wm.WIDGET_LABEL()) {
+                sprintf(b_code2, "app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, \"%.16s\", %.0ff, %.0ff, col_text);", sw2.caption, sw2.x, sw2.y);
+            } else {
+                sprintf(b_code2, "app.ui_ctx.renderer.push_quad(&app.gl_ctx, %.0ff, %.0ff, %.0ff, %.0ff, col_panel);", sw2.x, sw2.y, sw2.w, sw2.h);
+            }
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+                (string)b_code2, palette_w + 14.0f, cy_bot + 58.0f, col_accent);
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+                "    // handle widget event here", palette_w + 14.0f, cy_bot + 80.0f, col_text);
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+                "}", palette_w + 14.0f, cy_bot + 102.0f, col_accent);
+        } else {
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+                "// Select a widget to inspect generated code", palette_w + 14.0f, cy_bot + 40.0f, col_dim);
+        }
+
+        // ── Status Bar ────────────────────────────────────────────────────────
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, H - 24.0f, W, 24.0f, col_header);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "Drag widgets to move | Click palette to add | Inspector updates live code | ESC quit",
+            14.0f, H - 18.0f, col_dim);
+
+        app.end_frame();
+    }
+
+    canvas.destroy();
+    free(b_x);
+    free(b_y);
+    free(b_w);
+    free(b_h);
+    free(b_code1);
+    free(b_code2);
+
+    app.close();
+    return 0;
+}

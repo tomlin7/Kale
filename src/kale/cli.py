@@ -27,6 +27,11 @@ from .tools.lint import run_lint
 from .tools.doc import run_doc
 from .tools.repl import run_repl
 from .tools.test_runner import run_tests
+from .tools.wasm import run_wasm
+from .tools.disasm import run_disasm
+from .tools.fuzz import run_fuzz
+from .tools.watch import run_watch
+from .tools.bundle import run_bundle
 
 # Configure UTF-8 for console output
 try:
@@ -415,12 +420,50 @@ def cmd_run(args: argparse.Namespace) -> int:
     if backend == "llvm":
         emitter = LLVMEmitter()
         mod = emitter.emit_module(program)
-        jit = LLVMJIT(opt_level=opt)
-        try:
-            return jit.run_ir(str(mod))
-        except Exception as e:
-            print(f"JIT Execution error: {e}", file=sys.stderr)
-            return 1
+        use_jit = getattr(args, "jit", False)
+
+        driver = LLVMDriver()
+        if not use_jit and driver.clang_path:
+            base_name, _ = os.path.splitext(args.file)
+            ll_path = f"{base_name}.tmp.ll"
+            tmp_exe = f"{base_name}.tmp.exe" if os.name == "nt" else f"{base_name}.tmp"
+            with open(ll_path, "w", encoding="utf-8") as f:
+                f.write(str(mod))
+
+            try:
+                extra_libs = getattr(args, "libs", []) or []
+                lib_dirs = getattr(args, "lib_dirs", []) or []
+                binary = driver.compile_ll(
+                    ll_path,
+                    tmp_exe,
+                    opt_level=opt,
+                    extra_libs=extra_libs,
+                    lib_dirs=lib_dirs,
+                )
+                run_cmd = [os.path.abspath(binary)] + (getattr(args, "extra_args", []) or [])
+                res = subprocess.run(run_cmd)
+                return res.returncode
+            except Exception as e:
+                print(f"Execution error: {e}", file=sys.stderr)
+                return 1
+            finally:
+                if os.path.exists(ll_path):
+                    try:
+                        os.remove(ll_path)
+                    except Exception:
+                        pass
+                if os.path.exists(tmp_exe):
+                    try:
+                        os.remove(tmp_exe)
+                    except Exception:
+                        pass
+        else:
+            jit = LLVMJIT(opt_level=opt)
+            try:
+                return jit.run_ir(str(mod))
+            except Exception as e:
+                print(f"JIT Execution error: {e}", file=sys.stderr)
+                return 1
     else:
         emitter = CEmitter()
         c_code = emitter.emit(program)
@@ -706,6 +749,26 @@ def cmd_test(args: argparse.Namespace) -> int:
     return run_tests(targets, jobs=jobs, pattern=pattern)
 
 
+def cmd_wasm(args: argparse.Namespace) -> int:
+    return run_wasm(args)
+
+
+def cmd_disasm(args: argparse.Namespace) -> int:
+    return run_disasm(args)
+
+
+def cmd_fuzz(args: argparse.Namespace) -> int:
+    return run_fuzz(args)
+
+
+def cmd_watch(args: argparse.Namespace) -> int:
+    return run_watch(args)
+
+
+def cmd_bundle(args: argparse.Namespace) -> int:
+    return run_bundle(args)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="kale", description="Kale Programming Language Compiler & Package Manager")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -728,6 +791,9 @@ def main() -> int:
     p_run.add_argument("target", nargs="?", default=None, help="Script name in kale.toml or path to .kl source file")
     p_run.add_argument("--backend", choices=["llvm", "c"], default=None, help="Backend compiler (default: llvm or manifest build.backend)")
     p_run.add_argument("--opt", type=int, choices=[0, 1, 2, 3], default=None, help="Optimization level (0-3, default: 2 or manifest build.opt)")
+    p_run.add_argument("--jit", action="store_true", help="Execute using in-memory LLVM JIT instead of native compilation")
+    p_run.add_argument("-l", "--lib", action="append", default=[], dest="libs", help="Additional libraries to link (e.g. -lglfw3)")
+    p_run.add_argument("-L", "--lib-dir", action="append", default=[], dest="lib_dirs", help="Additional library search directories")
     p_run.add_argument("-I", "--include", action="append", default=[], dest="includes", help="Additional module search directories")
     p_run.add_argument("extra_args", nargs="*", help="Arguments to pass to compiled program or script")
 
@@ -835,6 +901,34 @@ def main() -> int:
     p_test.add_argument("-j", "--jobs", type=int, default=4, help="Number of concurrent test worker jobs (default: 4)")
     p_test.add_argument("-k", "--pattern", help="Filter tests by name pattern")
 
+    # wasm
+    p_wasm = subparsers.add_parser("wasm", help="Inspect and disassemble WebAssembly (.wasm) modules")
+    p_wasm.add_argument("file", help="Path to .wasm binary module")
+    p_wasm.add_argument("-v", "--verbose", action="store_true", help="Print verbose section details and exports")
+
+    # disasm
+    p_disasm = subparsers.add_parser("disasm", help="Disassemble native binary executables and object files")
+    p_disasm.add_argument("file", help="Path to executable or object file")
+    p_disasm.add_argument("-s", "--symbol", help="Disassemble specific symbol/function name")
+
+    # fuzz
+    p_fuzz = subparsers.add_parser("fuzz", help="Mutation-guided fuzzer for Kale compiler frontend")
+    p_fuzz.add_argument("-n", "--iterations", type=int, default=1000, help="Number of fuzzing iterations (default: 1000)")
+    p_fuzz.add_argument("-o", "--out", default="tests/fuzz_corpus", help="Directory to save crashing inputs")
+
+    # watch
+    p_watch = subparsers.add_parser("watch", help="Watch project files and automatically rebuild on change")
+    p_watch.add_argument("target", nargs="?", default=".", help="Directory to monitor (default: current directory)")
+    p_watch.add_argument("-c", "--command", dest="action", choices=["check", "build", "run"], default="check", help="Action to trigger on change")
+    p_watch.add_argument("-i", "--interval", type=float, default=0.5, help="Polling interval in seconds (default: 0.5)")
+
+    # bundle
+    p_bundle = subparsers.add_parser("bundle", help="Package a Kale application into a standalone distribution bundle")
+    p_bundle.add_argument("target", help="Path to compiled executable")
+    p_bundle.add_argument("-o", "--out", default="dist", help="Output distribution directory (default: dist/)")
+    p_bundle.add_argument("-z", "--zip", action="store_true", help="Create a compressed .zip bundle archive")
+    p_bundle.add_argument("-a", "--asset", action="append", default=[], dest="assets", help="Extra asset files or directories to include")
+
     args, unknown = parser.parse_known_args()
 
     # If running a script, allow unknown args to be passed forward
@@ -866,6 +960,11 @@ def main() -> int:
         "doc": cmd_doc,
         "repl": cmd_repl,
         "test": cmd_test,
+        "wasm": cmd_wasm,
+        "disasm": cmd_disasm,
+        "fuzz": cmd_fuzz,
+        "watch": cmd_watch,
+        "bundle": cmd_bundle,
     }
 
     cmd_fn = commands.get(args.command)

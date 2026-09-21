@@ -1,0 +1,69 @@
+// apps/ui_designer/widget_model.kl
+// Widget data model for WYSIWYG UI designer
+
+// Widget types
+int WIDGET_PANEL()    { return 0; }
+int WIDGET_BUTTON()   { return 1; }
+int WIDGET_LABEL()    { return 2; }
+int WIDGET_INPUT()    { return 3; }
+int WIDGET_SLIDER()   { return 4; }
+int WIDGET_CHECKBOX() { return 5; }
+
+struct Widget {
+    int   widget_type;
+    float x;
+    float y;
+    float w;
+    float h;
+    string caption;
+    int   active;
+    int   value_int;
+}
+
+struct WidgetCanvas {
+    Widget* widgets;
+    int     count;
+    int     capacity;
+    int     selected_idx;
+}
+
+fn void WidgetCanvas.init() {
+    this->capacity = 64;
+    this->count = 0;
+    this->selected_idx = -1;
+    this->widgets = alloc(Widget, 64);
+}
+
+fn void WidgetCanvas.add_widget(int w_type, float x, float y, float w, float h, string caption) {
+    if (this->count >= this->capacity) { return; }
+    int i = this->count;
+    this->widgets[i].widget_type = w_type;
+    this->widgets[i].x = x;
+    this->widgets[i].y = y;
+    this->widgets[i].w = w;
+    this->widgets[i].h = h;
+    this->widgets[i].caption = caption;
+    this->widgets[i].active = 1;
+    this->widgets[i].value_int = 50;
+    this->selected_idx = i;
+    this->count = i + 1;
+}
+
+fn int WidgetCanvas.hit_test(float mx, float my) {
+    int i = this->count - 1;
+    while (i >= 0) {
+        Widget* w = &this->widgets[i];
+        if (mx >= w->x && mx <= w->x + w->w && my >= w->y && my <= w->y + w->h) {
+            return i;
+        }
+        i = i - 1;
+    }
+    return -1;
+}
+
+fn void WidgetCanvas.destroy() {
+    if (this->widgets != (Widget*)0) {
+        free(this->widgets);
+        this->widgets = (Widget*)0;
+    }
+}

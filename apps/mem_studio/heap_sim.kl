@@ -1,0 +1,161 @@
+// apps/mem_studio/heap_sim.kl
+// Heap allocation simulator and memory block tracker
+
+struct HeapBlock {
+    int offset;   // KB offset in heap
+    int size;     // KB size
+    int is_free;  // 1 = free, 0 = allocated
+    int tag_id;   // 0=Free, 1=Renderer, 2=Audio, 3=Assets, 4=Scripts, 5=Leak
+}
+
+struct HeapManager {
+    HeapBlock* blocks;
+    int        count;
+    int        capacity;
+    int        total_kb;
+    int        used_kb;
+}
+
+fn void HeapManager.init(int total_kb) {
+    this->capacity = 256;
+    this->count    = 0;
+    this->total_kb = total_kb;
+    this->used_kb  = 0;
+    this->blocks   = alloc(HeapBlock, 256);
+}
+
+fn void HeapManager.seed() {
+    this->count = 0;
+    this->used_kb = 0;
+
+    // Seed alternating realistic allocation blocks
+    int cur_off = 0;
+    int i = 0;
+    while (i < 24 && cur_off < this->total_kb - 1024) {
+        int sz = 512 + ((i * 37) % 2048);
+        int free_flag = 0;
+        if ((i % 4) == 1) { free_flag = 1; }
+        int t = 1 + (i % 4);
+
+        int idx = this->count;
+        this->blocks[idx].offset  = cur_off;
+        this->blocks[idx].size    = sz;
+        this->blocks[idx].is_free = free_flag;
+        this->blocks[idx].tag_id  = t;
+        if (free_flag == 1) {
+            this->blocks[idx].tag_id = 0;
+        } else {
+            this->used_kb = this->used_kb + sz;
+        }
+
+        this->count = idx + 1;
+        cur_off = cur_off + sz;
+        i = i + 1;
+    }
+
+    // Remaining block is free
+    if (cur_off < this->total_kb) {
+        int rem_idx = this->count;
+        this->blocks[rem_idx].offset  = cur_off;
+        this->blocks[rem_idx].size    = this->total_kb - cur_off;
+        this->blocks[rem_idx].is_free = 1;
+        this->blocks[rem_idx].tag_id  = 0;
+        this->count = rem_idx + 1;
+    }
+}
+
+fn void HeapManager.allocate(int sz_kb, int tag_id) {
+    // Find first fit free block
+    int i = 0;
+    while (i < this->count) {
+        if (this->blocks[i].is_free == 1 && this->blocks[i].size >= sz_kb) {
+            if (this->blocks[i].size == sz_kb || this->count >= this->capacity - 1) {
+                this->blocks[i].is_free = 0;
+                this->blocks[i].tag_id  = tag_id;
+                this->used_kb = this->used_kb + sz_kb;
+                return;
+            } else {
+                // Split block
+                int rem = this->blocks[i].size - sz_kb;
+                int off = this->blocks[i].offset;
+
+                this->blocks[i].size    = sz_kb;
+                this->blocks[i].is_free = 0;
+                this->blocks[i].tag_id  = tag_id;
+                this->used_kb = this->used_kb + sz_kb;
+
+                // Shift rest to insert new free block
+                int j = this->count;
+                while (j > i + 1) {
+                    this->blocks[j] = this->blocks[j - 1];
+                    j = j - 1;
+                }
+                this->blocks[i + 1].offset  = off + sz_kb;
+                this->blocks[i + 1].size    = rem;
+                this->blocks[i + 1].is_free = 1;
+                this->blocks[i + 1].tag_id  = 0;
+                this->count = this->count + 1;
+                return;
+            }
+        }
+        i = i + 1;
+    }
+}
+
+fn void HeapManager.free_random() {
+    int i = 0;
+    while (i < this->count) {
+        if (this->blocks[i].is_free == 0 && this->blocks[i].tag_id != 5) {
+            this->blocks[i].is_free = 1;
+            this->used_kb = this->used_kb - this->blocks[i].size;
+            this->blocks[i].tag_id  = 0;
+            return;
+        }
+        i = i + 1;
+    }
+}
+
+fn void HeapManager.defrag() {
+    // Simple compaction: pack all allocated blocks to left
+    int cur_off = 0;
+    int total_alloc = 0;
+    int i = 0;
+    while (i < this->count) {
+        if (this->blocks[i].is_free == 0) {
+            this->blocks[i].offset = cur_off;
+            cur_off = cur_off + this->blocks[i].size;
+            total_alloc = total_alloc + this->blocks[i].size;
+        }
+        i = i + 1;
+    }
+
+    // Now compact array: keep allocated blocks, append single free block at end
+    int write_idx = 0;
+    i = 0;
+    while (i < this->count) {
+        if (this->blocks[i].is_free == 0) {
+            this->blocks[write_idx] = this->blocks[i];
+            write_idx = write_idx + 1;
+        }
+        i = i - 0 + 1;
+    }
+
+    // Append big free block
+    if (cur_off < this->total_kb) {
+        this->blocks[write_idx].offset  = cur_off;
+        this->blocks[write_idx].size    = this->total_kb - cur_off;
+        this->blocks[write_idx].is_free = 1;
+        this->blocks[write_idx].tag_id  = 0;
+        write_idx = write_idx + 1;
+    }
+
+    this->count = write_idx;
+    this->used_kb = total_alloc;
+}
+
+fn void HeapManager.destroy() {
+    if (this->blocks != (HeapBlock*)0) {
+        free(this->blocks);
+        this->blocks = (HeapBlock*)0;
+    }
+}

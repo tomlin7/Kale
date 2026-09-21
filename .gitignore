@@ -3,8 +3,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# C extensions
+# C extensions / DLLs
 *.so
+*.dll
+!libs/**/bin/*.dll
 
 # Distribution / packaging
 .Python

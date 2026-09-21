@@ -1,0 +1,140 @@
+// apps/node_graph/node_types.kl
+// Data structures for node graph canvas, nodes, and pin connections
+
+import "libs/render/math.kl" as rmath;
+
+struct NodePin {
+    string name;
+    bool is_output; // false = input, true = output
+    int data_type;  // 0 = float, 1 = vec3/color, 2 = texture
+}
+
+struct GraphNode {
+    int id;
+    string title;
+    int node_type; // 0=Constant, 1=Math Add, 2=Math Mul, 3=Color Ramp, 4=Output
+    float x;
+    float y;
+    float width;
+    float height;
+    float val1;
+    float val2;
+    rmath.Color color_val;
+    bool is_selected;
+}
+
+struct NodeConnection {
+    int from_node_id;
+    int from_pin_idx;
+    int to_node_id;
+    int to_pin_idx;
+}
+
+struct NodeGraph {
+    GraphNode* nodes;
+    int node_count;
+    int max_nodes;
+
+    NodeConnection* connections;
+    int connection_count;
+    int max_connections;
+
+    int selected_node_idx;
+    float pan_x;
+    float pan_y;
+    float zoom;
+}
+
+fn void NodeGraph.init() {
+    this->max_nodes = 32;
+    this->node_count = 0;
+    this->nodes = alloc(GraphNode, this->max_nodes);
+
+    this->max_connections = 64;
+    this->connection_count = 0;
+    this->connections = alloc(NodeConnection, this->max_connections);
+
+    this->selected_node_idx = 0;
+    this->pan_x = 40.0f;
+    this->pan_y = 60.0f;
+    this->zoom = 1.0f;
+
+    // Create 4 initial nodes demonstrating a shader dataflow
+    // Node 0: Constant Float (Roughness)
+    this->nodes[0].id = 0;
+    this->nodes[0].title = "Float Constant";
+    this->nodes[0].node_type = 0;
+    this->nodes[0].x = 100.0f;
+    this->nodes[0].y = 120.0f;
+    this->nodes[0].width = 160.0f;
+    this->nodes[0].height = 90.0f;
+    this->nodes[0].val1 = 0.65f;
+    this->nodes[0].val2 = 0.0f;
+    this->nodes[0].is_selected = false;
+
+    // Node 1: Base Color
+    this->nodes[1].id = 1;
+    this->nodes[1].title = "Color Input";
+    this->nodes[1].node_type = 3;
+    this->nodes[1].x = 100.0f;
+    this->nodes[1].y = 260.0f;
+    this->nodes[1].width = 160.0f;
+    this->nodes[1].height = 110.0f;
+    this->nodes[1].color_val = rmath.color_rgba(0.25f, 0.65f, 0.95f, 1.0f);
+    this->nodes[1].is_selected = false;
+
+    // Node 2: Math Multiply
+    this->nodes[2].id = 2;
+    this->nodes[2].title = "Math Multiply";
+    this->nodes[2].node_type = 2;
+    this->nodes[2].x = 340.0f;
+    this->nodes[2].y = 180.0f;
+    this->nodes[2].width = 160.0f;
+    this->nodes[2].height = 100.0f;
+    this->nodes[2].val1 = 1.5f;
+    this->nodes[2].val2 = 1.0f;
+    this->nodes[2].is_selected = true;
+
+    // Node 3: PBR Master Output
+    this->nodes[3].id = 3;
+    this->nodes[3].title = "PBR Material Output";
+    this->nodes[3].node_type = 4;
+    this->nodes[3].x = 580.0f;
+    this->nodes[3].y = 150.0f;
+    this->nodes[3].width = 180.0f;
+    this->nodes[3].height = 140.0f;
+    this->nodes[3].is_selected = false;
+
+    this->node_count = 4;
+
+    // Connect Node 0 -> Node 2
+    this->connections[0].from_node_id = 0;
+    this->connections[0].from_pin_idx = 0;
+    this->connections[0].to_node_id = 2;
+    this->connections[0].to_pin_idx = 0;
+
+    // Connect Node 1 -> Node 2
+    this->connections[1].from_node_id = 1;
+    this->connections[1].from_pin_idx = 0;
+    this->connections[1].to_node_id = 2;
+    this->connections[1].to_pin_idx = 1;
+
+    // Connect Node 2 -> Node 3
+    this->connections[2].from_node_id = 2;
+    this->connections[2].from_pin_idx = 0;
+    this->connections[2].to_node_id = 3;
+    this->connections[2].to_pin_idx = 0;
+
+    this->connection_count = 3;
+}
+
+fn void NodeGraph.destroy() {
+    if (this->nodes != (GraphNode*)0) {
+        free(this->nodes);
+        this->nodes = (GraphNode*)0;
+    }
+    if (this->connections != (NodeConnection*)0) {
+        free(this->connections);
+        this->connections = (NodeConnection*)0;
+    }
+}

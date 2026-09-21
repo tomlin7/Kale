@@ -1,0 +1,362 @@
+// apps/font_forge/main.kl
+// Kale Font Forge — TrueType Glyph Inspector & Signed Distance Field Atlas Baker
+
+import "libs/framework/app.kl" as fw;
+import "libs/glfw/glfw.kl" as glfw;
+import "libs/glfw/constants.kl" as glc;
+import "libs/glfw/input.kl" as ginput;
+import "libs/render/math.kl" as rmath;
+import "apps/font_forge/glyph_data.kl" as gd;
+import "apps/font_forge/atlas_view.kl" as av;
+
+extern int printf(string fmt, ...);
+extern int sprintf(char* buf, string fmt, ...);
+extern void* malloc(int size);
+
+fn void draw_line_simple(fw.App* app, float x1, float y1, float x2, float y2, rmath.Color col) {
+    float dx = x2 - x1;
+    float dy = y2 - y1;
+    float len2 = dx * dx + dy * dy;
+    if (len2 < 0.5f) { return; }
+    int steps = 24;
+    int i = 0;
+    while (i <= steps) {
+        float t = (float)i / (float)steps;
+        float px = x1 + dx * t;
+        float py = y1 + dy * t;
+        app->ui_ctx.renderer.push_quad(&app->gl_ctx, px - 1.0f, py - 1.0f, 2.5f, 2.5f, col);
+        i = i + 1;
+    }
+}
+
+fn int main() {
+    fw.AppConfig cfg;
+    cfg.init("Kale Font Forge — Glyph Inspector & SDF Atlas Baker", 1280, 768);
+
+    fw.App app;
+    int ok = app.init(cfg);
+    if (ok == 0) {
+        printf("Fatal: could not open Font Forge window\n");
+        return 1;
+    }
+
+    int selected_glyph_idx = 0;
+    gd.GlyphOutline glyph = gd.make_sample_glyph(0);
+    av.AtlasConfig atlas_cfg = av.atlas_config_default();
+
+    int view_mode = 0; // 0 = Outline, 1 = SDF Field
+    int show_points = 1;
+    int pk_1 = 0; int pk_2 = 0; int pk_3 = 0; int pk_4 = 0; int pk_5 = 0; int pk_6 = 0;
+    int pk_v = 0; int pk_p = 0; int pk_esc = 0;
+
+    // Allocate metric display string buffers
+    char* m_adv = (char*)malloc(32);
+    char* m_lsb = (char*)malloc(32);
+    char* m_pts = (char*)malloc(32);
+    char* m_cp  = (char*)malloc(32);
+
+    // Color definitions
+    rmath.Color col_bg       = rmath.color_hex(0x0D1117);
+    rmath.Color col_header   = rmath.color_hex(0x161B22);
+    rmath.Color col_panel    = rmath.color_rgba(0.08f, 0.09f, 0.12f, 1.0f);
+    rmath.Color col_card     = rmath.color_hex(0x21262D);
+    rmath.Color col_accent   = rmath.color_hex(0x58A6FF);
+    rmath.Color col_text     = rmath.color_hex(0xE6EDF3);
+    rmath.Color col_dim      = rmath.color_hex(0x6E7681);
+    rmath.Color col_grid     = rmath.color_rgba(0.18f, 0.22f, 0.28f, 1.0f);
+    rmath.Color col_guide    = rmath.color_rgba(0.8f, 0.3f, 0.3f, 0.6f);
+    rmath.Color col_baseline = rmath.color_rgba(0.3f, 0.7f, 0.3f, 0.8f);
+    rmath.Color col_advline  = rmath.color_rgba(0.3f, 0.5f, 0.9f, 0.8f);
+    rmath.Color col_pt_on    = rmath.color_hex(0x3FB950); // green for on-curve
+    rmath.Color col_pt_off   = rmath.color_hex(0xF0883E); // orange for off-curve
+    rmath.Color col_wire     = rmath.color_hex(0x79C0FF);
+    rmath.Color col_active   = rmath.color_hex(0x1F6FEB);
+    rmath.Color col_sdf_grad = rmath.color_rgba(0.2f, 0.4f, 0.7f, 0.25f);
+
+    void* win = app.window;
+
+    while (glfw.glfwWindowShouldClose(app.window) == 0) {
+        app.begin_frame();
+        win = app.window;
+        float W = (float)app.width;
+        float H = (float)app.height;
+
+        // Input
+        int k1 = ginput.glfwGetKey(win, glc.GLFW_KEY_1());
+        if (k1 == glc.GLFW_PRESS() && pk_1 == 0) {
+            glyph.destroy();
+            selected_glyph_idx = 0;
+            glyph = gd.make_sample_glyph(0);
+        }
+        pk_1 = k1;
+
+        int k2 = ginput.glfwGetKey(win, glc.GLFW_KEY_2());
+        if (k2 == glc.GLFW_PRESS() && pk_2 == 0) {
+            glyph.destroy();
+            selected_glyph_idx = 1;
+            glyph = gd.make_sample_glyph(1);
+        }
+        pk_2 = k2;
+
+        int k3 = ginput.glfwGetKey(win, glc.GLFW_KEY_3());
+        if (k3 == glc.GLFW_PRESS() && pk_3 == 0) {
+            glyph.destroy();
+            selected_glyph_idx = 2;
+            glyph = gd.make_sample_glyph(2);
+        }
+        pk_3 = k3;
+
+        int k4 = ginput.glfwGetKey(win, glc.GLFW_KEY_4());
+        if (k4 == glc.GLFW_PRESS() && pk_4 == 0) {
+            glyph.destroy();
+            selected_glyph_idx = 3;
+            glyph = gd.make_sample_glyph(3);
+        }
+        pk_4 = k4;
+
+        int k5 = ginput.glfwGetKey(win, glc.GLFW_KEY_5());
+        if (k5 == glc.GLFW_PRESS() && pk_5 == 0) {
+            glyph.destroy();
+            selected_glyph_idx = 4;
+            glyph = gd.make_sample_glyph(4);
+        }
+        pk_5 = k5;
+
+        int k6 = ginput.glfwGetKey(win, glc.GLFW_KEY_6());
+        if (k6 == glc.GLFW_PRESS() && pk_6 == 0) {
+            glyph.destroy();
+            selected_glyph_idx = 5;
+            glyph = gd.make_sample_glyph(5);
+        }
+        pk_6 = k6;
+
+        int kv = ginput.glfwGetKey(win, glc.GLFW_KEY_V());
+        if (kv == glc.GLFW_PRESS() && pk_v == 0) {
+            if (view_mode == 0) { view_mode = 1; } else { view_mode = 0; }
+        }
+        pk_v = kv;
+
+        int kp = ginput.glfwGetKey(win, glc.GLFW_KEY_P());
+        if (kp == glc.GLFW_PRESS() && pk_p == 0) {
+            if (show_points == 0) { show_points = 1; } else { show_points = 0; }
+        }
+        pk_p = kp;
+
+        int ke = ginput.glfwGetKey(win, glc.GLFW_KEY_ESCAPE());
+        if (ke == glc.GLFW_PRESS() && pk_esc == 0) {
+            glfw.glfwSetWindowShouldClose(app.window, 1);
+        }
+        pk_esc = ke;
+
+        // ── Background ────────────────────────────────────────────────────────
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, 0.0f, W, H, col_bg);
+
+        // ── Top Header Bar ────────────────────────────────────────────────────
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, 0.0f, W, 46.0f, col_header);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "KALE FONT FORGE", 18.0f, 13.0f, col_accent);
+
+        // Glyph selection tabs
+        float tx = 220.0f;
+        string glyph_names[6];
+        glyph_names[0] = "1: 'A'"; glyph_names[1] = "2: 'B'";
+        glyph_names[2] = "3: 'C'"; glyph_names[3] = "4: 'G'";
+        glyph_names[4] = "5: '0'"; glyph_names[5] = "6: '@'";
+
+        int ti = 0;
+        while (ti < 6) {
+            rmath.Color tc = col_card;
+            if (ti == selected_glyph_idx) { tc = col_active; }
+            app.ui_ctx.renderer.push_quad(&app.gl_ctx, tx + (float)ti * 72.0f, 7.0f, 66.0f, 32.0f, tc);
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+                glyph_names[ti], tx + (float)ti * 72.0f + 10.0f, 15.0f, col_text);
+            ti = ti + 1;
+        }
+
+        // View mode toggle button indicator
+        rmath.Color vmc = col_card;
+        if (view_mode == 1) { vmc = col_accent; }
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, tx + 6.0f * 72.0f + 16.0f, 7.0f, 110.0f, 32.0f, vmc);
+        if (view_mode == 0) {
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+                "V: Vector", tx + 6.0f * 72.0f + 24.0f, 15.0f, col_text);
+        } else {
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+                "V: SDF View", tx + 6.0f * 72.0f + 24.0f, 15.0f, col_header);
+        }
+
+        // ── Main Glyph Canvas (Left Area) ─────────────────────────────────────
+        float canvas_x = 20.0f;
+        float canvas_y = 60.0f;
+        float canvas_w = 580.0f;
+        float canvas_h = H - 100.0f;
+
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, canvas_x, canvas_y, canvas_w, canvas_h, col_panel);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, canvas_x, canvas_y, canvas_w, 1.0f, col_grid);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, canvas_x, canvas_y + canvas_h - 1.0f, canvas_w, 1.0f, col_grid);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, canvas_x, canvas_y, 1.0f, canvas_h, col_grid);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, canvas_x + canvas_w - 1.0f, canvas_y, 1.0f, canvas_h, col_grid);
+
+        // Coordinate scaling
+        float origin_x = canvas_x + 80.0f;
+        float baseline_y = canvas_y + canvas_h - 120.0f;
+        float scale = 0.52f;
+
+        // Draw guideline: Baseline
+        draw_line_simple(&app, canvas_x, baseline_y, canvas_x + canvas_w, baseline_y, col_baseline);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "Baseline (y=0)", canvas_x + 10.0f, baseline_y - 14.0f, col_baseline);
+
+        // Draw guideline: Ascender (800)
+        float asc_y = baseline_y - 700.0f * scale;
+        draw_line_simple(&app, canvas_x, asc_y, canvas_x + canvas_w, asc_y, col_guide);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "Ascender (+700)", canvas_x + 10.0f, asc_y - 14.0f, col_guide);
+
+        // Draw guideline: Descender (-200)
+        float desc_y = baseline_y - (-200.0f) * scale;
+        draw_line_simple(&app, canvas_x, desc_y, canvas_x + canvas_w, desc_y, col_guide);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "Descender (-200)", canvas_x + 10.0f, desc_y + 4.0f, col_guide);
+
+        // Draw guideline: Advance width line
+        float adv_x = origin_x + (float)glyph.advance_width * scale;
+        draw_line_simple(&app, adv_x, canvas_y, adv_x, canvas_y + canvas_h, col_advline);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "Advance", adv_x + 4.0f, canvas_y + 10.0f, col_advline);
+
+        // Draw glyph contours
+        if (view_mode == 1) {
+            // SDF gradient overlay simulation
+            int si = 0;
+            while (si < glyph.point_count) {
+                float sx = origin_x + glyph.points[si].x * scale;
+                float sy = baseline_y - glyph.points[si].y * scale;
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, sx - 25.0f, sy - 25.0f, 50.0f, 50.0f, col_sdf_grad);
+                si = si + 1;
+            }
+        }
+
+        // Draw outline segments
+        int pi = 0;
+        while (pi < glyph.point_count) {
+            int next_pi = (pi + 1) % glyph.point_count;
+            float x1 = origin_x + glyph.points[pi].x * scale;
+            float y1 = baseline_y - glyph.points[pi].y * scale;
+            float x2 = origin_x + glyph.points[next_pi].x * scale;
+            float y2 = baseline_y - glyph.points[next_pi].y * scale;
+
+            draw_line_simple(&app, x1, y1, x2, y2, col_wire);
+            pi = pi + 1;
+        }
+
+        // Draw outline control points
+        if (show_points == 1) {
+            int cpi = 0;
+            while (cpi < glyph.point_count) {
+                float px = origin_x + glyph.points[cpi].x * scale;
+                float py = baseline_y - glyph.points[cpi].y * scale;
+                rmath.Color pc = col_pt_on;
+                if (glyph.points[cpi].on_curve == 0) { pc = col_pt_off; }
+
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, px - 4.0f, py - 4.0f, 8.0f, 8.0f, pc);
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, px - 2.0f, py - 2.0f, 4.0f, 4.0f, col_bg);
+                cpi = cpi + 1;
+            }
+        }
+
+        // ── Atlas Preview (Center Area) ───────────────────────────────────────
+        float atlas_x = canvas_x + canvas_w + 20.0f;
+        float atlas_y = 60.0f;
+        float atlas_w = 360.0f;
+        float atlas_h = 360.0f;
+
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "SDF Texture Atlas (512x512)", atlas_x, atlas_y - 18.0f, col_dim);
+        av.draw_atlas_grid(&app.ui_ctx.renderer, &app.gl_ctx, atlas_x, atlas_y, atlas_w, atlas_h, &atlas_cfg, selected_glyph_idx);
+
+        // Atlas stats
+        float as_y = atlas_y + atlas_h + 16.0f;
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, atlas_x, as_y, atlas_w, 140.0f, col_panel);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "BAKER SETTINGS", atlas_x + 12.0f, as_y + 10.0f, col_accent);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "Resolution: 512 x 512 RGBA8", atlas_x + 12.0f, as_y + 36.0f, col_text);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "Cell Size: 64 x 64 px (64 glyphs)", atlas_x + 12.0f, as_y + 58.0f, col_dim);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "Padding: 4px outer edge", atlas_x + 12.0f, as_y + 80.0f, col_dim);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "Distance Field Spread: 8.0px", atlas_x + 12.0f, as_y + 102.0f, col_dim);
+
+        // ── Metrics Inspector Panel (Right Area) ──────────────────────────────
+        float insp_x = atlas_x + atlas_w + 20.0f;
+        float insp_y = 60.0f;
+        float insp_w = W - insp_x - 20.0f;
+        float insp_h = canvas_h;
+
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, insp_x, insp_y, insp_w, insp_h, col_panel);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, insp_x, insp_y, insp_w, 36.0f, col_header);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "Glyph Metrics", insp_x + 12.0f, insp_y + 10.0f, col_text);
+
+        float iy = insp_y + 50.0f;
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Codepoint:", insp_x + 12.0f, iy, col_dim);
+        sprintf(m_cp, "U+%04X ('%c')", (int)glyph.codepoint, glyph.codepoint);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, (string)m_cp, insp_x + 110.0f, iy, col_accent);
+
+        iy = iy + 30.0f;
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Advance:", insp_x + 12.0f, iy, col_dim);
+        sprintf(m_adv, "%d FUnits", glyph.advance_width);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, (string)m_adv, insp_x + 110.0f, iy, col_text);
+
+        iy = iy + 30.0f;
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "LSB:", insp_x + 12.0f, iy, col_dim);
+        sprintf(m_lsb, "%d FUnits", glyph.left_side_bearing);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, (string)m_lsb, insp_x + 110.0f, iy, col_text);
+
+        iy = iy + 30.0f;
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Point Count:", insp_x + 12.0f, iy, col_dim);
+        sprintf(m_pts, "%d points", glyph.point_count);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, (string)m_pts, insp_x + 110.0f, iy, col_text);
+
+        iy = iy + 40.0f;
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, insp_x + 12.0f, iy, insp_w - 24.0f, 1.0f, col_grid);
+
+        iy = iy + 14.0f;
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "LEGEND", insp_x + 12.0f, iy, col_dim);
+
+        iy = iy + 26.0f;
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, insp_x + 12.0f, iy + 4.0f, 10.0f, 10.0f, col_pt_on);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "On-curve point", insp_x + 30.0f, iy, col_text);
+
+        iy = iy + 26.0f;
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, insp_x + 12.0f, iy + 4.0f, 10.0f, 10.0f, col_pt_off);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Control point (off)", insp_x + 30.0f, iy, col_text);
+
+        iy = iy + 26.0f;
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, insp_x + 12.0f, iy + 4.0f, 10.0f, 10.0f, col_baseline);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Baseline", insp_x + 30.0f, iy, col_text);
+
+        iy = iy + 26.0f;
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, insp_x + 12.0f, iy + 4.0f, 10.0f, 10.0f, col_guide);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Ascent / Descent", insp_x + 30.0f, iy, col_text);
+
+        // ── Bottom Status Bar ─────────────────────────────────────────────────
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, H - 28.0f, W, 28.0f, col_header);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "1-6: Switch Glyph | V: Toggle SDF View | P: Toggle Points | ESC: Exit",
+            14.0f, H - 18.0f, col_dim);
+
+        app.end_frame();
+    }
+
+    glyph.destroy();
+    free(m_adv);
+    free(m_lsb);
+    free(m_pts);
+    free(m_cp);
+
+    app.close();
+    return 0;
+}

@@ -1,0 +1,477 @@
+// apps/calc/main.kl
+// Kale Calc — Programmer Calculator: base conversions + 64-bit bit matrix
+
+import "libs/framework/app.kl" as fw;
+import "libs/glfw/glfw.kl" as glfw;
+import "libs/glfw/constants.kl" as glc;
+import "libs/glfw/input.kl" as ginput;
+import "libs/render/math.kl" as rmath;
+
+extern int printf(string fmt, ...);
+extern int sprintf(string buf, string fmt, ...);
+extern int snprintf(string buf, int n, string fmt, ...);
+extern int strlen(string s);
+extern void* malloc(int size);
+
+// ─── Calculator state ─────────────────────────────────────────────────────────
+
+struct CalcState {
+    int value;         // current 32-bit integer value
+    int base;          // 2, 8, 10, 16
+    int entry_mode;    // 0=idle 1=entering
+    int acc;           // accumulator for key entry
+    int pending_op;    // 0=none 1=AND 2=OR 3=XOR 4=NOT 5=SHL 6=SHR 7=ADD 8=SUB
+    int lhs;           // left-hand side for binary ops
+    int word_size;     // 8, 16, 32
+}
+
+fn CalcState calc_init() {
+    CalcState s;
+    s.value      = 0;
+    s.base       = 16;
+    s.entry_mode = 0;
+    s.acc        = 0;
+    s.pending_op = 0;
+    s.lhs        = 0;
+    s.word_size  = 32;
+    return s;
+}
+
+fn int calc_mask(CalcState* s) {
+    if (s->word_size == 8)  { return 0xFF; }
+    if (s->word_size == 16) { return 0xFFFF; }
+    return 0x7FFFFFFF;
+}
+
+fn void calc_apply(CalcState* s) {
+    if (s->pending_op == 0) { return; }
+    int a = s->lhs;
+    int b = s->acc;
+    int mask = calc_mask(s);
+    if (s->pending_op == 1) { s->value = (a & b) & mask; }
+    if (s->pending_op == 2) { s->value = (a | b) & mask; }
+    if (s->pending_op == 3) { s->value = (a ^ b) & mask; }
+    if (s->pending_op == 4) { s->value = (~a) & mask; }
+    if (s->pending_op == 5) { s->value = (a << b) & mask; }
+    if (s->pending_op == 6) { s->value = (a >> b) & mask; }
+    if (s->pending_op == 7) { s->value = (a + b) & mask; }
+    if (s->pending_op == 8) { s->value = (a - b) & mask; }
+    s->acc       = s->value;
+    s->lhs       = 0;
+    s->pending_op = 0;
+    s->entry_mode = 0;
+}
+
+fn int calc_digit_valid(CalcState* s, int digit) {
+    if (s->base == 2  && digit > 1)  { return 0; }
+    if (s->base == 8  && digit > 7)  { return 0; }
+    if (s->base == 10 && digit > 9)  { return 0; }
+    return 1;
+}
+
+fn void calc_enter_digit(CalcState* s, int digit) {
+    if (calc_digit_valid(s, digit) == 0) { return; }
+    if (s->entry_mode == 0) {
+        s->acc = 0;
+        s->entry_mode = 1;
+    }
+    s->acc = s->acc * s->base + digit;
+    s->acc = s->acc & calc_mask(s);
+    s->value = s->acc;
+}
+
+fn void calc_set_op(CalcState* s, int op) {
+    s->lhs = s->acc;
+    if (s->entry_mode == 0) { s->lhs = s->value; }
+    s->pending_op = op;
+    s->entry_mode = 0;
+    s->acc = 0;
+}
+
+fn void calc_not(CalcState* s) {
+    s->value = (~s->value) & calc_mask(s);
+    s->acc   = s->value;
+}
+
+fn void calc_clear(CalcState* s) {
+    s->value      = 0;
+    s->acc        = 0;
+    s->pending_op = 0;
+    s->lhs        = 0;
+    s->entry_mode = 0;
+}
+
+fn int int_to_str_base(int val, int base, char* buf, int buflen) {
+    if (base == 16) {
+        sprintf((string)buf, "%X", val);
+        return 1;
+    }
+    if (base == 10) {
+        sprintf((string)buf, "%d", val);
+        return 1;
+    }
+    if (base == 8) {
+        sprintf((string)buf, "%o", val);
+        return 1;
+    }
+    if (val == 0) {
+        buf[0] = (char)48;
+        buf[1] = (char)0;
+        return 1;
+    }
+    int digits[64];
+    int nd = 0;
+    int v = val;
+    if (v < 0) { v = -v; }
+    while (v > 0 && nd < 63) {
+        digits[nd] = v % 2;
+        nd = nd + 1;
+        v = v / 2;
+    }
+    int pos = 0;
+    int i = nd - 1;
+    while (i >= 0) {
+        buf[pos] = (char)(digits[i] + 48);
+        pos = pos + 1;
+        i = i - 1;
+    }
+    buf[pos] = (char)0;
+    return pos;
+}
+
+// ─── Draw helpers ─────────────────────────────────────────────────────────────
+
+fn void draw_btn(fw.App* app, float x, float y, float w, float h,
+                 string lbl, rmath.Color bg, rmath.Color fg) {
+    app->ui_ctx.renderer.push_quad(&app->gl_ctx, x, y, w, h, bg);
+    app->ui_ctx.renderer.push_quad(&app->gl_ctx, x + 1.0f, y + 1.0f, w - 2.0f, h - 2.0f, bg);
+    // label centered (approximate)
+    float tx = x + w * 0.5f - 6.0f;
+    float ty = y + h * 0.5f - 6.0f;
+    app->ui_ctx.font.draw_text(&app->ui_ctx.renderer, &app->gl_ctx, lbl, tx, ty, fg);
+}
+
+fn int btn_hit(float bx, float by, float bw, float bh, float mx, float my) {
+    if (mx >= bx && mx <= bx + bw && my >= by && my <= by + bh) { return 1; }
+    return 0;
+}
+
+// ─── Main ─────────────────────────────────────────────────────────────────────
+
+fn int main() {
+    fw.AppConfig cfg;
+    cfg.init("Kale Calc — Programmer Calculator", 860, 680);
+
+    fw.App app;
+    int ok = app.init(cfg);
+    if (ok == 0) { printf("Fatal: could not open Calc window\n"); return 1; }
+
+    CalcState calc = calc_init();
+
+    // Colors
+    rmath.Color col_bg     = rmath.color_hex(0x0D1117);
+    rmath.Color col_header = rmath.color_hex(0x161B22);
+    rmath.Color col_text   = rmath.color_hex(0xE6EDF3);
+    rmath.Color col_dim    = rmath.color_hex(0x6E7681);
+    rmath.Color col_accent = rmath.color_hex(0x58A6FF);
+    rmath.Color col_sel    = rmath.color_hex(0x3FB950);
+    rmath.Color col_warn   = rmath.color_hex(0xF78166);
+    rmath.Color col_grid   = rmath.color_rgba(0.15f, 0.17f, 0.22f, 1.0f);
+    rmath.Color col_panel  = rmath.color_rgba(0.08f, 0.09f, 0.12f, 1.0f);
+    rmath.Color col_btn    = rmath.color_hex(0x21262D);
+    rmath.Color col_btn_op = rmath.color_hex(0x1F3652);
+    rmath.Color col_btn_eq = rmath.color_hex(0x1A6534);
+    rmath.Color col_bit1   = rmath.color_hex(0x58A6FF);
+    rmath.Color col_bit0   = rmath.color_hex(0x21262D);
+    rmath.Color col_disp   = rmath.color_hex(0x0D1117);
+
+    int pk_esc = 0;
+    int last_mb = 0;
+
+    char* dbuf = (char*)malloc(64);
+    char* hbuf = (char*)malloc(64);
+    char* decbuf = (char*)malloc(64);
+
+    void* win = app.window;
+
+    while (glfw.glfwWindowShouldClose(app.window) == 0) {
+        app.begin_frame();
+        win = app.window;
+        float W = (float)app.width;
+        float H = (float)app.height;
+
+        // Mouse
+        double mdx = 0.0; double mdy = 0.0;
+        ginput.glfwGetCursorPos(win, &mdx, &mdy);
+        float mx = (float)mdx; float my = (float)mdy;
+        int mb = ginput.glfwGetMouseButton(win, glc.GLFW_MOUSE_BUTTON_LEFT());
+        int mb_click = 0;
+        if (mb == glc.GLFW_PRESS() && last_mb == 0) { mb_click = 1; }
+        last_mb = mb;
+
+        // ESC
+        int ke = ginput.glfwGetKey(win, glc.GLFW_KEY_ESCAPE());
+        if (ke == glc.GLFW_PRESS() && pk_esc == 0) {
+            glfw.glfwSetWindowShouldClose(app.window, 1);
+        }
+        pk_esc = ke;
+
+        // ── Background ────────────────────────────────────────────────────────
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, 0.0f, W, H, col_bg);
+
+        // ── Top header ────────────────────────────────────────────────────────
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, 0.0f, W, 44.0f, col_header);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "KALE CALC", 18.0f, 12.0f, col_accent);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "Programmer Calculator", 130.0f, 14.0f, col_dim);
+
+        // Base selector
+        float bsx = W - 280.0f;
+        rmath.Color b2c = col_btn; if (calc.base ==  2) { b2c = col_accent; }
+        rmath.Color b8c = col_btn; if (calc.base ==  8) { b8c = col_accent; }
+        rmath.Color bdc = col_btn; if (calc.base == 10) { bdc = col_accent; }
+        rmath.Color bhc = col_btn; if (calc.base == 16) { bhc = col_accent; }
+
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, bsx,        8.0f, 54.0f, 28.0f, b2c);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, bsx + 58.0f, 8.0f, 54.0f, 28.0f, b8c);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, bsx +116.0f, 8.0f, 54.0f, 28.0f, bdc);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, bsx +174.0f, 8.0f, 54.0f, 28.0f, bhc);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "BIN", bsx +  8.0f, 16.0f, col_text);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "OCT", bsx + 66.0f, 16.0f, col_text);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "DEC", bsx +124.0f, 16.0f, col_text);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "HEX", bsx +182.0f, 16.0f, col_text);
+
+        if (mb_click == 1) {
+            if (btn_hit(bsx, 8.0f, 54.0f, 28.0f, mx, my) == 1) { calc.base =  2; calc_clear(&calc); }
+            if (btn_hit(bsx + 58.0f, 8.0f, 54.0f, 28.0f, mx, my) == 1) { calc.base =  8; calc_clear(&calc); }
+            if (btn_hit(bsx +116.0f, 8.0f, 54.0f, 28.0f, mx, my) == 1) { calc.base = 10; calc_clear(&calc); }
+            if (btn_hit(bsx +174.0f, 8.0f, 54.0f, 28.0f, mx, my) == 1) { calc.base = 16; calc_clear(&calc); }
+        }
+
+        // ── Display panel ─────────────────────────────────────────────────────
+        float dy = 52.0f;
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 12.0f, dy, W - 24.0f, 80.0f, col_panel);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 12.0f, dy, W - 24.0f, 3.0f, col_accent);
+
+        // Show value in current base
+        int_to_str_base(calc.value, calc.base, dbuf, 64);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            (string)dbuf, W - 24.0f - 320.0f, dy + 18.0f, col_text);
+
+        // Show hex sub-display
+        int_to_str_base(calc.value, 16, hbuf, 64);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "HEX:", 20.0f, dy + 18.0f, col_dim);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            (string)hbuf, 66.0f, dy + 18.0f, col_accent);
+
+        // Dec
+        int_to_str_base(calc.value, 10, decbuf, 64);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "DEC:", 20.0f, dy + 44.0f, col_dim);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            (string)decbuf, 66.0f, dy + 44.0f, col_dim);
+
+        // Pending op indicator
+        if (calc.pending_op > 0) {
+            app.ui_ctx.renderer.push_quad(&app.gl_ctx, W - 110.0f, dy + 44.0f, 80.0f, 20.0f, col_btn_op);
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+                "OP PENDING", W - 108.0f, dy + 48.0f, col_warn);
+        }
+
+        // ── Bit matrix ────────────────────────────────────────────────────────
+        float bm_y = dy + 88.0f;
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 12.0f, bm_y - 4.0f, W - 24.0f, 1.0f, col_grid);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "Bit Matrix", 20.0f, bm_y + 4.0f, col_dim);
+
+        int bit_count = 32;
+        if (calc.word_size == 16) { bit_count = 16; }
+        if (calc.word_size == 8)  { bit_count =  8; }
+
+        float bit_size = 28.0f;
+        float bit_gap  = 4.0f;
+        float bit_row_x = 20.0f;
+        float bit_row_y = bm_y + 28.0f;
+
+        // Draw bits from MSB to LSB in groups of 8
+        int bi = bit_count - 1;
+        float bx2 = bit_row_x;
+        float by2 = bit_row_y;
+        while (bi >= 0) {
+            int bit_val = (calc.value >> bi) & 1;
+            rmath.Color bcol = col_bit0;
+            if (bit_val == 1) { bcol = col_bit1; }
+            app.ui_ctx.renderer.push_quad(&app.gl_ctx, bx2, by2, bit_size, bit_size, bcol);
+            // bit index label
+            if (bit_val == 1) {
+                app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+                    "1", bx2 + 8.0f, by2 + 6.0f, col_bg);
+            } else {
+                app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+                    "0", bx2 + 8.0f, by2 + 6.0f, col_dim);
+            }
+            // group gap every 8 bits
+            bx2 = bx2 + bit_size + bit_gap;
+            if ((bi % 8) == 0) { bx2 = bx2 + 8.0f; }
+            // toggle bit on click
+            if (mb_click == 1) {
+                float tbx = bx2 - bit_size - bit_gap;
+                if ((bi % 8) == 0) { tbx = tbx - 8.0f; }
+                if (btn_hit(tbx, by2, bit_size, bit_size, mx, my) == 1) {
+                    calc.value = calc.value ^ (1 << bi);
+                    calc.acc   = calc.value;
+                }
+            }
+            bi = bi - 1;
+        }
+
+        // ── Keypad ────────────────────────────────────────────────────────────
+        float kp_y = bit_row_y + bit_size + 28.0f;
+        float kp_x = 20.0f;
+        float kw = 56.0f;
+        float kh = 44.0f;
+        float kg = 8.0f;
+
+        // Row 0: hex digits A-F
+        string hex_lbls[6];
+        hex_lbls[0] = "A"; hex_lbls[1] = "B"; hex_lbls[2] = "C";
+        hex_lbls[3] = "D"; hex_lbls[4] = "E"; hex_lbls[5] = "F";
+        int hi = 0;
+        while (hi < 6) {
+            float hx = kp_x + (float)hi * (kw + kg);
+            rmath.Color hc = col_btn;
+            if (calc.base != 16) { hc = col_grid; }
+            app.ui_ctx.renderer.push_quad(&app.gl_ctx, hx, kp_y, kw, kh, hc);
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+                hex_lbls[hi], hx + kw * 0.5f - 5.0f, kp_y + 12.0f, col_accent);
+            if (mb_click == 1 && calc.base == 16) {
+                if (btn_hit(hx, kp_y, kw, kh, mx, my) == 1) {
+                    calc_enter_digit(&calc, 10 + hi);
+                }
+            }
+            hi = hi + 1;
+        }
+        // C and CLR
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, kp_x + 6.0f * (kw + kg), kp_y, kw, kh, col_btn_eq);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "CLR", kp_x + 6.0f * (kw + kg) + 10.0f, kp_y + 12.0f, col_text);
+        if (mb_click == 1 && btn_hit(kp_x + 6.0f * (kw + kg), kp_y, kw, kh, mx, my) == 1) {
+            calc_clear(&calc);
+        }
+
+        // Rows 1-3: 0-9 digits
+        int digits9[12];
+        digits9[0]  = 7; digits9[1]  = 8; digits9[2]  = 9;
+        digits9[3]  = 4; digits9[4]  = 5; digits9[5]  = 6;
+        digits9[6]  = 1; digits9[7]  = 2; digits9[8]  = 3;
+        digits9[9]  = 0; digits9[10] = 0; digits9[11] = 0;
+
+        string digit_lbls[10];
+        digit_lbls[0] = "0"; digit_lbls[1] = "1"; digit_lbls[2] = "2";
+        digit_lbls[3] = "3"; digit_lbls[4] = "4"; digit_lbls[5] = "5";
+        digit_lbls[6] = "6"; digit_lbls[7] = "7"; digit_lbls[8] = "8";
+        digit_lbls[9] = "9";
+
+        int row9 = 0;
+        while (row9 < 4) {
+            int col9 = 0;
+            while (col9 < 3) {
+                int idx9 = row9 * 3 + col9;
+                if (idx9 >= 12) { col9 = col9 + 1; continue; }
+                int dv = digits9[idx9];
+                if (row9 == 3 && col9 > 0) { col9 = col9 + 1; continue; }
+                float dx9 = kp_x + (float)col9 * (kw + kg);
+                float dy9 = kp_y + (kh + kg) + (float)row9 * (kh + kg);
+                rmath.Color dc9 = col_btn;
+                int valid9 = calc_digit_valid(&calc, dv);
+                if (valid9 == 0) { dc9 = col_grid; }
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, dx9, dy9, kw, kh, dc9);
+                app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+                    digit_lbls[dv], dx9 + kw * 0.5f - 5.0f, dy9 + 12.0f, col_text);
+                if (mb_click == 1 && valid9 == 1) {
+                    if (btn_hit(dx9, dy9, kw, kh, mx, my) == 1) {
+                        calc_enter_digit(&calc, dv);
+                    }
+                }
+                col9 = col9 + 1;
+            }
+            row9 = row9 + 1;
+        }
+
+        // ── Operator buttons ──────────────────────────────────────────────────
+        float op_x = kp_x + 3.0f * (kw + kg) + 16.0f;
+        float op_y = kp_y + (kh + kg);
+
+        string op_lbls[8];
+        op_lbls[0] = "AND"; op_lbls[1] = "OR";
+        op_lbls[2] = "XOR"; op_lbls[3] = "NOT";
+        op_lbls[4] = "SHL"; op_lbls[5] = "SHR";
+        op_lbls[6] = "ADD"; op_lbls[7] = "SUB";
+
+        int op_codes[8];
+        op_codes[0] = 1; op_codes[1] = 2;
+        op_codes[2] = 3; op_codes[3] = 4;
+        op_codes[4] = 5; op_codes[5] = 6;
+        op_codes[6] = 7; op_codes[7] = 8;
+
+        int oi = 0;
+        while (oi < 8) {
+            float ox2 = op_x + (float)(oi % 2) * (kw + kg);
+            float oy2 = op_y + (float)(oi / 2) * (kh + kg);
+            rmath.Color obc = col_btn_op;
+            if (calc.pending_op == op_codes[oi]) { obc = col_accent; }
+            app.ui_ctx.renderer.push_quad(&app.gl_ctx, ox2, oy2, kw, kh, obc);
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+                op_lbls[oi], ox2 + 6.0f, oy2 + 12.0f, col_text);
+            if (mb_click == 1 && btn_hit(ox2, oy2, kw, kh, mx, my) == 1) {
+                if (op_codes[oi] == 4) { calc_not(&calc); }
+                else { calc_set_op(&calc, op_codes[oi]); }
+            }
+            oi = oi + 1;
+        }
+
+        // = button
+        float eq_x = op_x + 2.0f * (kw + kg);
+        float eq_y = op_y;
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, eq_x, eq_y, kw, kh * 2.0f + kg, col_btn_eq);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "=", eq_x + kw * 0.5f - 4.0f, eq_y + kh * 0.5f, col_text);
+        if (mb_click == 1 && btn_hit(eq_x, eq_y, kw, kh * 2.0f + kg, mx, my) == 1) {
+            calc_apply(&calc);
+        }
+
+        // Word size buttons
+        float ws_x = op_x;
+        float ws_y = op_y + 4.0f * (kh + kg) + 8.0f;
+        rmath.Color ws8  = col_btn; if (calc.word_size ==  8) { ws8  = col_sel; }
+        rmath.Color ws16 = col_btn; if (calc.word_size == 16) { ws16 = col_sel; }
+        rmath.Color ws32 = col_btn; if (calc.word_size == 32) { ws32 = col_sel; }
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, ws_x,              ws_y, kw, kh, ws8);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, ws_x + kw + kg,    ws_y, kw, kh, ws16);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, ws_x + 2.0f*(kw+kg), ws_y, kw, kh, ws32);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "BYTE", ws_x + 4.0f,         ws_y + 12.0f, col_dim);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "WORD", ws_x + kw + kg + 4.0f, ws_y + 12.0f, col_dim);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "DWORD",ws_x + 2.0f*(kw+kg)+2.0f, ws_y + 12.0f, col_dim);
+        if (mb_click == 1) {
+            if (btn_hit(ws_x, ws_y, kw, kh, mx, my) == 1)               { calc.word_size = 8;  calc.value = calc.value & 0xFF; }
+            if (btn_hit(ws_x + kw + kg, ws_y, kw, kh, mx, my) == 1)    { calc.word_size = 16; calc.value = calc.value & 0xFFFF; }
+            if (btn_hit(ws_x + 2.0f*(kw+kg), ws_y, kw, kh, mx, my) == 1) { calc.word_size = 32; }
+        }
+
+        // Status bar
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, H - 28.0f, W, 28.0f, col_header);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "Click bits or digits | AND/OR/XOR/NOT/SHL/SHR/ADD/SUB | = apply | CLR reset | ESC quit",
+            12.0f, H - 18.0f, col_dim);
+
+        app.end_frame();
+    }
+
+    free(dbuf);
+    free(hbuf);
+    free(decbuf);
+    app.close();
+    return 0;
+}

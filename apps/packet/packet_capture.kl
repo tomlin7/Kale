@@ -1,0 +1,76 @@
+// apps/packet/packet_capture.kl
+// Simulated network packet capture data structures
+
+struct PacketEntry {
+    int   seq;         // sequence number
+    int   proto;       // 0=TCP 1=UDP 2=ICMP 3=HTTP 4=DNS
+    int   src_port;
+    int   dst_port;
+    int   length;      // payload bytes
+    float timestamp;   // seconds since start
+    int   direction;   // 0=in 1=out
+    int   flagged;     // 1=anomaly highlight
+}
+
+struct PacketLog {
+    PacketEntry* entries;
+    int count;
+    int selected;
+    float scroll_y;
+    int filter_proto; // -1 = all
+}
+
+fn void packetlog_init(PacketLog* log) {
+    log->entries     = alloc(PacketEntry, 256);
+    log->count       = 0;
+    log->selected    = -1;
+    log->scroll_y    = 0.0f;
+    log->filter_proto = -1;
+}
+
+fn void packetlog_push(PacketLog* log, int seq, int proto, int src, int dst, int len, float ts, int dir, int flagged) {
+    if (log->count >= 255) { return; }
+    int i = log->count;
+    log->entries[i].seq       = seq;
+    log->entries[i].proto     = proto;
+    log->entries[i].src_port  = src;
+    log->entries[i].dst_port  = dst;
+    log->entries[i].length    = len;
+    log->entries[i].timestamp = ts;
+    log->entries[i].direction = dir;
+    log->entries[i].flagged   = flagged;
+    log->count = i + 1;
+}
+
+fn void packetlog_seed(PacketLog* log) {
+    // Seed with realistic demo packets
+    packetlog_push(log,  1, 3,    0,    80,  512, 0.001f, 1, 0); // HTTP GET
+    packetlog_push(log,  2, 0, 5432, 49152, 1448, 0.012f, 0, 0); // TCP data
+    packetlog_push(log,  3, 4,   53,  53000,   68, 0.023f, 1, 0); // DNS query
+    packetlog_push(log,  4, 1, 8080, 49200,  200, 0.034f, 0, 0); // UDP
+    packetlog_push(log,  5, 3,    0,    80, 1460, 0.045f, 1, 0); // HTTP response
+    packetlog_push(log,  6, 2,    0,     0,   64, 0.056f, 0, 0); // ICMP ping
+    packetlog_push(log,  7, 0, 5432, 49152, 1448, 0.067f, 0, 0); // TCP
+    packetlog_push(log,  8, 0,  443, 50000,  256, 0.078f, 1, 1); // TLS anomaly
+    packetlog_push(log,  9, 1, 9000, 49300,  800, 0.089f, 0, 0); // UDP
+    packetlog_push(log, 10, 4,   53,  53001,   68, 0.100f, 1, 0); // DNS
+    packetlog_push(log, 11, 3,    0,    80,  320, 0.111f, 1, 0); // HTTP
+    packetlog_push(log, 12, 0, 3306, 49400, 1448, 0.122f, 0, 1); // MySQL anomaly
+    packetlog_push(log, 13, 2,    0,     0,   64, 0.133f, 0, 0); // ICMP
+    packetlog_push(log, 14, 1, 8080, 49500,  400, 0.144f, 0, 0); // UDP
+    packetlog_push(log, 15, 3,    0,    80, 1460, 0.155f, 1, 0); // HTTP
+    packetlog_push(log, 16, 0, 5432, 49152, 1448, 0.166f, 0, 0); // TCP
+    packetlog_push(log, 17, 4,   53,  53002,   68, 0.177f, 1, 0); // DNS
+    packetlog_push(log, 18, 0,  443, 50100,  900, 0.188f, 1, 0); // TLS
+    packetlog_push(log, 19, 1, 9000, 49600,  600, 0.199f, 0, 0); // UDP
+    packetlog_push(log, 20, 3,    0,    80,  740, 0.210f, 1, 1); // HTTP anomaly
+}
+
+fn string proto_name(int proto) {
+    if (proto == 0) { return "TCP"; }
+    if (proto == 1) { return "UDP"; }
+    if (proto == 2) { return "ICMP"; }
+    if (proto == 3) { return "HTTP"; }
+    if (proto == 4) { return "DNS"; }
+    return "???";
+}

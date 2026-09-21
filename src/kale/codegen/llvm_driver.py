@@ -82,8 +82,18 @@ class LLVMDriver:
         cmd = [self.clang_path, ll_path, f"-O{opt_level}", "-o", output_path]
         all_lib_dirs = list(lib_dirs or [])
 
+        # Auto-detect workspace libraries (libs/glfw/lib, libs/stb/lib, libs/sql/lib)
+        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+        for sub_dir in [
+            os.path.join(repo_root, "libs", "glfw", "lib"),
+            os.path.join(repo_root, "libs", "stb", "lib"),
+            os.path.join(repo_root, "libs", "sql", "lib"),
+        ]:
+            if os.path.isdir(sub_dir) and sub_dir not in all_lib_dirs:
+                all_lib_dirs.append(sub_dir)
+
         if is_windows:
-            cmd.extend(["--target=x86_64-pc-windows-msvc", "-fuse-ld=lld", "-luser32", "-lgdi32", "-lkernel32", "-lshell32"])
+            cmd.extend(["--target=x86_64-pc-windows-msvc", "-fuse-ld=lld", "-luser32", "-lgdi32", "-lkernel32", "-lshell32", "-lws2_32"])
             for msvc_dir in self._find_msvc_lib_dirs():
                 if msvc_dir not in all_lib_dirs:
                     all_lib_dirs.append(msvc_dir)
@@ -93,9 +103,14 @@ class LLVMDriver:
         for d in all_lib_dirs:
             cmd.append(f"-L{d}" if not d.startswith("-L") else d)
 
-        if extra_libs:
-            for lib in extra_libs:
-                cmd.append(f"-l{lib}" if not lib.startswith("-l") else lib)
+        resolved_libs = list(extra_libs or [])
+        if is_windows:
+            for default_lib in ["glfw3", "stb", "sqlite3", "opengl32"]:
+                if default_lib not in resolved_libs:
+                    resolved_libs.append(default_lib)
+
+        for lib in resolved_libs:
+            cmd.append(f"-l{lib}" if not lib.startswith("-l") else lib)
 
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
