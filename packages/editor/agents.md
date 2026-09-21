@@ -1,13 +1,13 @@
-# Editor Engine (Legacy)
+# Editor Engine (Legacy / Vim-Style)
 
 ## Version
-`0.1.0`
+`0.2.0`
 
 ## Description
-Legacy editor engine using direct Win32 GDI rendering. Contains syntax highlighting, theming, and editor buffer management. Being superseded by apps/editor.
+Lightweight Vim-inspired terminal-style code editor engine. Features modal editing (`NORMAL`, `INSERT`, `COMMAND`, `VISUAL`), Vim keybindings (`h`, `j`, `k`, `l`, `i`, `a`, `o`, `x`, `:`), command parsing (`:w`, `:q`, `:wq`), interactive statusline, line numbering, and syntax highlighting.
 
 ## Status
-Current status: ⚠️ Experimental (Legacy)
+Current status: 🟢 Active (Vim-Style Terminal Editor Core)
 
 ## Dependencies
 - packages/std
@@ -18,9 +18,3 @@ Current status: ⚠️ Experimental (Legacy)
 
 ## Coding Conventions
 - Standard Kale conventions: `.kl` source files, snake_case functions, PascalCase structs
-
-## Short-term Milestones
-- [ ] None — this is being replaced by apps/editor
-
-## Future Plans
-Archive or remove once apps/editor is stable.

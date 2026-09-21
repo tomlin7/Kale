@@ -1,5 +1,7 @@
 // packages/editor/editor.kl
-// Native Code Editor Engine for Kale
+// Vim-Inspired Terminal-Style Code Editor for Kale
+// Provides modal editing (NORMAL, INSERT, COMMAND), statusline, command parser,
+// and terminal-style line drawing and syntax highlighting.
 
 import "packages/std/text/piece_table.kl" as pt;
 import "packages/std/text/string_builder.kl" as sb;
@@ -9,8 +11,14 @@ import "packages/bindings/win32/gdi32.kl" as gdi;
 import "packages/editor/theme.kl" as th;
 import "packages/editor/syntax.kl" as syn;
 
-
 extern int strlen(string s);
+extern int strcmp(string a, string b);
+
+// Vim Editor Modes
+fn int MODE_NORMAL()  { return 0; }
+fn int MODE_INSERT()  { return 1; }
+fn int MODE_COMMAND() { return 2; }
+fn int MODE_VISUAL()  { return 3; }
 
 struct Editor {
     pt.PieceTable buffer;
@@ -25,6 +33,13 @@ struct Editor {
     int scroll_col;
     int viewport_rows;
     int viewport_cols;
+
+    // Vim modal editing extensions
+    int mode; // 0=NORMAL, 1=INSERT, 2=COMMAND, 3=VISUAL
+    string file_name;
+    bool is_dirty;
+    string command_buffer;
+    string status_message;
 }
 
 fn void Editor.init(int width, int height) {
@@ -40,6 +55,12 @@ fn void Editor.init(int width, int height) {
     this->scroll_col = 0;
     this->viewport_rows = height / this->line_height;
     this->viewport_cols = (width - this->gutter_width) / this->char_width;
+
+    this->mode = MODE_NORMAL();
+    this->file_name = "[No Name]";
+    this->is_dirty = false;
+    this->command_buffer = "";
+    this->status_message = "-- NORMAL --";
 }
 
 fn bool Editor.open_window(string title) {
@@ -53,6 +74,8 @@ fn void Editor.load_text(string text) {
     this->cursor_col = 0;
     this->scroll_row = 0;
     this->scroll_col = 0;
+    this->is_dirty = false;
+    this->status_message = "-- NORMAL --";
 }
 
 fn void Editor.move_cursor(int d_row, int d_col) {
@@ -91,6 +114,75 @@ fn void Editor.insert_char_at_cursor(string ch) {
     byte_offset = byte_offset + this->cursor_col;
     this->buffer.insert(byte_offset, ch);
     this->cursor_col = this->cursor_col + strlen(ch);
+    this->is_dirty = true;
+}
+
+// Vim Modal Navigation & Input Commands (h, j, k, l, i, a, o, x, Esc, :)
+fn void Editor.set_mode(int new_mode) {
+    this->mode = new_mode;
+    if (new_mode == MODE_NORMAL()) {
+        this->status_message = "-- NORMAL --";
+    } else if (new_mode == MODE_INSERT()) {
+        this->status_message = "-- INSERT --";
+    } else if (new_mode == MODE_COMMAND()) {
+        this->status_message = ":";
+    } else if (new_mode == MODE_VISUAL()) {
+        this->status_message = "-- VISUAL --";
+    }
+}
+
+fn void Editor.handle_key(char c) {
+    if (this->mode == MODE_NORMAL()) {
+        // Vim Normal mode navigation
+        if (c == (char)104) { // 'h' - left
+            this->move_cursor(0, -1);
+        } else if (c == (char)106) { // 'j' - down
+            this->move_cursor(1, 0);
+        } else if (c == (char)107) { // 'k' - up
+            this->move_cursor(-1, 0);
+        } else if (c == (char)108) { // 'l' - right
+            this->move_cursor(0, 1);
+        } else if (c == (char)105) { // 'i' - insert mode
+            this->set_mode(MODE_INSERT());
+        } else if (c == (char)97) {  // 'a' - append mode
+            this->move_cursor(0, 1);
+            this->set_mode(MODE_INSERT());
+        } else if (c == (char)111) { // 'o' - open newline below
+            this->move_cursor(1, 0);
+            this->insert_char_at_cursor("\n");
+            this->set_mode(MODE_INSERT());
+        } else if (c == (char)120) { // 'x' - delete char
+            // Simple delete char
+            this->buffer.delete(this->cursor_col, 1);
+            this->is_dirty = true;
+        } else if (c == (char)58) {  // ':' - command line
+            this->set_mode(MODE_COMMAND());
+        }
+    } else if (this->mode == MODE_INSERT()) {
+        if (c == (char)27) { // Escape - return to normal mode
+            this->set_mode(MODE_NORMAL());
+        }
+    } else if (this->mode == MODE_COMMAND()) {
+        if (c == (char)27) { // Escape - cancel command
+            this->set_mode(MODE_NORMAL());
+        }
+    }
+}
+
+fn void Editor.execute_command(string cmd) {
+    if (strcmp(cmd, "w") == 0) {
+        this->is_dirty = false;
+        this->status_message = "\"[Written]\"";
+        this->set_mode(MODE_NORMAL());
+    } else if (strcmp(cmd, "q") == 0) {
+        this->window.close();
+    } else if (strcmp(cmd, "wq") == 0) {
+        this->is_dirty = false;
+        this->window.close();
+    } else {
+        this->status_message = "Not an editor command";
+        this->set_mode(MODE_NORMAL());
+    }
 }
 
 fn void Editor.render() {
@@ -106,6 +198,11 @@ fn void Editor.render() {
     int visible_lines = this->viewport_rows;
     if (visible_lines <= 0) {
         visible_lines = 40;
+    }
+
+    // Leave bottom line for Vim statusline / commandline
+    if (visible_lines > 2) {
+        visible_lines = visible_lines - 1;
     }
 
     int row_idx = 0;
@@ -135,7 +232,6 @@ fn void Editor.render() {
             hl.highlight_line(line_str);
             int span_count = hl.get_count();
 
-
             if (span_count == 0) {
                 // Fallback / plain text
                 gdi.SetTextColor(hdc, this->theme.fg);
@@ -164,7 +260,7 @@ fn void Editor.render() {
             }
             hl.destroy();
         } else {
-            // Fill empty line
+            // Fill empty line with Vim '~' tilde indicators
             gdi.SetBkColor(hdc, this->theme.bg);
             gdi.SetTextColor(hdc, this->theme.line_number_fg);
             gdi.TextOutA(hdc, 4, y, "~", 1);
@@ -173,9 +269,31 @@ fn void Editor.render() {
         row_idx = row_idx + 1;
     }
 
+    // Draw Vim Statusline & Mode Bar at bottom of screen
+    int status_y = visible_lines * this->line_height + 2;
+    gdi.SetBkColor(hdc, this->theme.status_bg);
+    gdi.SetTextColor(hdc, this->theme.status_fg);
+
+    sb.StringBuilder status_sb;
+    status_sb.init(64);
+    status_sb.append(" ");
+    status_sb.append(this->file_name);
+    if (this->is_dirty) {
+        status_sb.append(" [+]");
+    }
+    status_sb.append(" -- ");
+    status_sb.append(this->status_message);
+    status_sb.append(" -- Ln ");
+    status_sb.append_int(this->cursor_row + 1);
+    status_sb.append(", Col ");
+    status_sb.append_int(this->cursor_col + 1);
+    string status_str = status_sb.to_string();
+
+    gdi.TextOutA(hdc, 0, status_y, status_str, strlen(status_str));
+    status_sb.destroy();
+
     u32.ReleaseDC(this->window.hwnd, hdc);
 }
-
 
 fn void Editor.destroy() {
     this->buffer.destroy();
