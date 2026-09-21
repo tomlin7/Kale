@@ -1,0 +1,417 @@
+// os/kernel/vt100.kl
+// ANSI / VT100 Terminal Console Subsystem for Kale OS
+// Supports 80x25 character matrix, ANSI CSI escape sequences, SGR color attributes,
+// cursor positioning, line and display erasing, and line scrolling.
+
+int VT_COLS              = 80;
+int VT_ROWS              = 25;
+int VT_MAX_CELLS         = 2000; // 80 * 25
+
+// Parser States
+int VT_STATE_NORMAL      = 0;
+int VT_STATE_ESC         = 1;
+int VT_STATE_CSI         = 2;
+
+// Text Attributes
+uint8 VT_FLAG_NONE       = 0 as uint8;
+uint8 VT_FLAG_BOLD       = 1 as uint8;
+uint8 VT_FLAG_UNDERLINE  = 2 as uint8;
+uint8 VT_FLAG_INVERSE    = 4 as uint8;
+
+// Standard ANSI 32-bit ARGB Colors
+uint32 VT_COLOR_BLACK    = 0xFF000000 as uint32;
+uint32 VT_COLOR_RED      = 0xFFCC0000 as uint32;
+uint32 VT_COLOR_GREEN    = 0xFF4E9A06 as uint32;
+uint32 VT_COLOR_YELLOW   = 0xFFC4A000 as uint32;
+uint32 VT_COLOR_BLUE     = 0xFF3465A4 as uint32;
+uint32 VT_COLOR_MAGENTA  = 0xFF75507B as uint32;
+uint32 VT_COLOR_CYAN     = 0xFF06989A as uint32;
+uint32 VT_COLOR_WHITE    = 0xFFD3D7CF as uint32;
+
+uint32 VT_COLOR_DEFAULT_FG = 0xFFD3D7CF as uint32; // Light grey / white
+uint32 VT_COLOR_DEFAULT_BG = 0xFF000000 as uint32; // Black
+
+// ==============================================================================
+// Data Structures
+// ==============================================================================
+
+struct VT100Cell {
+    uint8 ch;
+    uint32 fg;
+    uint32 bg;
+    uint8 flags;
+}
+
+struct VT100Console {
+    int cur_x;
+    int cur_y;
+    int saved_x;
+    int saved_y;
+    int state;
+    uint32 cur_fg;
+    uint32 cur_bg;
+    uint8 cur_flags;
+    int[8] csi_params;
+    int csi_param_count;
+    int csi_cur_val;
+    bool in_number;
+    VT100Cell[2000] cells;
+}
+
+// ==============================================================================
+// Screen & Cell Operations
+// ==============================================================================
+
+fn void vt100_clear_screen(VT100Console* vt) {
+    if (vt == null) {
+        return;
+    }
+    int i = 0;
+    while (i < VT_MAX_CELLS) {
+        vt->cells[i].ch = 0x20 as uint8; // Space
+        vt->cells[i].fg = vt->cur_fg;
+        vt->cells[i].bg = vt->cur_bg;
+        vt->cells[i].flags = vt->cur_flags;
+        i = i + 1;
+    }
+    vt->cur_x = 0;
+    vt->cur_y = 0;
+}
+
+fn void vt100_init(VT100Console* vt) {
+    if (vt == null) {
+        return;
+    }
+    vt->cur_x = 0;
+    vt->cur_y = 0;
+    vt->saved_x = 0;
+    vt->saved_y = 0;
+    vt->state = VT_STATE_NORMAL;
+    vt->cur_fg = VT_COLOR_DEFAULT_FG;
+    vt->cur_bg = VT_COLOR_DEFAULT_BG;
+    vt->cur_flags = VT_FLAG_NONE;
+    vt->csi_param_count = 0;
+    vt->csi_cur_val = 0;
+    vt->in_number = false;
+
+    vt100_clear_screen(vt);
+}
+
+// Scrolls screen contents up by 1 row
+fn void vt100_scroll_up(VT100Console* vt) {
+    if (vt == null) {
+        return;
+    }
+    // Shift rows 1..24 to rows 0..23
+    int row = 0;
+    while (row < (VT_ROWS - 1)) {
+        int col = 0;
+        while (col < VT_COLS) {
+            int dst_idx = (row * VT_COLS) + col;
+            int src_idx = ((row + 1) * VT_COLS) + col;
+            vt->cells[dst_idx] = vt->cells[src_idx];
+            col = col + 1;
+        }
+        row = row + 1;
+    }
+
+    // Clear bottom row (row 24)
+    int c = 0;
+    while (c < VT_COLS) {
+        int idx = ((VT_ROWS - 1) * VT_COLS) + c;
+        vt->cells[idx].ch = 0x20 as uint8;
+        vt->cells[idx].fg = vt->cur_fg;
+        vt->cells[idx].bg = vt->cur_bg;
+        vt->cells[idx].flags = VT_FLAG_NONE;
+        c = c + 1;
+    }
+}
+
+// ==============================================================================
+// ANSI SGR & CSI Dispatch
+// ==============================================================================
+
+fn uint32 vt100_ansi_to_color(int code) {
+    if (code == 0) return VT_COLOR_BLACK;
+    if (code == 1) return VT_COLOR_RED;
+    if (code == 2) return VT_COLOR_GREEN;
+    if (code == 3) return VT_COLOR_YELLOW;
+    if (code == 4) return VT_COLOR_BLUE;
+    if (code == 5) return VT_COLOR_MAGENTA;
+    if (code == 6) return VT_COLOR_CYAN;
+    if (code == 7) return VT_COLOR_WHITE;
+    return VT_COLOR_DEFAULT_FG;
+}
+
+fn void vt100_apply_sgr(VT100Console* vt, int code) {
+    if (vt == null) {
+        return;
+    }
+    if (code == 0) {
+        // Reset all attributes
+        vt->cur_fg = VT_COLOR_DEFAULT_FG;
+        vt->cur_bg = VT_COLOR_DEFAULT_BG;
+        vt->cur_flags = VT_FLAG_NONE;
+    } else if (code == 1) {
+        vt->cur_flags = vt->cur_flags | VT_FLAG_BOLD;
+    } else if (code == 4) {
+        vt->cur_flags = vt->cur_flags | VT_FLAG_UNDERLINE;
+    } else if (code == 7) {
+        vt->cur_flags = vt->cur_flags | VT_FLAG_INVERSE;
+    } else if (code >= 30 && code <= 37) {
+        vt->cur_fg = vt100_ansi_to_color(code - 30);
+    } else if (code == 39) {
+        vt->cur_fg = VT_COLOR_DEFAULT_FG;
+    } else if (code >= 40 && code <= 47) {
+        vt->cur_bg = vt100_ansi_to_color(code - 40);
+    } else if (code == 49) {
+        vt->cur_bg = VT_COLOR_DEFAULT_BG;
+    }
+}
+
+fn void vt100_handle_csi(VT100Console* vt, uint8 cmd) {
+    if (vt == null) {
+        return;
+    }
+    // Flush current numeric parameter
+    if (vt->in_number && vt->csi_param_count < 8) {
+        vt->csi_params[vt->csi_param_count] = vt->csi_cur_val;
+        vt->csi_param_count = vt->csi_param_count + 1;
+    }
+
+    int p1 = 0;
+    if (vt->csi_param_count > 0) {
+        p1 = vt->csi_params[0];
+    }
+    int p2 = 0;
+    if (vt->csi_param_count > 1) {
+        p2 = vt->csi_params[1];
+    }
+
+    // 1. Cursor Position: \x1b[row;colH or \x1b[row;colf (1-indexed)
+    if (cmd == (72 as uint8) || cmd == (102 as uint8)) { // 'H' or 'f'
+        int r = 1;
+        if (p1 > 0) r = p1;
+        int c = 1;
+        if (p2 > 0) c = p2;
+
+        int new_y = r - 1;
+        if (new_y < 0) new_y = 0;
+        if (new_y >= VT_ROWS) new_y = VT_ROWS - 1;
+
+        int new_x = c - 1;
+        if (new_x < 0) new_x = 0;
+        if (new_x >= VT_COLS) new_x = VT_COLS - 1;
+
+        vt->cur_x = new_x;
+        vt->cur_y = new_y;
+        return;
+    }
+
+    // 2. Cursor Up: \x1b[nA ('A')
+    if (cmd == (65 as uint8)) {
+        int n = 1;
+        if (p1 > 0) n = p1;
+        vt->cur_y = vt->cur_y - n;
+        if (vt->cur_y < 0) vt->cur_y = 0;
+        return;
+    }
+
+    // 3. Cursor Down: \x1b[nB ('B')
+    if (cmd == (66 as uint8)) {
+        int n = 1;
+        if (p1 > 0) n = p1;
+        vt->cur_y = vt->cur_y + n;
+        if (vt->cur_y >= VT_ROWS) vt->cur_y = VT_ROWS - 1;
+        return;
+    }
+
+    // 4. Cursor Forward: \x1b[nC ('C')
+    if (cmd == (67 as uint8)) {
+        int n = 1;
+        if (p1 > 0) n = p1;
+        vt->cur_x = vt->cur_x + n;
+        if (vt->cur_x >= VT_COLS) vt->cur_x = VT_COLS - 1;
+        return;
+    }
+
+    // 5. Cursor Back: \x1b[nD ('D')
+    if (cmd == (68 as uint8)) {
+        int n = 1;
+        if (p1 > 0) n = p1;
+        vt->cur_x = vt->cur_x - n;
+        if (vt->cur_x < 0) vt->cur_x = 0;
+        return;
+    }
+
+    // 6. Clear Display: \x1b[nJ ('J')
+    if (cmd == (74 as uint8)) {
+        if (p1 == 2) {
+            // \x1b[2J: Clear entire screen
+            vt100_clear_screen(vt);
+        }
+        return;
+    }
+
+    // 7. Clear Line: \x1b[nK ('K')
+    if (cmd == (75 as uint8)) {
+        if (p1 == 0) {
+            // \x1b[K or \x1b[0K: Clear cursor to end of line
+            int x = vt->cur_x;
+            while (x < VT_COLS) {
+                int idx = (vt->cur_y * VT_COLS) + x;
+                vt->cells[idx].ch = 0x20 as uint8;
+                vt->cells[idx].fg = vt->cur_fg;
+                vt->cells[idx].bg = vt->cur_bg;
+                x = x + 1;
+            }
+        }
+        return;
+    }
+
+    // 8. Select Graphic Rendition (SGR): \x1b[nm ('m')
+    if (cmd == (109 as uint8)) {
+        if (vt->csi_param_count == 0) {
+            vt100_apply_sgr(vt, 0); // Default reset
+        } else {
+            int k = 0;
+            while (k < vt->csi_param_count) {
+                vt100_apply_sgr(vt, vt->csi_params[k]);
+                k = k + 1;
+            }
+        }
+        return;
+    }
+}
+
+// ==============================================================================
+// Terminal Character Stream Processing
+// ==============================================================================
+
+fn void vt100_putc(VT100Console* vt, uint8 ch) {
+    if (vt == null) {
+        return;
+    }
+
+    // 1. ESC State
+    if (vt->state == VT_STATE_ESC) {
+        if (ch == (91 as uint8)) { // '[' -> CSI
+            vt->state = VT_STATE_CSI;
+            vt->csi_param_count = 0;
+            vt->csi_cur_val = 0;
+            vt->in_number = false;
+            return;
+        }
+        if (ch == (55 as uint8)) { // '7' -> Save Cursor
+            vt->saved_x = vt->cur_x;
+            vt->saved_y = vt->cur_y;
+            vt->state = VT_STATE_NORMAL;
+            return;
+        }
+        if (ch == (56 as uint8)) { // '8' -> Restore Cursor
+            vt->cur_x = vt->saved_x;
+            vt->cur_y = vt->saved_y;
+            vt->state = VT_STATE_NORMAL;
+            return;
+        }
+        if (ch == (99 as uint8)) { // 'c' -> Reset
+            vt100_init(vt);
+            return;
+        }
+        vt->state = VT_STATE_NORMAL;
+        return;
+    }
+
+    // 2. CSI State
+    if (vt->state == VT_STATE_CSI) {
+        // Digits 0-9
+        if (ch >= (48 as uint8) && ch <= (57 as uint8)) {
+            vt->in_number = true;
+            vt->csi_cur_val = (vt->csi_cur_val * 10) + ((ch - (48 as uint8)) as int);
+            return;
+        }
+        // Semicolon separator
+        if (ch == (59 as uint8)) { // ';'
+            if (vt->csi_param_count < 8) {
+                vt->csi_params[vt->csi_param_count] = vt->csi_cur_val;
+                vt->csi_param_count = vt->csi_param_count + 1;
+            }
+            vt->csi_cur_val = 0;
+            vt->in_number = false;
+            return;
+        }
+        // Final CSI Command Letter (e.g. 'm', 'H', 'A', 'B', 'J', 'K')
+        vt100_handle_csi(vt, ch);
+        vt->state = VT_STATE_NORMAL;
+        return;
+    }
+
+    // 3. Normal State
+    if (ch == (0x1B as uint8)) { // ESC
+        vt->state = VT_STATE_ESC;
+        return;
+    }
+
+    if (ch == (0x0A as uint8)) { // Line feed '\n'
+        vt->cur_y = vt->cur_y + 1;
+        if (vt->cur_y >= VT_ROWS) {
+            vt100_scroll_up(vt);
+            vt->cur_y = VT_ROWS - 1;
+        }
+        return;
+    }
+
+    if (ch == (0x0D as uint8)) { // Carriage return '\r'
+        vt->cur_x = 0;
+        return;
+    }
+
+    if (ch == (0x08 as uint8)) { // Backspace '\b'
+        if (vt->cur_x > 0) {
+            vt->cur_x = vt->cur_x - 1;
+        }
+        return;
+    }
+
+    if (ch == (0x09 as uint8)) { // Tab '\t'
+        vt->cur_x = (vt->cur_x + 8) & (~7);
+        if (vt->cur_x >= VT_COLS) {
+            vt->cur_x = 0;
+            vt->cur_y = vt->cur_y + 1;
+            if (vt->cur_y >= VT_ROWS) {
+                vt100_scroll_up(vt);
+                vt->cur_y = VT_ROWS - 1;
+            }
+        }
+        return;
+    }
+
+    // Printable Character
+    if (vt->cur_x >= VT_COLS) {
+        vt->cur_x = 0;
+        vt->cur_y = vt->cur_y + 1;
+        if (vt->cur_y >= VT_ROWS) {
+            vt100_scroll_up(vt);
+            vt->cur_y = VT_ROWS - 1;
+        }
+    }
+
+    int cell_idx = (vt->cur_y * VT_COLS) + vt->cur_x;
+    vt->cells[cell_idx].ch = ch;
+    vt->cells[cell_idx].fg = vt->cur_fg;
+    vt->cells[cell_idx].bg = vt->cur_bg;
+    vt->cells[cell_idx].flags = vt->cur_flags;
+
+    vt->cur_x = vt->cur_x + 1;
+}
+
+fn void vt100_puts(VT100Console* vt, uint8* str) {
+    if (vt == null || str == null) {
+        return;
+    }
+    int i = 0;
+    while (str[i] != (0 as uint8)) {
+        vt100_putc(vt, str[i]);
+        i = i + 1;
+    }
+}

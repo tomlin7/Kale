@@ -50,6 +50,17 @@ fn int check_keyword(string s) {
     if (strcmp(s, "extern") == 0) { return tok.TOK_EXTERN(); }
     if (strcmp(s, "true") == 0) { return tok.TOK_TRUE(); }
     if (strcmp(s, "false") == 0) { return tok.TOK_FALSE(); }
+    if (strcmp(s, "switch") == 0) { return tok.TOK_SWITCH(); }
+    if (strcmp(s, "case") == 0) { return tok.TOK_CASE(); }
+    if (strcmp(s, "default") == 0) { return tok.TOK_DEFAULT(); }
+    if (strcmp(s, "break") == 0) { return tok.TOK_BREAK(); }
+    if (strcmp(s, "continue") == 0) { return tok.TOK_CONTINUE(); }
+    if (strcmp(s, "alloc") == 0) { return tok.TOK_ALLOC(); }
+    if (strcmp(s, "free") == 0) { return tok.TOK_FREE(); }
+    if (strcmp(s, "print") == 0) { return tok.TOK_PRINT(); }
+    if (strcmp(s, "operator") == 0) { return tok.TOK_OPERATOR(); }
+    if (strcmp(s, "null") == 0) { return tok.TOK_NULL(); }
+    if (strcmp(s, "const") == 0) { return tok.TOK_CONST(); }
     return tok.TOK_IDENT();
 }
 
@@ -262,6 +273,42 @@ fn tok.Token* lexer_next_token(Lexer* l) {
         lexer_advance(l); lexer_advance(l);
         return tok.token_new(tok.TOK_OROR(), "||", 0, start_line, start_col);
     }
+    if (c == 43 && next == 61) { // '+='
+        lexer_advance(l); lexer_advance(l);
+        return tok.token_new(tok.TOK_PLUSEQ(), "+=", 0, start_line, start_col);
+    }
+    if (c == 45 && next == 61) { // '-='
+        lexer_advance(l); lexer_advance(l);
+        return tok.token_new(tok.TOK_MINUSEQ(), "-=", 0, start_line, start_col);
+    }
+    if (c == 42 && next == 61) { // '*='
+        lexer_advance(l); lexer_advance(l);
+        return tok.token_new(tok.TOK_STAREQ(), "*=", 0, start_line, start_col);
+    }
+    if (c == 47 && next == 61) { // '/='
+        lexer_advance(l); lexer_advance(l);
+        return tok.token_new(tok.TOK_SLASHEQ(), "/=", 0, start_line, start_col);
+    }
+    if (c == 37 && next == 61) { // '%='
+        lexer_advance(l); lexer_advance(l);
+        return tok.token_new(tok.TOK_PERCENTEQ(), "%=", 0, start_line, start_col);
+    }
+    if (c == 43 && next == 43) { // '++'
+        lexer_advance(l); lexer_advance(l);
+        return tok.token_new(tok.TOK_PLUSPLUS(), "++", 0, start_line, start_col);
+    }
+    if (c == 45 && next == 45) { // '--'
+        lexer_advance(l); lexer_advance(l);
+        return tok.token_new(tok.TOK_MINUSMINUS(), "--", 0, start_line, start_col);
+    }
+    if (c == 60 && next == 60) { // '<<'
+        lexer_advance(l); lexer_advance(l);
+        return tok.token_new(tok.TOK_SHL(), "<<", 0, start_line, start_col);
+    }
+    if (c == 62 && next == 62) { // '>>'
+        lexer_advance(l); lexer_advance(l);
+        return tok.token_new(tok.TOK_SHR(), ">>", 0, start_line, start_col);
+    }
 
     // Single-character punctuators
     lexer_advance(l);
@@ -284,6 +331,10 @@ fn tok.Token* lexer_next_token(Lexer* l) {
     if (c == 125) { return tok.token_new(tok.TOK_RBRACE(), "}", 0, start_line, start_col); }
     if (c == 91) { return tok.token_new(tok.TOK_LBRACKET(), "[", 0, start_line, start_col); }
     if (c == 93) { return tok.token_new(tok.TOK_RBRACKET(), "]", 0, start_line, start_col); }
+    if (c == 38) { return tok.token_new(tok.TOK_AMP(), "&", 0, start_line, start_col); }
+    if (c == 124) { return tok.token_new(tok.TOK_PIPE(), "|", 0, start_line, start_col); }
+    if (c == 94) { return tok.token_new(tok.TOK_CARET(), "^", 0, start_line, start_col); }
+    if (c == 126) { return tok.token_new(tok.TOK_TILDE(), "~", 0, start_line, start_col); }
 
     return tok.token_new(tok.TOK_EOF(), "", 0, start_line, start_col);
 }

@@ -1,0 +1,204 @@
+// os/kernel/dynlink.kl
+// ELF64 Dynamic Linker & Runtime Relocation Engine for Kale OS
+// Supports DT_DYNAMIC tags, System V ELF hashing, and x86_64 RELA relocations.
+
+// Dynamic Array Tags (d_tag)
+int64 DT_NULL       = 0 as int64;  // Marks end of _DYNAMIC array
+int64 DT_NEEDED     = 1 as int64;  // String table offset to library name
+int64 DT_PLTRELSZ   = 2 as int64;  // Total size in bytes of PLT relocations
+int64 DT_PLTGOT     = 3 as int64;  // Processor defined value (PLT / GOT address)
+int64 DT_HASH       = 4 as int64;  // Address of symbol hash table
+int64 DT_STRTAB     = 5 as int64;  // Address of string table
+int64 DT_SYMTAB     = 6 as int64;  // Address of symbol table
+int64 DT_RELA       = 7 as int64;  // Address of relocation table
+int64 DT_RELASZ     = 8 as int64;  // Total size in bytes of DT_RELA table
+int64 DT_RELAENT    = 9 as int64;  // Size in bytes of one relocation entry (24)
+int64 DT_PLTREL     = 20 as int64; // Type of reloc in PLT (DT_RELA = 7)
+int64 DT_JMPREL     = 23 as int64; // Address of PLT relocations
+
+// x86_64 Relocation Types
+uint32 R_X86_64_NONE      = 0 as uint32; // No calculation
+uint32 R_X86_64_64        = 1 as uint32; // Direct 64-bit: S + A
+uint32 R_X86_64_PC32      = 2 as uint32; // 32-bit PC relative: S + A - P
+uint32 R_X86_64_GLOB_DAT  = 6 as uint32; // Set GOT entry to symbol: S
+uint32 R_X86_64_JUMP_SLOT = 7 as uint32; // Create PLT jump slot in GOT: S
+uint32 R_X86_64_RELATIVE  = 8 as uint32; // Adjust by program base: B + A
+
+// ==============================================================================
+// Data Structures
+// ==============================================================================
+
+struct Elf64_Dyn {
+    int64 d_tag;
+    uint64 d_val;
+}
+
+struct Elf64_Rela {
+    uint64 r_offset; // Location to be relocated
+    uint64 r_info;   // Symbol index (upper 32) and reloc type (lower 32)
+    int64 r_addend;  // Addend value
+}
+
+struct Elf64_Sym {
+    uint32 st_name;  // Symbol name (index into DT_STRTAB)
+    uint8 st_info;   // Symbol type and binding
+    uint8 st_other;  // Symbol visibility
+    uint16 st_shndx; // Section header index
+    uint64 st_value; // Symbol value / address
+    uint64 st_size;  // Symbol size in bytes
+}
+
+struct DynLinkInfo {
+    uint64 strtab;
+    uint64 symtab;
+    uint64 rela;
+    uint64 relasz;
+    uint64 pltgot;
+    uint64 jmprel;
+    uint64 pltrelsz;
+    int needed_count;
+    uint64[8] needed_offsets;
+}
+
+struct LoadedLib {
+    uint8[32] name;
+    uint64 base_addr;
+    DynLinkInfo dyn;
+    bool is_loaded;
+}
+
+// ==============================================================================
+// Hashing & Relocation Helpers
+// ==============================================================================
+
+// System V standard ELF symbol hash function
+fn uint32 elf_hash(uint8* name) {
+    if (name == null) {
+        return 0 as uint32;
+    }
+    uint32 h = 0 as uint32;
+    uint32 g = 0 as uint32;
+    int i = 0;
+    while (name[i] != (0 as uint8)) {
+        h = (h << (4 as uint32)) + (name[i] as uint32);
+        g = h & 0xF0000000 as uint32;
+        if (g != (0 as uint32)) {
+            h = h ^ (g >> (24 as uint32));
+        }
+        h = h & (~g);
+        i = i + 1;
+    }
+    return h;
+}
+
+// Extracts relocation type (lower 32 bits of r_info)
+fn uint32 rela_get_type(uint64 r_info) {
+    return (r_info & (0xFFFFFFFF as uint64)) as uint32;
+}
+
+// Extracts symbol table index (upper 32 bits of r_info)
+fn uint32 rela_get_sym(uint64 r_info) {
+    return (r_info >> (32 as uint64)) as uint32;
+}
+
+// Packs symbol index and type into 64-bit r_info
+fn uint64 rela_make_info(uint32 sym_idx, uint32 rel_type) {
+    uint64 hi = (sym_idx as uint64) << (32 as uint64);
+    uint64 lo = rel_type as uint64;
+    return hi | lo;
+}
+
+// ==============================================================================
+// Dynamic Section Parsing
+// ==============================================================================
+
+fn void dynlink_parse_dynamic(DynLinkInfo* info, Elf64_Dyn* dyn_array, int count) {
+    if (info == null || dyn_array == null || count <= 0) {
+        return;
+    }
+    info->strtab = 0 as uint64;
+    info->symtab = 0 as uint64;
+    info->rela = 0 as uint64;
+    info->relasz = 0 as uint64;
+    info->pltgot = 0 as uint64;
+    info->jmprel = 0 as uint64;
+    info->pltrelsz = 0 as uint64;
+    info->needed_count = 0;
+
+    int i = 0;
+    while (i < count) {
+        int64 tag = dyn_array[i].d_tag;
+        uint64 val = dyn_array[i].d_val;
+
+        if (tag == DT_NULL) {
+            break; // End of dynamic section
+        }
+
+        if (tag == DT_STRTAB) {
+            info->strtab = val;
+        } else if (tag == DT_SYMTAB) {
+            info->symtab = val;
+        } else if (tag == DT_RELA) {
+            info->rela = val;
+        } else if (tag == DT_RELASZ) {
+            info->relasz = val;
+        } else if (tag == DT_PLTGOT) {
+            info->pltgot = val;
+        } else if (tag == DT_JMPREL) {
+            info->jmprel = val;
+        } else if (tag == DT_PLTRELSZ) {
+            info->pltrelsz = val;
+        } else if (tag == DT_NEEDED) {
+            if (info->needed_count < 8) {
+                info->needed_offsets[info->needed_count] = val;
+                info->needed_count = info->needed_count + 1;
+            }
+        }
+        i = i + 1;
+    }
+}
+
+// Computes the new value to write to the relocation target address
+// base_addr: Base virtual address where shared library is loaded (B)
+// sym_val: Resolved virtual address of the referenced symbol (S)
+// addend: Explicit relocation addend (A)
+// patch_addr: Virtual address being patched (P)
+fn uint64 dynlink_calc_reloc(uint32 rel_type, uint64 base_addr, uint64 sym_val, int64 addend, uint64 patch_addr) {
+    if (rel_type == R_X86_64_RELATIVE) {
+        // B + A: Relocates pointer relative to load base
+        return ((base_addr as int64) + addend) as uint64;
+    }
+    if (rel_type == R_X86_64_GLOB_DAT || rel_type == R_X86_64_JUMP_SLOT) {
+        // S: Direct address of symbol in GOT entry or PLT jump slot
+        return sym_val;
+    }
+    if (rel_type == R_X86_64_64) {
+        // S + A: Direct 64-bit symbol reference with addend
+        return ((sym_val as int64) + addend) as uint64;
+    }
+    if (rel_type == R_X86_64_PC32) {
+        // S + A - P: 32-bit PC-relative reference
+        int64 diff = ((sym_val as int64) + addend) - (patch_addr as int64);
+        return (diff & (0xFFFFFFFF as int64)) as uint64;
+    }
+    return 0 as uint64;
+}
+
+// Registers a newly loaded shared library
+fn void dynlink_register_lib(LoadedLib* lib, uint8* name, uint64 base_addr) {
+    if (lib == null) {
+        return;
+    }
+    lib->base_addr = base_addr;
+    lib->is_loaded = true;
+    lib->dyn.needed_count = 0;
+
+    int i = 0;
+    if (name != null) {
+        while (i < 31 && name[i] != (0 as uint8)) {
+            lib->name[i] = name[i];
+            i = i + 1;
+        }
+    }
+    lib->name[i] = 0 as uint8;
+}

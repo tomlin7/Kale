@@ -25,6 +25,17 @@ fn int TOK_AS() { return 21; }
 fn int TOK_EXTERN() { return 22; }
 fn int TOK_TRUE() { return 23; }
 fn int TOK_FALSE() { return 24; }
+fn int TOK_SWITCH() { return 25; }
+fn int TOK_CASE() { return 26; }
+fn int TOK_DEFAULT() { return 27; }
+fn int TOK_BREAK() { return 28; }
+fn int TOK_CONTINUE() { return 29; }
+fn int TOK_ALLOC() { return 80; }
+fn int TOK_FREE() { return 81; }
+fn int TOK_PRINT() { return 82; }
+fn int TOK_OPERATOR() { return 83; }
+fn int TOK_NULL() { return 84; }
+fn int TOK_CONST() { return 85; }
 
 // Operators & Delimiters
 fn int TOK_PLUS() { return 30; }
@@ -53,6 +64,19 @@ fn int TOK_LBRACE() { return 52; }
 fn int TOK_RBRACE() { return 53; }
 fn int TOK_LBRACKET() { return 54; }
 fn int TOK_RBRACKET() { return 55; }
+fn int TOK_PLUSEQ() { return 60; }
+fn int TOK_MINUSEQ() { return 61; }
+fn int TOK_STAREQ() { return 62; }
+fn int TOK_SLASHEQ() { return 63; }
+fn int TOK_PERCENTEQ() { return 64; }
+fn int TOK_PLUSPLUS() { return 65; }
+fn int TOK_MINUSMINUS() { return 66; }
+fn int TOK_AMP() { return 67; }
+fn int TOK_PIPE() { return 68; }
+fn int TOK_CARET() { return 69; }
+fn int TOK_TILDE() { return 70; }
+fn int TOK_SHL() { return 71; }
+fn int TOK_SHR() { return 72; }
 
 struct Token {
     int kind;
@@ -100,6 +124,17 @@ fn string token_name(int kind) {
     if (kind == 22) { return "extern"; }
     if (kind == 23) { return "true"; }
     if (kind == 24) { return "false"; }
+    if (kind == 25) { return "switch"; }
+    if (kind == 26) { return "case"; }
+    if (kind == 27) { return "default"; }
+    if (kind == 28) { return "break"; }
+    if (kind == 29) { return "continue"; }
+    if (kind == 80) { return "alloc"; }
+    if (kind == 81) { return "free"; }
+    if (kind == 82) { return "print"; }
+    if (kind == 83) { return "operator"; }
+    if (kind == 84) { return "null"; }
+    if (kind == 85) { return "const"; }
     if (kind == 30) { return "+"; }
     if (kind == 31) { return "-"; }
     if (kind == 32) { return "*"; }
@@ -126,5 +161,18 @@ fn string token_name(int kind) {
     if (kind == 53) { return "}"; }
     if (kind == 54) { return "["; }
     if (kind == 55) { return "]"; }
+    if (kind == 60) { return "+="; }
+    if (kind == 61) { return "-="; }
+    if (kind == 62) { return "*="; }
+    if (kind == 63) { return "/="; }
+    if (kind == 64) { return "%="; }
+    if (kind == 65) { return "++"; }
+    if (kind == 66) { return "--"; }
+    if (kind == 67) { return "&"; }
+    if (kind == 68) { return "|"; }
+    if (kind == 69) { return "^"; }
+    if (kind == 70) { return "~"; }
+    if (kind == 71) { return "<<"; }
+    if (kind == 72) { return ">>"; }
     return "UNKNOWN";
 }

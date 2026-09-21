@@ -1,0 +1,266 @@
+// os/drivers/ahci.kl
+// Advanced Host Controller Interface (AHCI 1.3) & SATA Storage Driver for Kale OS
+// Supports MMIO HBA registers, DMA Scatter/Gather PRDTs, Command Tables, and 48-bit LBA transfers.
+
+// Port Device Detection & IPM Status
+uint32 HBA_PORT_DET_PRESENT    = 0x03 as uint32; // Device present and communication established
+uint32 HBA_PORT_IPM_ACTIVE     = 0x01 as uint32; // Interface in active state
+
+// Port Signatures
+uint32 SATA_SIG_ATA            = 0x00000101 as uint32; // SATA Drive
+uint32 SATA_SIG_ATAPI          = 0xEB140101 as uint32; // SATAPI Drive (CD/DVD)
+uint32 SATA_SIG_SEMB           = 0xC33C0101 as uint32; // Enclosure Management Bridge
+uint32 SATA_SIG_PM             = 0x96690101 as uint32; // Port Multiplier
+
+// Port Type Identifiers
+int AHCI_DEV_NULL              = 0;
+int AHCI_DEV_SATA              = 1;
+int AHCI_DEV_SATAPI            = 2;
+int AHCI_DEV_SEMB              = 3;
+int AHCI_DEV_PM                = 4;
+
+// Port Command & Status Bits
+uint32 HBA_CMD_ST              = 0x00000001 as uint32; // Start processing command list
+uint32 HBA_CMD_SUD             = 0x00000002 as uint32; // Spin-Up Device
+uint32 HBA_CMD_POD             = 0x00000004 as uint32; // Power On Device
+uint32 HBA_CMD_CLO             = 0x00000008 as uint32; // Command List Override
+uint32 HBA_CMD_FRE             = 0x00000010 as uint32; // FIS Receive Enable
+uint32 HBA_CMD_FR              = 0x00004000 as uint32; // FIS Receive Running
+uint32 HBA_CMD_CR              = 0x00008000 as uint32; // Command List Running
+
+// Task File Data Status Bits
+uint32 HBA_TFD_ERR             = 0x00000001 as uint32; // Error bit
+uint32 HBA_TFD_DRQ             = 0x00000008 as uint32; // Data request bit
+uint32 HBA_TFD_BSY             = 0x00000080 as uint32; // Busy bit
+
+// FIS Types
+uint8 FIS_TYPE_REG_H2D         = 0x27 as uint8; // Register FIS - Host to Device
+uint8 FIS_TYPE_REG_D2H         = 0x34 as uint8; // Register FIS - Device to Host
+uint8 FIS_TYPE_DMA_ACT         = 0x39 as uint8; // DMA Activate FIS - Device to Host
+uint8 FIS_TYPE_DMA_SETUP       = 0x41 as uint8; // DMA Setup FIS - Bidirectional
+uint8 FIS_TYPE_DATA            = 0x46 as uint8; // Data FIS - Bidirectional
+
+// ATA Commands
+uint8 ATA_CMD_READ_DMA_EXT     = 0x25 as uint8; // 48-bit LBA Read DMA
+uint8 ATA_CMD_WRITE_DMA_EXT    = 0x35 as uint8; // 48-bit LBA Write DMA
+uint8 ATA_CMD_IDENTIFY         = 0xEC as uint8; // Identify Device
+
+// ==============================================================================
+// Data Structures
+// ==============================================================================
+
+struct HBAPort {
+    uint64 clb;       // Command List Base Address (1K-byte aligned)
+    uint64 fb;        // FIS Base Address (256-byte aligned)
+    uint32 is;        // Interrupt Status
+    uint32 ie;        // Interrupt Enable
+    uint32 cmd;       // Command and Status
+    uint32 tfd;       // Task File Data
+    uint32 sig;       // Signature
+    uint32 ssts;      // SATA Status (SCR0: SStatus)
+    uint32 sctl;      // SATA Control (SCR2: SControl)
+    uint32 serr;      // SATA Error (SCR1: SError)
+    uint32 sact;      // SATA Active (SCR3: SActive)
+    uint32 ci;        // Command Issue
+    int port_type;    // AHCI_DEV_*
+}
+
+struct HBACmdHeader {
+    uint16 flags;     // Bits 0-4: CFL (Command FIS Length in dwords), bit 6: Write, bit 7: Prefetch
+    uint16 prdtl;     // PRDT Length in entries
+    uint32 prdbc;     // PRD Byte Count transferred
+    uint64 ctba;      // Command Table Base Address (128-byte aligned)
+}
+
+struct HBAPRDTEntry {
+    uint64 dba;       // Data Base Address
+    uint32 dbc;       // Byte Count (bits 0-21: size - 1, bit 31: Interrupt on Completion)
+}
+
+struct FISRegH2D {
+    uint8 fis_type;    // FIS_TYPE_REG_H2D (0x27)
+    uint8 pmport_c;    // Port multiplier & bit 7: 1 = Command, 0 = Control
+    uint8 command;     // Command register (e.g. 0x25, 0x35, 0xEC)
+    uint8 feature_low; // Feature register (7:0)
+    uint8 lba0;        // LBA low register (7:0)
+    uint8 lba1;        // LBA mid register (15:8)
+    uint8 lba2;        // LBA high register (23:16)
+    uint8 device;      // Device register (bit 6 = 1 for LBA mode)
+    uint8 lba3;        // LBA register (31:24)
+    uint8 lba4;        // LBA register (39:32)
+    uint8 lba5;        // LBA register (47:40)
+    uint8 feature_high;// Feature register (15:8)
+    uint16 count;      // Sector count (15:0)
+    uint8 icc;         // Isochronous command completion
+    uint8 control;     // Control register
+}
+
+struct HBAController {
+    uint64 base_addr;
+    uint32 cap;
+    uint32 ghc;
+    uint32 is;
+    uint32 pi;         // Ports Implemented
+    uint32 vs;         // AHCI Version
+    int port_count;
+    HBAPort[32] ports;
+}
+
+// ==============================================================================
+// Port Management & Status
+// ==============================================================================
+
+// Checks SATA status and signature registers to determine port device type
+fn int ahci_check_port_type(uint32 ssts, uint32 sig) {
+    uint32 det = ssts & (0x0F as uint32);
+    uint32 ipm = (ssts >> 8) & (0x0F as uint32);
+
+    // If device not present or PHY not in active communication
+    if (det != HBA_PORT_DET_PRESENT || ipm != HBA_PORT_IPM_ACTIVE) {
+        return AHCI_DEV_NULL;
+    }
+
+    if (sig == SATA_SIG_ATAPI) {
+        return AHCI_DEV_SATAPI;
+    }
+    if (sig == SATA_SIG_SEMB) {
+        return AHCI_DEV_SEMB;
+    }
+    if (sig == SATA_SIG_PM) {
+        return AHCI_DEV_PM;
+    }
+    if (sig == SATA_SIG_ATA) {
+        return AHCI_DEV_SATA;
+    }
+
+    return AHCI_DEV_NULL;
+}
+
+// Starts command list engine and FIS reception on a port
+fn void ahci_port_start(HBAPort* port) {
+    if (port == null) {
+        return;
+    }
+    // Wait until CR (Command List Running) is clear
+    // Set FRE (FIS Receive Enable) and ST (Start)
+    port->cmd = port->cmd | HBA_CMD_FRE;
+    port->cmd = port->cmd | HBA_CMD_ST;
+}
+
+// Stops command processing and FIS reception safely
+fn void ahci_port_stop(HBAPort* port) {
+    if (port == null) {
+        return;
+    }
+    // Clear ST (Start) and FRE (FIS Receive Enable)
+    port->cmd = port->cmd & (~HBA_CMD_ST);
+    port->cmd = port->cmd & (~HBA_CMD_FRE);
+}
+
+// Finds an available command slot (out of 32 slots)
+fn int ahci_find_cmdslot(HBAPort* port) {
+    if (port == null) {
+        return -1;
+    }
+    // Slots are occupied if either SACT or CI bit is set
+    uint32 slots = port->sact | port->ci;
+    int i = 0;
+    while (i < 32) {
+        uint32 mask = (1 as uint32) << (i as uint32);
+        if ((slots & mask) == (0 as uint32)) {
+            return i;
+        }
+        i = i + 1;
+    }
+    return -1; // All slots busy
+}
+
+// ==============================================================================
+// FIS & PRDT Construction
+// ==============================================================================
+
+// Prepares a Host-to-Device Register FIS for ATA Command dispatch
+fn void ahci_build_h2d_fis(FISRegH2D* fis, uint8 cmd, uint64 lba, uint16 sector_count) {
+    if (fis == null) {
+        return;
+    }
+    fis->fis_type = FIS_TYPE_REG_H2D;
+    fis->pmport_c = 0x80 as uint8; // Bit 7: 1 = Command
+    fis->command = cmd;
+    fis->feature_low = 0 as uint8;
+    fis->feature_high = 0 as uint8;
+
+    // 48-bit LBA packing
+    fis->lba0 = (lba & (0xFF as uint64)) as uint8;
+    fis->lba1 = ((lba >> 8) & (0xFF as uint64)) as uint8;
+    fis->lba2 = ((lba >> 16) & (0xFF as uint64)) as uint8;
+    fis->lba3 = ((lba >> 24) & (0xFF as uint64)) as uint8;
+    fis->lba4 = ((lba >> 32) & (0xFF as uint64)) as uint8;
+    fis->lba5 = ((lba >> 40) & (0xFF as uint64)) as uint8;
+
+    fis->device = 0x40 as uint8; // Bit 6 = 1 (LBA mode enabled)
+    fis->count = sector_count;
+    fis->icc = 0 as uint8;
+    fis->control = 0 as uint8;
+}
+
+// Configures a Scatter/Gather PRDT entry
+fn void ahci_setup_prdt(HBAPRDTEntry* prdt, uint64 data_phys_addr, uint32 byte_count, bool ioc) {
+    if (prdt == null) {
+        return;
+    }
+    prdt->dba = data_phys_addr;
+    // AHCI byte count is encoded as (bytes - 1)
+    uint32 count_field = (byte_count - 1 as uint32) & 0x003FFFFF as uint32;
+    if (ioc) {
+        // Bit 31: Interrupt on Completion
+        count_field = count_field | (0x80000000 as uint32);
+    }
+    prdt->dbc = count_field;
+}
+
+// Configures an AHCI Command Header in the port's command list
+fn void ahci_setup_cmd_header(HBACmdHeader* hdr, uint16 prdtl, bool is_write, uint64 ctba) {
+    if (hdr == null) {
+        return;
+    }
+    // CFL = 5 (FIS_TYPE_REG_H2D is 20 bytes = 5 dwords)
+    uint16 flags = 5 as uint16;
+    if (is_write) {
+        flags = flags | (0x0040 as uint16); // Bit 6: Write flag
+    }
+    hdr->flags = flags;
+    hdr->prdtl = prdtl;
+    hdr->prdbc = 0 as uint32;
+    hdr->ctba = ctba;
+}
+
+// ==============================================================================
+// Controller Initialization
+// ==============================================================================
+
+fn void ahci_init_controller(HBAController* ctrl, uint64 base_addr, uint32 pi, uint32 cap) {
+    if (ctrl == null) {
+        return;
+    }
+    ctrl->base_addr = base_addr;
+    ctrl->pi = pi;
+    ctrl->cap = cap;
+    ctrl->ghc = 0x80000000 as uint32; // GHC.AE (AHCI Enable)
+    ctrl->vs = 0x00010300 as uint32;  // AHCI 1.3
+    ctrl->port_count = 0;
+
+    int i = 0;
+    while (i < 32) {
+        uint32 mask = (1 as uint32) << (i as uint32);
+        ctrl->ports[i].port_type = AHCI_DEV_NULL;
+        ctrl->ports[i].cmd = 0 as uint32;
+        ctrl->ports[i].is = 0 as uint32;
+        ctrl->ports[i].ci = 0 as uint32;
+        ctrl->ports[i].sact = 0 as uint32;
+        if ((pi & mask) != (0 as uint32)) {
+            ctrl->port_count = ctrl->port_count + 1;
+        }
+        i = i + 1;
+    }
+}

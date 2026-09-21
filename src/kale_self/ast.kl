@@ -21,6 +21,20 @@ fn int AST_FOR() { return 17; }
 fn int AST_IMPORT() { return 18; }
 fn int AST_FIELD_DECL() { return 19; }
 fn int AST_STRING() { return 20; }
+fn int AST_BREAK() { return 21; }
+fn int AST_CONTINUE() { return 22; }
+fn int AST_SWITCH() { return 23; }
+fn int AST_CASE() { return 24; }
+fn int AST_DEFAULT() { return 25; }
+fn int AST_ENUM_DECL() { return 26; }
+fn int AST_ENUM_MEMBER() { return 27; }
+fn int AST_INDEX() { return 28; }
+fn int AST_INDEX_ASSIGN() { return 29; }
+fn int AST_MEMBER() { return 30; }
+fn int AST_MEMBER_ASSIGN() { return 31; }
+fn int AST_ALLOC() { return 32; }
+fn int AST_FREE() { return 33; }
+fn int AST_PRINT() { return 34; }
 
 struct ASTNode {
     int kind;
@@ -194,6 +208,99 @@ fn void ast_block_append(ASTNode* block, ASTNode* stmt) {
         cur = cur->next;
     }
     cur->next = stmt;
+}
+
+fn ASTNode* ast_break() {
+    return ast_node_new(AST_BREAK());
+}
+
+fn ASTNode* ast_continue() {
+    return ast_node_new(AST_CONTINUE());
+}
+
+fn ASTNode* ast_switch(ASTNode* cond, ASTNode* cases) {
+    ASTNode* n = ast_node_new(AST_SWITCH());
+    n->cond = cond;
+    n->body = cases;
+    return n;
+}
+
+fn ASTNode* ast_case(ASTNode* val, ASTNode* body) {
+    ASTNode* n = ast_node_new(AST_CASE());
+    n->left = val;
+    n->body = body;
+    return n;
+}
+
+fn ASTNode* ast_default(ASTNode* body) {
+    ASTNode* n = ast_node_new(AST_DEFAULT());
+    n->body = body;
+    return n;
+}
+
+fn ASTNode* ast_enum_decl(string name, ASTNode* members) {
+    ASTNode* n = ast_node_new(AST_ENUM_DECL());
+    n->text = name;
+    n->body = members;
+    return n;
+}
+
+fn ASTNode* ast_enum_member(string name, int val) {
+    ASTNode* n = ast_node_new(AST_ENUM_MEMBER());
+    n->text = name;
+    n->int_val = val;
+    return n;
+}
+
+fn ASTNode* ast_index(ASTNode* target, ASTNode* index) {
+    ASTNode* n = ast_node_new(AST_INDEX());
+    n->left = target;
+    n->right = index;
+    return n;
+}
+
+fn ASTNode* ast_index_assign(ASTNode* target, ASTNode* index, ASTNode* value) {
+    ASTNode* n = ast_node_new(AST_INDEX_ASSIGN());
+    n->left = target;
+    n->right = index;
+    n->body = value;
+    return n;
+}
+
+fn ASTNode* ast_member(ASTNode* target, string member_name, bool is_arrow) {
+    ASTNode* n = ast_node_new(AST_MEMBER());
+    n->left = target;
+    n->text = member_name;
+    if (is_arrow) { n->int_val = 1; } else { n->int_val = 0; }
+    return n;
+}
+
+fn ASTNode* ast_member_assign(ASTNode* target, string member_name, bool is_arrow, ASTNode* value) {
+    ASTNode* n = ast_node_new(AST_MEMBER_ASSIGN());
+    n->left = target;
+    n->text = member_name;
+    if (is_arrow) { n->int_val = 1; } else { n->int_val = 0; }
+    n->right = value;
+    return n;
+}
+
+fn ASTNode* ast_alloc(string type_name, ASTNode* count) {
+    ASTNode* n = ast_node_new(AST_ALLOC());
+    n->type_name = type_name;
+    n->left = count;
+    return n;
+}
+
+fn ASTNode* ast_free_node(ASTNode* expr) {
+    ASTNode* n = ast_node_new(AST_FREE());
+    n->left = expr;
+    return n;
+}
+
+fn ASTNode* ast_print(ASTNode* first_arg) {
+    ASTNode* n = ast_node_new(AST_PRINT());
+    n->left = first_arg;
+    return n;
 }
 
 fn void ast_free(ASTNode* node) {

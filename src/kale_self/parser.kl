@@ -59,8 +59,34 @@ fn tok.Token* parser_consume(Parser* p, int kind) {
     return (tok.Token*)0;
 }
 
+extern int strlen(string s);
+extern void* malloc(int size);
+
+fn string str_concat(string s1, string s2) {
+    int l1 = strlen(s1);
+    int l2 = strlen(s2);
+    char* buf = (char*)malloc(l1 + l2 + 1);
+    int i = 0;
+    while (i < l1) {
+        buf[i] = s1[i];
+        i = i + 1;
+    }
+    int j = 0;
+    while (j < l2) {
+        buf[l1 + j] = s2[j];
+        j = j + 1;
+    }
+    buf[l1 + l2] = (char)0;
+    return (string)buf;
+}
+
 fn ast.ASTNode* parser_parse_primary(Parser* p) {
     if (parser_check(p, tok.TOK_INT())) {
+        tok.Token* t = parser_advance(p);
+        return ast.ast_literal(t->int_val);
+    }
+
+    if (parser_check(p, tok.TOK_CHAR())) {
         tok.Token* t = parser_advance(p);
         return ast.ast_literal(t->int_val);
     }
@@ -78,6 +104,26 @@ fn ast.ASTNode* parser_parse_primary(Parser* p) {
     if (parser_check(p, tok.TOK_FALSE())) {
         parser_advance(p);
         return ast.ast_literal(0);
+    }
+
+    if (parser_check(p, tok.TOK_NULL())) {
+        parser_advance(p);
+        return ast.ast_literal(0);
+    }
+
+    if (parser_match(p, tok.TOK_ALLOC())) {
+        parser_consume(p, tok.TOK_LPAREN());
+        tok.Token* t = parser_consume(p, tok.TOK_IDENT());
+        string tname = "";
+        if (t != (tok.Token*)0) { tname = t->text; }
+        while (parser_match(p, tok.TOK_STAR())) {
+        }
+        ast.ASTNode* count = (ast.ASTNode*)0;
+        if (parser_match(p, tok.TOK_COMMA())) {
+            count = parser_parse_expression(p);
+        }
+        parser_consume(p, tok.TOK_RPAREN());
+        return ast.ast_alloc(tname, count);
     }
 
     if (parser_check(p, tok.TOK_IDENT())) {
@@ -105,6 +151,14 @@ fn ast.ASTNode* parser_parse_primary(Parser* p) {
     }
 
     if (parser_match(p, tok.TOK_LPAREN())) {
+        if (parser_check(p, tok.TOK_IDENT()) && is_type_name(p->current->text)) {
+            tok.Token* ct = parser_advance(p);
+            while (parser_match(p, tok.TOK_STAR())) {
+            }
+            if (parser_match(p, tok.TOK_RPAREN())) {
+                return parser_parse_unary(p);
+            }
+        }
         ast.ASTNode* expr = parser_parse_expression(p);
         parser_consume(p, tok.TOK_RPAREN());
         return expr;
@@ -114,13 +168,74 @@ fn ast.ASTNode* parser_parse_primary(Parser* p) {
     return (ast.ASTNode*)0;
 }
 
+fn ast.ASTNode* parser_parse_postfix(Parser* p) {
+    ast.ASTNode* expr = parser_parse_primary(p);
+    bool looping = true;
+    while (looping) {
+        if (parser_match(p, tok.TOK_DOT())) {
+            tok.Token* mem = parser_consume(p, tok.TOK_IDENT());
+            string mname = "";
+            if (mem != (tok.Token*)0) { mname = mem->text; }
+            if (parser_match(p, tok.TOK_LPAREN())) {
+                ast.ASTNode* first_arg = expr;
+                ast.ASTNode* last_arg = first_arg;
+                if (!parser_check(p, tok.TOK_RPAREN())) {
+                    ast.ASTNode* a = parser_parse_expression(p);
+                    last_arg->next = a;
+                    last_arg = a;
+                    while (parser_match(p, tok.TOK_COMMA())) {
+                        ast.ASTNode* next_a = parser_parse_expression(p);
+                        last_arg->next = next_a;
+                        last_arg = next_a;
+                    }
+                }
+                parser_consume(p, tok.TOK_RPAREN());
+                expr = ast.ast_call(mname, first_arg);
+            } else {
+                expr = ast.ast_member(expr, mname, false);
+            }
+        } else if (parser_match(p, tok.TOK_ARROW())) {
+            tok.Token* mem = parser_consume(p, tok.TOK_IDENT());
+            string mname = "";
+            if (mem != (tok.Token*)0) { mname = mem->text; }
+            if (parser_match(p, tok.TOK_LPAREN())) {
+                ast.ASTNode* first_arg = expr;
+                ast.ASTNode* last_arg = first_arg;
+                if (!parser_check(p, tok.TOK_RPAREN())) {
+                    ast.ASTNode* a = parser_parse_expression(p);
+                    last_arg->next = a;
+                    last_arg = a;
+                    while (parser_match(p, tok.TOK_COMMA())) {
+                        ast.ASTNode* next_a = parser_parse_expression(p);
+                        last_arg->next = next_a;
+                        last_arg = next_a;
+                    }
+                }
+                parser_consume(p, tok.TOK_RPAREN());
+                expr = ast.ast_call(mname, first_arg);
+            } else {
+                expr = ast.ast_member(expr, mname, true);
+            }
+        } else if (parser_match(p, tok.TOK_LBRACKET())) {
+            ast.ASTNode* idx = parser_parse_expression(p);
+            parser_consume(p, tok.TOK_RBRACKET());
+            expr = ast.ast_index(expr, idx);
+        } else {
+            looping = false;
+        }
+    }
+    return expr;
+}
+
 fn ast.ASTNode* parser_parse_unary(Parser* p) {
-    if (parser_check(p, tok.TOK_BANG()) || parser_check(p, tok.TOK_MINUS())) {
+    if (parser_check(p, tok.TOK_BANG()) || parser_check(p, tok.TOK_MINUS()) ||
+        parser_check(p, tok.TOK_TILDE()) || parser_check(p, tok.TOK_STAR()) ||
+        parser_check(p, tok.TOK_AMP())) {
         tok.Token* op = parser_advance(p);
         ast.ASTNode* operand = parser_parse_unary(p);
         return ast.ast_unary(op->kind, operand);
     }
-    return parser_parse_primary(p);
+    return parser_parse_postfix(p);
 }
 
 fn ast.ASTNode* parser_parse_multiplicative(Parser* p) {
@@ -143,12 +258,22 @@ fn ast.ASTNode* parser_parse_additive(Parser* p) {
     return left;
 }
 
-fn ast.ASTNode* parser_parse_relational(Parser* p) {
+fn ast.ASTNode* parser_parse_shift(Parser* p) {
     ast.ASTNode* left = parser_parse_additive(p);
+    while (parser_check(p, tok.TOK_SHL()) || parser_check(p, tok.TOK_SHR())) {
+        tok.Token* op = parser_advance(p);
+        ast.ASTNode* right = parser_parse_additive(p);
+        left = ast.ast_binary(op->kind, left, right);
+    }
+    return left;
+}
+
+fn ast.ASTNode* parser_parse_relational(Parser* p) {
+    ast.ASTNode* left = parser_parse_shift(p);
     while (parser_check(p, tok.TOK_LT()) || parser_check(p, tok.TOK_LTE()) ||
            parser_check(p, tok.TOK_GT()) || parser_check(p, tok.TOK_GTE())) {
         tok.Token* op = parser_advance(p);
-        ast.ASTNode* right = parser_parse_additive(p);
+        ast.ASTNode* right = parser_parse_shift(p);
         left = ast.ast_binary(op->kind, left, right);
     }
     return left;
@@ -164,12 +289,90 @@ fn ast.ASTNode* parser_parse_equality(Parser* p) {
     return left;
 }
 
+fn ast.ASTNode* parser_parse_bitwise_and(Parser* p) {
+    ast.ASTNode* left = parser_parse_equality(p);
+    while (parser_check(p, tok.TOK_AMP())) {
+        tok.Token* op = parser_advance(p);
+        ast.ASTNode* right = parser_parse_equality(p);
+        left = ast.ast_binary(op->kind, left, right);
+    }
+    return left;
+}
+
+fn ast.ASTNode* parser_parse_bitwise_xor(Parser* p) {
+    ast.ASTNode* left = parser_parse_bitwise_and(p);
+    while (parser_check(p, tok.TOK_CARET())) {
+        tok.Token* op = parser_advance(p);
+        ast.ASTNode* right = parser_parse_bitwise_and(p);
+        left = ast.ast_binary(op->kind, left, right);
+    }
+    return left;
+}
+
+fn ast.ASTNode* parser_parse_bitwise_or(Parser* p) {
+    ast.ASTNode* left = parser_parse_bitwise_xor(p);
+    while (parser_check(p, tok.TOK_PIPE())) {
+        tok.Token* op = parser_advance(p);
+        ast.ASTNode* right = parser_parse_bitwise_xor(p);
+        left = ast.ast_binary(op->kind, left, right);
+    }
+    return left;
+}
+
+fn ast.ASTNode* parser_parse_logical_and(Parser* p) {
+    ast.ASTNode* left = parser_parse_bitwise_or(p);
+    while (parser_check(p, tok.TOK_ANDAND())) {
+        tok.Token* op = parser_advance(p);
+        ast.ASTNode* right = parser_parse_bitwise_or(p);
+        left = ast.ast_binary(op->kind, left, right);
+    }
+    return left;
+}
+
+fn ast.ASTNode* parser_parse_logical_or(Parser* p) {
+    ast.ASTNode* left = parser_parse_logical_and(p);
+    while (parser_check(p, tok.TOK_OROR())) {
+        tok.Token* op = parser_advance(p);
+        ast.ASTNode* right = parser_parse_logical_and(p);
+        left = ast.ast_binary(op->kind, left, right);
+    }
+    return left;
+}
+
 fn ast.ASTNode* parser_parse_expression(Parser* p) {
-    ast.ASTNode* expr = parser_parse_equality(p);
-    if (expr != (ast.ASTNode*)0 && expr->kind == ast.AST_IDENT() && parser_match(p, tok.TOK_EQUALS())) {
-        ast.ASTNode* val = parser_parse_expression(p);
-        string name = expr->text;
-        return ast.ast_assign(name, val);
+    ast.ASTNode* expr = parser_parse_logical_or(p);
+    if (expr != (ast.ASTNode*)0) {
+        if (expr->kind == ast.AST_IDENT()) {
+            if (parser_match(p, tok.TOK_EQUALS())) {
+                ast.ASTNode* val = parser_parse_expression(p);
+                return ast.ast_assign(expr->text, val);
+            }
+            if (parser_match(p, tok.TOK_PLUSEQ())) {
+                ast.ASTNode* val = parser_parse_expression(p);
+                return ast.ast_assign(expr->text, ast.ast_binary(tok.TOK_PLUS(), expr, val));
+            }
+            if (parser_match(p, tok.TOK_MINUSEQ())) {
+                ast.ASTNode* val = parser_parse_expression(p);
+                return ast.ast_assign(expr->text, ast.ast_binary(tok.TOK_MINUS(), expr, val));
+            }
+        }
+        if (expr->kind == ast.AST_INDEX()) {
+            if (parser_match(p, tok.TOK_EQUALS())) {
+                ast.ASTNode* val = parser_parse_expression(p);
+                return ast.ast_index_assign(expr->left, expr->right, val);
+            }
+        }
+        if (expr->kind == ast.AST_MEMBER()) {
+            if (parser_match(p, tok.TOK_EQUALS())) {
+                ast.ASTNode* val = parser_parse_expression(p);
+                return ast.ast_member_assign(expr->left, expr->text, expr->int_val == 1, val);
+            }
+            if (parser_match(p, tok.TOK_PLUSEQ())) {
+                ast.ASTNode* val = parser_parse_expression(p);
+                return ast.ast_member_assign(expr->left, expr->text, expr->int_val == 1,
+                    ast.ast_binary(tok.TOK_PLUS(), expr, val));
+            }
+        }
     }
     return expr;
 }

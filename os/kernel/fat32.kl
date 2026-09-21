@@ -1,0 +1,228 @@
+// os/kernel/fat32.kl
+// Pure Kale FAT32 Filesystem Subsystem for Kale OS
+// Supports BIOS Parameter Block (BPB) parsing, FAT cluster chains,
+// 8.3 directory entry extraction, and cluster-to-LBA mapping.
+
+// FAT Attributes
+uint8 FAT_ATTR_READ_ONLY    = 0x01 as uint8;
+uint8 FAT_ATTR_HIDDEN       = 0x02 as uint8;
+uint8 FAT_ATTR_SYSTEM       = 0x04 as uint8;
+uint8 FAT_ATTR_VOLUME_ID    = 0x08 as uint8;
+uint8 FAT_ATTR_DIRECTORY    = 0x10 as uint8;
+uint8 FAT_ATTR_ARCHIVE      = 0x20 as uint8;
+uint8 FAT_ATTR_LFN          = 0x0F as uint8;
+
+// FAT Cluster Entry Values
+uint32 FAT_ENTRY_FREE       = 0x00000000 as uint32;
+uint32 FAT_ENTRY_BAD        = 0x0FFFFFF7 as uint32;
+uint32 FAT_ENTRY_EOF_MIN    = 0x0FFFFFF8 as uint32;
+uint32 FAT_ENTRY_EOF_MAX    = 0x0FFFFFFF as uint32;
+
+// Directory Markers
+uint8 FAT_DIRENT_DELETED    = 0xE5 as uint8;
+uint8 FAT_DIRENT_END        = 0x00 as uint8;
+
+// ==============================================================================
+// Data Structures
+// ==============================================================================
+
+struct FAT32BPB {
+    uint16 bytes_per_sector;
+    uint8 sectors_per_cluster;
+    uint16 reserved_sectors;
+    uint8 num_fats;
+    uint32 total_sectors_32;
+    uint32 sectors_per_fat_32;
+    uint32 root_cluster;
+    uint16 fs_info_sector;
+    uint32 first_data_sector;
+    bool is_valid;
+}
+
+struct FAT32DirEntry {
+    uint8[13] name;       // Null-terminated 8.3 filename formatted (e.g. "KERNEL.BIN")
+    uint8 attr;
+    uint32 first_cluster; // (DIR_FstClusHI << 16) | DIR_FstClusLO
+    uint32 file_size;     // Size in bytes
+    bool is_directory;
+    bool is_valid;
+}
+
+// ==============================================================================
+// BPB & Cluster Math
+// ==============================================================================
+
+// Helper: read 16-bit little endian integer from byte array
+fn uint16 read_u16_le(uint8* buf, int offset) {
+    uint32 b0 = buf[offset] as uint32;
+    uint32 b1 = buf[offset + 1] as uint32;
+    return (b0 | (b1 << 8)) as uint16;
+}
+
+// Helper: read 32-bit little endian integer from byte array
+fn uint32 read_u32_le(uint8* buf, int offset) {
+    uint32 b0 = buf[offset] as uint32;
+    uint32 b1 = buf[offset + 1] as uint32;
+    uint32 b2 = buf[offset + 2] as uint32;
+    uint32 b3 = buf[offset + 3] as uint32;
+    return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
+}
+
+// Parses and validates the FAT32 Boot Sector / BIOS Parameter Block (512 bytes)
+fn void fat32_parse_bpb(FAT32BPB* bpb, uint8* sector) {
+    if (bpb == null || sector == null) {
+        return;
+    }
+    // Verify 0x55 0xAA boot signature at bytes 510-511
+    if (sector[510] != (0x55 as uint8) || sector[511] != (0xAA as uint8)) {
+        bpb->is_valid = false;
+        return;
+    }
+
+    bpb->bytes_per_sector = read_u16_le(sector, 11);
+    bpb->sectors_per_cluster = sector[13];
+    bpb->reserved_sectors = read_u16_le(sector, 14);
+    bpb->num_fats = sector[16];
+
+    // Sectors per FAT (32-bit field at offset 36)
+    bpb->sectors_per_fat_32 = read_u32_le(sector, 36);
+
+    // Root cluster (typically 2, at offset 44)
+    bpb->root_cluster = read_u32_le(sector, 44);
+
+    // FSInfo sector (typically 1, at offset 48)
+    bpb->fs_info_sector = read_u16_le(sector, 48);
+
+    // Total sectors
+    uint16 total_16 = read_u16_le(sector, 19);
+    if (total_16 != (0 as uint16)) {
+        bpb->total_sectors_32 = total_16 as uint32;
+    } else {
+        bpb->total_sectors_32 = read_u32_le(sector, 32);
+    }
+
+    // Calculate start of data region:
+    // first_data_sector = reserved_sectors + (num_fats * sectors_per_fat_32)
+    bpb->first_data_sector = (bpb->reserved_sectors as uint32) + ((bpb->num_fats as uint32) * bpb->sectors_per_fat_32);
+    bpb->is_valid = (bpb->bytes_per_sector == (512 as uint16)) && (bpb->sectors_per_cluster > (0 as uint8));
+}
+
+// Converts a cluster number (>= 2) to its absolute LBA sector on disk
+fn uint32 fat32_cluster_to_lba(FAT32BPB* bpb, uint32 cluster) {
+    if (bpb == null || cluster < (2 as uint32)) {
+        return 0 as uint32;
+    }
+    return bpb->first_data_sector + ((cluster - (2 as uint32)) * (bpb->sectors_per_cluster as uint32));
+}
+
+// Computes the LBA sector where a cluster's 32-bit FAT entry is located
+fn uint32 fat32_fat_entry_lba(FAT32BPB* bpb, uint32 cluster) {
+    if (bpb == null) {
+        return 0 as uint32;
+    }
+    uint32 fat_offset_bytes = cluster * (4 as uint32);
+    return (bpb->reserved_sectors as uint32) + (fat_offset_bytes / (bpb->bytes_per_sector as uint32));
+}
+
+// Computes byte offset of cluster entry within the FAT sector
+fn uint32 fat32_fat_entry_offset(FAT32BPB* bpb, uint32 cluster) {
+    if (bpb == null) {
+        return 0 as uint32;
+    }
+    return (cluster * (4 as uint32)) % (bpb->bytes_per_sector as uint32);
+}
+
+// Checks if a FAT entry represents End-Of-Cluster-Chain
+fn bool fat32_is_eof(uint32 fat_entry) {
+    // Top 4 bits are reserved in FAT32
+    uint32 val = fat_entry & 0x0FFFFFFF as uint32;
+    return val >= FAT_ENTRY_EOF_MIN;
+}
+
+// ==============================================================================
+// Directory Entry Parsing
+// ==============================================================================
+
+// Converts raw 11-byte 8.3 directory name ("KERNEL  BIN") into "KERNEL.BIN"
+fn void fat32_format_name(uint8* raw_11, uint8* dst_13) {
+    if (raw_11 == null || dst_13 == null) {
+        return;
+    }
+    int out_idx = 0;
+
+    // 1. Copy filename (up to 8 characters, trim trailing spaces)
+    int name_end = 8;
+    while (name_end > 0 && raw_11[name_end - 1] == (0x20 as uint8)) {
+        name_end = name_end - 1;
+    }
+    int i = 0;
+    while (i < name_end) {
+        dst_13[out_idx] = raw_11[i];
+        out_idx = out_idx + 1;
+        i = i + 1;
+    }
+
+    // 2. Copy extension if present (up to 3 characters, trim trailing spaces)
+    int ext_end = 3;
+    while (ext_end > 0 && raw_11[8 + ext_end - 1] == (0x20 as uint8)) {
+        ext_end = ext_end - 1;
+    }
+    if (ext_end > 0) {
+        dst_13[out_idx] = 0x2E as uint8; // '.'
+        out_idx = out_idx + 1;
+        int j = 0;
+        while (j < ext_end) {
+            dst_13[out_idx] = raw_11[8 + j];
+            out_idx = out_idx + 1;
+            j = j + 1;
+        }
+    }
+
+    dst_13[out_idx] = 0 as uint8; // Null terminator
+}
+
+// Parses a 32-byte FAT32 directory table entry
+fn void fat32_parse_dirent(FAT32DirEntry* entry, uint8* raw_32) {
+    if (entry == null || raw_32 == null) {
+        return;
+    }
+    uint8 first_byte = raw_32[0];
+    if (first_byte == FAT_DIRENT_END || first_byte == FAT_DIRENT_DELETED) {
+        entry->is_valid = false;
+        return;
+    }
+
+    entry->attr = raw_32[11];
+    // Skip LFN / volume ID entries for regular file listings
+    if (entry->attr == FAT_ATTR_LFN || ((entry->attr & FAT_ATTR_VOLUME_ID) != (0 as uint8))) {
+        entry->is_valid = false;
+        return;
+    }
+
+    fat32_format_name(&raw_32[0], &entry->name[0]);
+
+    uint16 clus_hi = read_u16_le(raw_32, 20);
+    uint16 clus_lo = read_u16_le(raw_32, 26);
+    entry->first_cluster = ((clus_hi as uint32) << 16) | (clus_lo as uint32);
+    entry->file_size = read_u32_le(raw_32, 28);
+    entry->is_directory = (entry->attr & FAT_ATTR_DIRECTORY) != (0 as uint8);
+    entry->is_valid = true;
+}
+
+// Helper: compares two null-terminated ASCII strings
+fn bool fat32_name_equals(uint8* a, uint8* b) {
+    if (a == null || b == null) {
+        return false;
+    }
+    int i = 0;
+    while (true) {
+        if (a[i] != b[i]) {
+            return false;
+        }
+        if (a[i] == (0 as uint8)) {
+            return true;
+        }
+        i = i + 1;
+    }
+    return false;
+}
