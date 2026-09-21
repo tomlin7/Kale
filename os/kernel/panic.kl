@@ -1,0 +1,154 @@
+// os/kernel/panic.kl
+// Kernel Crash Recovery, Panic & Core Dump Subsystem for Kale OS
+// Captures fault register context, unwinds x86_64 RBP frame pointer chains,
+// and serializes structured core dump crash headers.
+
+uint64 PANIC_MAGIC              = 0x4B414C4550414E43 as uint64; // "KALEPANC"
+int PANIC_MAX_BACKTRACE         = 16;
+
+// Standard Fault Vectors
+uint32 FAULT_DIVIDE_BY_ZERO     = 0 as uint32;
+uint32 FAULT_DOUBLE_FAULT       = 8 as uint32;
+uint32 FAULT_GPF                = 13 as uint32;
+uint32 FAULT_PAGE_FAULT         = 14 as uint32;
+uint32 FAULT_ASSERT_FAIL        = 255 as uint32;
+
+// ==============================================================================
+// Data Structures
+// ==============================================================================
+
+struct PanicRegs {
+    uint64 rax;
+    uint64 rbx;
+    uint64 rcx;
+    uint64 rdx;
+    uint64 rsi;
+    uint64 rdi;
+    uint64 rbp;
+    uint64 rsp;
+    uint64 r8;
+    uint64 r9;
+    uint64 r10;
+    uint64 r11;
+    uint64 r12;
+    uint64 r13;
+    uint64 r14;
+    uint64 r15;
+    uint64 rip;
+    uint64 rflags;
+    uint64 cs;
+    uint64 ss;
+    uint64 cr0;
+    uint64 cr2; // Faulting linear memory address
+    uint64 cr3; // Page directory base
+    uint64 cr4;
+    uint64 err_code;
+    uint32 vector;
+}
+
+struct PanicContext {
+    PanicRegs regs;
+    uint8[64] message;
+    int backtrace_count;
+    uint64[16] backtrace;
+    bool is_valid;
+}
+
+struct CoreDumpHeader {
+    uint64 magic;
+    uint32 version;
+    uint32 vector;
+    uint64 rip;
+    uint64 rsp;
+    uint64 cr2;
+    uint32 backtrace_count;
+    uint8[64] message;
+}
+
+// ==============================================================================
+// Context Initialization
+// ==============================================================================
+
+fn void panic_init_context(PanicContext* ctx, uint32 vector, uint64 err_code, uint8* msg) {
+    if (ctx == null) {
+        return;
+    }
+    ctx->regs.vector = vector;
+    ctx->regs.err_code = err_code;
+    ctx->backtrace_count = 0;
+    ctx->is_valid = true;
+
+    int i = 0;
+    if (msg != null) {
+        while (i < 63 && msg[i] != (0 as uint8)) {
+            ctx->message[i] = msg[i];
+            i = i + 1;
+        }
+    }
+    ctx->message[i] = 0 as uint8;
+}
+
+// ==============================================================================
+// Stack Frame Pointer Unwinding
+// ==============================================================================
+
+// Unwinds the RBP linked list:
+// Each frame pointer points to:
+//   *(uint64*)rbp     = previous rbp
+//   *(uint64*)(rbp+8) = return rip
+// stack_mem: Base pointer of simulated stack memory buffer
+// stack_bottom / stack_top: Valid memory address range for stack
+fn void panic_unwind_stack(PanicContext* ctx, uint64* stack_mem, uint64 rbp, uint64 stack_bottom, uint64 stack_top) {
+    if (ctx == null || stack_mem == null) {
+        return;
+    }
+    ctx->backtrace_count = 0;
+    uint64 cur_rbp = rbp;
+
+    while (ctx->backtrace_count < PANIC_MAX_BACKTRACE) {
+        // Bounds check frame pointer
+        if (cur_rbp < stack_bottom || cur_rbp + (16 as uint64) > stack_top) {
+            break;
+        }
+        // Offset within simulated stack memory array (in 8-byte uint64 units)
+        uint64 idx = (cur_rbp - stack_bottom) / (8 as uint64);
+        uint64 next_rbp = stack_mem[idx];
+        uint64 ret_rip = stack_mem[idx + (1 as uint64)];
+
+        if (ret_rip == (0 as uint64)) {
+            break;
+        }
+
+        ctx->backtrace[ctx->backtrace_count] = ret_rip;
+        ctx->backtrace_count = ctx->backtrace_count + 1;
+
+        // Ensure strictly increasing stack frame pointer to prevent infinite loops
+        if (next_rbp <= cur_rbp) {
+            break;
+        }
+        cur_rbp = next_rbp;
+    }
+}
+
+// ==============================================================================
+// Core Dump Header Serialization
+// ==============================================================================
+
+fn void panic_serialize_core_dump(PanicContext* ctx, CoreDumpHeader* hdr) {
+    if (ctx == null || hdr == null) {
+        return;
+    }
+    hdr->magic = PANIC_MAGIC;
+    hdr->version = 1 as uint32;
+    hdr->vector = ctx->regs.vector;
+    hdr->rip = ctx->regs.rip;
+    hdr->rsp = ctx->regs.rsp;
+    hdr->cr2 = ctx->regs.cr2;
+    hdr->backtrace_count = ctx->backtrace_count as uint32;
+
+    int i = 0;
+    while (i < 64) {
+        hdr->message[i] = ctx->message[i];
+        i = i + 1;
+    }
+}

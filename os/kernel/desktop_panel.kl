@@ -1,0 +1,272 @@
+// os/kernel/desktop_panel.kl
+// Desktop Panels, System Tray Applets & Notification Center for Kale OS
+// Supports taskbar window switching, clock applet, and desktop toast notifications.
+
+int PANEL_MAX_TASKS         = 8;
+int NOTIFY_MAX_TOASTS       = 4;
+int NOTIFY_WIDTH            = 240;
+int NOTIFY_HEIGHT           = 60;
+int PANEL_DEFAULT_HEIGHT    = 32;
+
+// ==============================================================================
+// Data Structures
+// ==============================================================================
+
+struct TaskItem {
+    int win_id;
+    uint8[24] title;
+    bool is_active;
+    bool is_focused;
+}
+
+struct DesktopPanel {
+    int x;
+    int y;
+    int w;
+    int h;
+    bool is_bottom;
+    bool launcher_open;
+    int task_count;
+    TaskItem[8] tasks;
+    uint8[6] clock_str; // "HH:MM\0"
+}
+
+struct NotificationToast {
+    int id;
+    uint8[32] title;
+    uint8[64] body;
+    int duration_ms;
+    int remaining_ms;
+    int x;
+    int y;
+    int w;
+    int h;
+    bool is_active;
+}
+
+struct NotificationCenter {
+    int screen_w;
+    int screen_h;
+    int next_id;
+    int active_count;
+    NotificationToast[4] toasts;
+}
+
+// ==============================================================================
+// Desktop Panel Management
+// ==============================================================================
+
+fn void panel_init(DesktopPanel* panel, int screen_w, int screen_h, int height, bool is_bottom) {
+    if (panel == null) {
+        return;
+    }
+    panel->x = 0;
+    panel->w = screen_w;
+    panel->h = height;
+    panel->is_bottom = is_bottom;
+    if (is_bottom) {
+        panel->y = screen_h - height;
+    } else {
+        panel->y = 0;
+    }
+    panel->launcher_open = false;
+    panel->task_count = 0;
+
+    int i = 0;
+    while (i < PANEL_MAX_TASKS) {
+        panel->tasks[i].win_id = -1;
+        panel->tasks[i].is_active = false;
+        panel->tasks[i].is_focused = false;
+        panel->tasks[i].title[0] = 0 as uint8;
+        i = i + 1;
+    }
+
+    // Default clock "00:00"
+    panel->clock_str[0] = 48 as uint8; // '0'
+    panel->clock_str[1] = 48 as uint8; // '0'
+    panel->clock_str[2] = 58 as uint8; // ':'
+    panel->clock_str[3] = 48 as uint8; // '0'
+    panel->clock_str[4] = 48 as uint8; // '0'
+    panel->clock_str[5] = 0 as uint8;
+}
+
+fn void panel_add_task(DesktopPanel* panel, int win_id, uint8* title) {
+    if (panel == null || win_id < 0) {
+        return;
+    }
+    int i = 0;
+    while (i < PANEL_MAX_TASKS) {
+        if (!panel->tasks[i].is_active) {
+            panel->tasks[i].win_id = win_id;
+            panel->tasks[i].is_active = true;
+            panel->tasks[i].is_focused = true;
+
+            int t = 0;
+            if (title != null) {
+                while (t < 23 && title[t] != (0 as uint8)) {
+                    panel->tasks[i].title[t] = title[t];
+                    t = t + 1;
+                }
+            }
+            panel->tasks[i].title[t] = 0 as uint8;
+
+            panel->task_count = panel->task_count + 1;
+            return;
+        }
+        i = i + 1;
+    }
+}
+
+fn void panel_remove_task(DesktopPanel* panel, int win_id) {
+    if (panel == null || win_id < 0) {
+        return;
+    }
+    int i = 0;
+    while (i < PANEL_MAX_TASKS) {
+        if (panel->tasks[i].is_active && panel->tasks[i].win_id == win_id) {
+            panel->tasks[i].is_active = false;
+            panel->tasks[i].win_id = -1;
+            panel->task_count = panel->task_count - 1;
+            return;
+        }
+        i = i + 1;
+    }
+}
+
+fn void panel_set_focused_task(DesktopPanel* panel, int win_id) {
+    if (panel == null) {
+        return;
+    }
+    int i = 0;
+    while (i < PANEL_MAX_TASKS) {
+        if (panel->tasks[i].is_active) {
+            panel->tasks[i].is_focused = (panel->tasks[i].win_id == win_id);
+        }
+        i = i + 1;
+    }
+}
+
+// Updates system tray clock display with 2-digit hour and minute
+fn void panel_update_clock(DesktopPanel* panel, int hour, int minute) {
+    if (panel == null) {
+        return;
+    }
+    int h = hour % 24;
+    int m = minute % 60;
+
+    panel->clock_str[0] = (48 + (h / 10)) as uint8;
+    panel->clock_str[1] = (48 + (h % 10)) as uint8;
+    panel->clock_str[2] = 58 as uint8; // ':'
+    panel->clock_str[3] = (48 + (m / 10)) as uint8;
+    panel->clock_str[4] = (48 + (m % 10)) as uint8;
+    panel->clock_str[5] = 0 as uint8;
+}
+
+// ==============================================================================
+// Notification Center Management
+// ==============================================================================
+
+fn void notification_center_init(NotificationCenter* nc, int screen_w, int screen_h) {
+    if (nc == null) {
+        return;
+    }
+    nc->screen_w = screen_w;
+    nc->screen_h = screen_h;
+    nc->next_id = 1;
+    nc->active_count = 0;
+
+    int i = 0;
+    while (i < NOTIFY_MAX_TOASTS) {
+        nc->toasts[i].id = -1;
+        nc->toasts[i].is_active = false;
+        nc->toasts[i].duration_ms = 0;
+        nc->toasts[i].remaining_ms = 0;
+        i = i + 1;
+    }
+}
+
+// Posts a new notification toast
+fn int notification_post(NotificationCenter* nc, uint8* title, uint8* body, int duration_ms) {
+    if (nc == null) {
+        return -1;
+    }
+    int i = 0;
+    while (i < NOTIFY_MAX_TOASTS) {
+        if (!nc->toasts[i].is_active) {
+            int toast_id = nc->next_id;
+            nc->next_id = nc->next_id + 1;
+
+            nc->toasts[i].id = toast_id;
+            nc->toasts[i].duration_ms = duration_ms;
+            nc->toasts[i].remaining_ms = duration_ms;
+            nc->toasts[i].is_active = true;
+
+            // Anchor at top-right with margin
+            nc->toasts[i].w = NOTIFY_WIDTH;
+            nc->toasts[i].h = NOTIFY_HEIGHT;
+            nc->toasts[i].x = nc->screen_w - NOTIFY_WIDTH - 20;
+            nc->toasts[i].y = 20 + (i * (NOTIFY_HEIGHT + 10));
+
+            // Copy title
+            int t = 0;
+            if (title != null) {
+                while (t < 31 && title[t] != (0 as uint8)) {
+                    nc->toasts[i].title[t] = title[t];
+                    t = t + 1;
+                }
+            }
+            nc->toasts[i].title[t] = 0 as uint8;
+
+            // Copy body
+            int b = 0;
+            if (body != null) {
+                while (b < 63 && body[b] != (0 as uint8)) {
+                    nc->toasts[i].body[b] = body[b];
+                    b = b + 1;
+                }
+            }
+            nc->toasts[i].body[b] = 0 as uint8;
+
+            nc->active_count = nc->active_count + 1;
+            return toast_id;
+        }
+        i = i + 1;
+    }
+    return -1; // Queue full
+}
+
+// Ticks notification timers down; auto-dismisses expired toasts
+fn void notification_tick(NotificationCenter* nc, int elapsed_ms) {
+    if (nc == null || elapsed_ms <= 0) {
+        return;
+    }
+    int i = 0;
+    while (i < NOTIFY_MAX_TOASTS) {
+        if (nc->toasts[i].is_active) {
+            nc->toasts[i].remaining_ms = nc->toasts[i].remaining_ms - elapsed_ms;
+            if (nc->toasts[i].remaining_ms <= 0) {
+                nc->toasts[i].is_active = false;
+                nc->toasts[i].id = -1;
+                nc->active_count = nc->active_count - 1;
+            }
+        }
+        i = i + 1;
+    }
+}
+
+// Manually dismisses a notification toast
+fn void notification_dismiss(NotificationCenter* nc, int toast_id) {
+    if (nc == null || toast_id <= 0) {
+        return;
+    }
+    int i = 0;
+    while (i < NOTIFY_MAX_TOASTS) {
+        if (nc->toasts[i].is_active && nc->toasts[i].id == toast_id) {
+            nc->toasts[i].is_active = false;
+            nc->toasts[i].id = -1;
+            nc->active_count = nc->active_count - 1;
+            return;
+        }
+        i = i + 1;
+    }
+}

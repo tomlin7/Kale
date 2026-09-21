@@ -1,0 +1,132 @@
+// os/kernel/cpuid.kl
+// CPUID Architecture Probing & Hardware Feature Discovery for Kale OS
+// Unpacks vendor strings, processor family/model/stepping, and standard/extended instruction set capabilities.
+
+// Standard & Extended Feature Bitmasks (64-bit)
+uint64 CPU_FEAT_FPU         = 0x0000000000000001 as uint64;
+uint64 CPU_FEAT_TSC         = 0x0000000000000002 as uint64;
+uint64 CPU_FEAT_APIC        = 0x0000000000000004 as uint64;
+uint64 CPU_FEAT_MTRR        = 0x0000000000000008 as uint64;
+uint64 CPU_FEAT_SSE         = 0x0000000000000010 as uint64;
+uint64 CPU_FEAT_SSE2        = 0x0000000000000020 as uint64;
+uint64 CPU_FEAT_SSE3        = 0x0000000000000040 as uint64;
+uint64 CPU_FEAT_SSSE3       = 0x0000000000000080 as uint64;
+uint64 CPU_FEAT_SSE4_1      = 0x0000000000000100 as uint64;
+uint64 CPU_FEAT_SSE4_2      = 0x0000000000000200 as uint64;
+uint64 CPU_FEAT_AVX         = 0x0000000000000400 as uint64;
+uint64 CPU_FEAT_FMA         = 0x0000000000000800 as uint64;
+uint64 CPU_FEAT_RDRAND      = 0x0000000000001000 as uint64;
+uint64 CPU_FEAT_AESNI       = 0x0000000000002000 as uint64;
+uint64 CPU_FEAT_X2APIC      = 0x0000000000004000 as uint64;
+uint64 CPU_FEAT_NX          = 0x0000000000008000 as uint64;
+uint64 CPU_FEAT_LONG_MODE   = 0x0000000000010000 as uint64;
+uint64 CPU_FEAT_1GB_PAGES   = 0x0000000000020000 as uint64;
+
+// ==============================================================================
+// Data Structures
+// ==============================================================================
+
+struct CPUInfo {
+    uint8[16] vendor;     // "GenuineIntel", "AuthenticAMD", etc.
+    uint32 max_leaf;      // Maximum basic CPUID leaf
+    uint32 max_ext_leaf;  // Maximum extended CPUID leaf
+    uint32 stepping;
+    uint32 model;
+    uint32 family;
+    uint8 apic_id;
+    uint8 max_cores;
+    uint64 features;
+}
+
+// ==============================================================================
+// Vendor String & Register Unpacking
+// ==============================================================================
+
+// Helper: writes 4 bytes from 32-bit register into byte array in little-endian order
+fn void cpuid_unpack_reg(uint32 reg, uint8* dst) {
+    if (dst == null) {
+        return;
+    }
+    dst[0] = (reg & (0xFF as uint32)) as uint8;
+    dst[1] = ((reg >> 8) & (0xFF as uint32)) as uint8;
+    dst[2] = ((reg >> 16) & (0xFF as uint32)) as uint8;
+    dst[3] = ((reg >> 24) & (0xFF as uint32)) as uint8;
+}
+
+// Unpacks 12-byte vendor string from EBX, EDX, ECX (order specified by x86 CPUID)
+fn void cpuid_parse_vendor(uint32 ebx, uint32 edx, uint32 ecx, uint8* vendor_dst) {
+    if (vendor_dst == null) {
+        return;
+    }
+    cpuid_unpack_reg(ebx, &vendor_dst[0]);
+    cpuid_unpack_reg(edx, &vendor_dst[4]);
+    cpuid_unpack_reg(ecx, &vendor_dst[8]);
+    vendor_dst[12] = 0 as uint8; // Null terminate
+}
+
+// ==============================================================================
+// Family, Model, Stepping & Features
+// ==============================================================================
+
+// Decodes Family, Model, and Stepping from Leaf 1 EAX register
+fn void cpuid_parse_family_model(uint32 eax, CPUInfo* info) {
+    if (info == null) {
+        return;
+    }
+    info->stepping = eax & (0x0F as uint32);
+    uint32 base_model = (eax >> 4) & (0x0F as uint32);
+    uint32 base_family = (eax >> 8) & (0x0F as uint32);
+    uint32 ext_model = (eax >> 16) & (0x0F as uint32);
+    uint32 ext_family = (eax >> 20) & (0xFF as uint32);
+
+    if (base_family == (15 as uint32)) {
+        info->family = base_family + ext_family;
+    } else {
+        info->family = base_family;
+    }
+
+    if (base_family == (6 as uint32) || base_family == (15 as uint32)) {
+        info->model = (ext_model << 4) | base_model;
+    } else {
+        info->model = base_model;
+    }
+}
+
+// Aggregates standard and extended feature register bits into a 64-bit feature bitmask
+fn uint64 cpuid_build_features(uint32 ecx1, uint32 edx1, uint32 ext_edx1) {
+    uint64 feats = 0 as uint64;
+
+    // Leaf 1 EDX features
+    if ((edx1 & (1 as uint32)) != (0 as uint32))              feats = feats | CPU_FEAT_FPU;        // bit 0
+    if ((edx1 & ((1 as uint32) << 4)) != (0 as uint32))      feats = feats | CPU_FEAT_TSC;        // bit 4
+    if ((edx1 & ((1 as uint32) << 9)) != (0 as uint32))      feats = feats | CPU_FEAT_APIC;       // bit 9
+    if ((edx1 & ((1 as uint32) << 12)) != (0 as uint32))     feats = feats | CPU_FEAT_MTRR;       // bit 12
+    if ((edx1 & ((1 as uint32) << 25)) != (0 as uint32))     feats = feats | CPU_FEAT_SSE;        // bit 25
+    if ((edx1 & ((1 as uint32) << 26)) != (0 as uint32))     feats = feats | CPU_FEAT_SSE2;       // bit 26
+
+    // Leaf 1 ECX features
+    if ((ecx1 & (1 as uint32)) != (0 as uint32))              feats = feats | CPU_FEAT_SSE3;       // bit 0
+    if ((ecx1 & ((1 as uint32) << 9)) != (0 as uint32))      feats = feats | CPU_FEAT_SSSE3;      // bit 9
+    if ((ecx1 & ((1 as uint32) << 12)) != (0 as uint32))     feats = feats | CPU_FEAT_FMA;        // bit 12
+    if ((ecx1 & ((1 as uint32) << 19)) != (0 as uint32))     feats = feats | CPU_FEAT_SSE4_1;     // bit 19
+    if ((ecx1 & ((1 as uint32) << 20)) != (0 as uint32))     feats = feats | CPU_FEAT_SSE4_2;     // bit 20
+    if ((ecx1 & ((1 as uint32) << 21)) != (0 as uint32))     feats = feats | CPU_FEAT_X2APIC;     // bit 21
+    if ((ecx1 & ((1 as uint32) << 25)) != (0 as uint32))     feats = feats | CPU_FEAT_AESNI;      // bit 25
+    if ((ecx1 & ((1 as uint32) << 28)) != (0 as uint32))     feats = feats | CPU_FEAT_AVX;        // bit 28
+    if ((ecx1 & ((1 as uint32) << 30)) != (0 as uint32))     feats = feats | CPU_FEAT_RDRAND;     // bit 30
+
+    // Leaf 0x80000001 EDX features
+    if ((ext_edx1 & ((1 as uint32) << 20)) != (0 as uint32)) feats = feats | CPU_FEAT_NX;         // bit 20
+    if ((ext_edx1 & ((1 as uint32) << 26)) != (0 as uint32)) feats = feats | CPU_FEAT_1GB_PAGES;  // bit 26
+    if ((ext_edx1 & ((1 as uint32) << 29)) != (0 as uint32)) feats = feats | CPU_FEAT_LONG_MODE;  // bit 29
+
+    return feats;
+}
+
+// Queries whether a specific hardware feature is present
+fn bool cpuid_has_feature(CPUInfo* info, uint64 feat_mask) {
+    if (info == null) {
+        return false;
+    }
+    return (info->features & feat_mask) == feat_mask;
+}

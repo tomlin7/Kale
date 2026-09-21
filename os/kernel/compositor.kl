@@ -1,0 +1,243 @@
+// os/kernel/compositor.kl
+// Composited Window Manager & Alpha Blending Engine for Kale OS
+// Supports multiple window surfaces, Z-order layer sorting, Porter-Duff alpha blending,
+// window focus elevation, title bar clipping, and hit testing.
+
+uint8 WIN_FLAG_NONE         = 0 as uint8;
+uint8 WIN_FLAG_VISIBLE      = 1 as uint8;
+uint8 WIN_FLAG_FOCUSED      = 2 as uint8;
+uint8 WIN_FLAG_TRANSLUCENT  = 4 as uint8;
+uint8 WIN_FLAG_MINIMIZED    = 8 as uint8;
+
+int COMP_MAX_WINDOWS        = 16;
+int COMP_TITLEBAR_H         = 22;
+
+// ==============================================================================
+// Data Structures
+// ==============================================================================
+
+struct Rect {
+    int x;
+    int y;
+    int w;
+    int h;
+}
+
+struct WindowSurface {
+    int id;
+    Rect bounds;
+    int z_order;
+    uint8 flags;
+    uint8[32] title;
+    uint32 bg_color;
+    bool is_valid;
+}
+
+struct Compositor {
+    int screen_w;
+    int screen_h;
+    int window_count;
+    int focused_id;
+    int next_z;
+    int cursor_x;
+    int cursor_y;
+    WindowSurface[16] windows;
+}
+
+// ==============================================================================
+// Alpha Blending Math
+// ==============================================================================
+
+// Blends a 32-bit ARGB source pixel over a destination pixel (Porter-Duff Over)
+fn uint32 compositor_blend_pixel(uint32 dst, uint32 src) {
+    uint32 a_s = (src >> 24) & (0xFF as uint32);
+    if (a_s == (0 as uint32)) {
+        return dst; // Completely transparent
+    }
+    if (a_s >= (255 as uint32)) {
+        return src; // Completely opaque
+    }
+
+    uint32 r_s = (src >> 16) & (0xFF as uint32);
+    uint32 g_s = (src >> 8) & (0xFF as uint32);
+    uint32 b_s = src & (0xFF as uint32);
+
+    uint32 r_d = (dst >> 16) & (0xFF as uint32);
+    uint32 g_d = (dst >> 8) & (0xFF as uint32);
+    uint32 b_d = dst & (0xFF as uint32);
+
+    uint32 inv_a = (255 as uint32) - a_s;
+
+    uint32 r_out = ((r_s * a_s) + (r_d * inv_a)) / (255 as uint32);
+    uint32 g_out = ((g_s * a_s) + (g_d * inv_a)) / (255 as uint32);
+    uint32 b_out = ((b_s * a_s) + (b_d * inv_a)) / (255 as uint32);
+
+    return (0xFF000000 as uint32) | (r_out << 16) | (g_out << 8) | b_out;
+}
+
+// ==============================================================================
+// Window Manager Operations
+// ==============================================================================
+
+fn void compositor_init(Compositor* comp, int screen_w, int screen_h) {
+    if (comp == null) {
+        return;
+    }
+    comp->screen_w = screen_w;
+    comp->screen_h = screen_h;
+    comp->window_count = 0;
+    comp->focused_id = -1;
+    comp->next_z = 1;
+    comp->cursor_x = screen_w / 2;
+    comp->cursor_y = screen_h / 2;
+
+    int i = 0;
+    while (i < COMP_MAX_WINDOWS) {
+        comp->windows[i].id = i;
+        comp->windows[i].is_valid = false;
+        comp->windows[i].flags = WIN_FLAG_NONE;
+        comp->windows[i].z_order = 0;
+        i = i + 1;
+    }
+}
+
+// Creates a new managed window surface
+fn int compositor_create_window(Compositor* comp, int x, int y, int w, int h, uint8* title) {
+    if (comp == null) {
+        return -1;
+    }
+    int i = 0;
+    while (i < COMP_MAX_WINDOWS) {
+        if (!comp->windows[i].is_valid) {
+            comp->windows[i].id = i;
+            comp->windows[i].bounds.x = x;
+            comp->windows[i].bounds.y = y;
+            comp->windows[i].bounds.w = w;
+            comp->windows[i].bounds.h = h;
+            comp->windows[i].z_order = comp->next_z;
+            comp->next_z = comp->next_z + 1;
+            comp->windows[i].flags = WIN_FLAG_VISIBLE | WIN_FLAG_FOCUSED;
+            comp->windows[i].bg_color = 0xFFFFFFFF as uint32; // Default white
+            comp->windows[i].is_valid = true;
+
+            int t_idx = 0;
+            if (title != null) {
+                while (t_idx < 31 && title[t_idx] != (0 as uint8)) {
+                    comp->windows[i].title[t_idx] = title[t_idx];
+                    t_idx = t_idx + 1;
+                }
+            }
+            comp->windows[i].title[t_idx] = 0 as uint8;
+
+            comp->focused_id = i;
+            comp->window_count = comp->window_count + 1;
+            return i;
+        }
+        i = i + 1;
+    }
+    return -1; // Max windows reached
+}
+
+// Elevates window to topmost Z-order and marks as focused
+fn void compositor_focus_window(Compositor* comp, int win_id) {
+    if (comp == null || win_id < 0 || win_id >= COMP_MAX_WINDOWS) {
+        return;
+    }
+    if (!comp->windows[win_id].is_valid) {
+        return;
+    }
+
+    // Unfocus all other windows
+    int i = 0;
+    while (i < COMP_MAX_WINDOWS) {
+        if (comp->windows[i].is_valid) {
+            comp->windows[i].flags = comp->windows[i].flags & (~WIN_FLAG_FOCUSED);
+        }
+        i = i + 1;
+    }
+
+    comp->windows[win_id].flags = comp->windows[win_id].flags | WIN_FLAG_FOCUSED;
+    comp->windows[win_id].z_order = comp->next_z;
+    comp->next_z = comp->next_z + 1;
+    comp->focused_id = win_id;
+}
+
+// Moves window position by delta (dx, dy)
+fn void compositor_move_window(Compositor* comp, int win_id, int dx, int dy) {
+    if (comp == null || win_id < 0 || win_id >= COMP_MAX_WINDOWS) {
+        return;
+    }
+    if (!comp->windows[win_id].is_valid) {
+        return;
+    }
+    comp->windows[win_id].bounds.x = comp->windows[win_id].bounds.x + dx;
+    comp->windows[win_id].bounds.y = comp->windows[win_id].bounds.y + dy;
+}
+
+// Resizes window
+fn void compositor_resize_window(Compositor* comp, int win_id, int new_w, int new_h) {
+    if (comp == null || win_id < 0 || win_id >= COMP_MAX_WINDOWS) {
+        return;
+    }
+    if (!comp->windows[win_id].is_valid) {
+        return;
+    }
+    if (new_w > 10) comp->windows[win_id].bounds.w = new_w;
+    if (new_h > 10) comp->windows[win_id].bounds.h = new_h;
+}
+
+// Toggles window minimize state
+fn void compositor_minimize_window(Compositor* comp, int win_id) {
+    if (comp == null || win_id < 0 || win_id >= COMP_MAX_WINDOWS) {
+        return;
+    }
+    if (!comp->windows[win_id].is_valid) {
+        return;
+    }
+    comp->windows[win_id].flags = comp->windows[win_id].flags ^ WIN_FLAG_MINIMIZED;
+}
+
+// Closes and frees a window surface
+fn void compositor_close_window(Compositor* comp, int win_id) {
+    if (comp == null || win_id < 0 || win_id >= COMP_MAX_WINDOWS) {
+        return;
+    }
+    if (!comp->windows[win_id].is_valid) {
+        return;
+    }
+    comp->windows[win_id].is_valid = false;
+    comp->windows[win_id].flags = WIN_FLAG_NONE;
+    comp->window_count = comp->window_count - 1;
+    if (comp->focused_id == win_id) {
+        comp->focused_id = -1;
+    }
+}
+
+// Hit-testing: returns topmost window ID covering point (x, y), or -1
+fn int compositor_hit_test(Compositor* comp, int x, int y) {
+    if (comp == null) {
+        return -1;
+    }
+    int best_id = -1;
+    int best_z = -1;
+
+    int i = 0;
+    while (i < COMP_MAX_WINDOWS) {
+        if (comp->windows[i].is_valid) {
+            bool is_visible = (comp->windows[i].flags & WIN_FLAG_VISIBLE) != (0 as uint8);
+            bool is_minimized = (comp->windows[i].flags & WIN_FLAG_MINIMIZED) != (0 as uint8);
+
+            if (is_visible && !is_minimized) {
+                Rect* r = &comp->windows[i].bounds;
+                if (x >= r->x && x < (r->x + r->w) && y >= r->y && y < (r->y + r->h)) {
+                    if (comp->windows[i].z_order > best_z) {
+                        best_z = comp->windows[i].z_order;
+                        best_id = i;
+                    }
+                }
+            }
+        }
+        i = i + 1;
+    }
+    return best_id;
+}
