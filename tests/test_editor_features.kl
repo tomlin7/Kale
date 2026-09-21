@@ -8,6 +8,8 @@ import "editor/find_bar.kl" as fb;
 import "editor/command_bar.kl" as cb;
 import "editor/app_state.kl" as app;
 import "packages/std/text/piece_table.kl" as pt;
+import "editor/split_view.kl" as sv;
+import "editor/folding.kl" as fold;
 
 extern int strcmp(string a, string b);
 extern int strlen(string s);
@@ -240,6 +242,128 @@ fn int main_entry() {
 
     est.destroy();
     print("  [PASS] Multi-line and drag selection bounds, deletion, and undo verified");
+
+    // 7. Split View layout tests
+    sv.SplitView sview;
+    sview.init();
+    if (sview.is_split || sview.active_pane != 0) {
+        print("FAILED: split_view initial state");
+        return 60;
+    }
+
+    sview.toggle_split(true);
+    if (!sview.is_split || !sview.is_vertical || sview.active_pane != 1) {
+        print("FAILED: split_view vertical toggle");
+        return 61;
+    }
+
+    sview.toggle_focus();
+    if (sview.active_pane != 0) {
+        print("FAILED: split_view toggle_focus");
+        return 62;
+    }
+
+    sview.set_ratio(0.60f);
+    float p0_w = sview.get_pane_width(0, 1000.0f);
+    float p1_x = sview.get_pane_x(1, 0.0f, 1000.0f);
+    if (p0_w < 590.0f || p0_w > 610.0f || p1_x < 590.0f) {
+        print("FAILED: split_view pane geometry calculation");
+        return 63;
+    }
+
+    sview.destroy();
+    print("  [PASS] Multi-buffer split view geometry and focus management verified");
+
+    // 8. Code Folding engine tests
+    fold.FoldManager fmgr;
+    fmgr.init();
+
+    pt.PieceTable fbuf;
+    fbuf.init("fn test_func() {\n    int a = 10;\n    if (a > 0) {\n        print(\"ok\");\n    }\n}\n");
+    fmgr.scan_folds(&fbuf);
+
+    if (fmgr.fold_count != 2) {
+        print("FAILED: fold_manager expected 2 folds");
+        return 70;
+    }
+
+    if (fmgr.get_fold_at(0) < 0 || fmgr.get_fold_at(2) < 0) {
+        print("FAILED: fold_manager fold start locations");
+        return 71;
+    }
+
+    bool tog_ok = fmgr.toggle_fold_at(0);
+    if (!tog_ok || !fmgr.is_collapsed_at(0)) {
+        print("FAILED: toggle_fold_at collapse");
+        return 72;
+    }
+
+    if (!fmgr.is_line_folded(1) || !fmgr.is_line_folded(4) || fmgr.is_line_folded(0)) {
+        print("FAILED: is_line_folded check inside collapsed fold");
+        return 73;
+    }
+
+    fmgr.toggle_fold_at(0);
+    if (fmgr.is_collapsed_at(0) || fmgr.is_line_folded(1)) {
+        print("FAILED: toggle_fold_at expand");
+        return 74;
+    }
+
+    fbuf.destroy();
+    fmgr.destroy();
+    print("  [PASS] Structural code folding detection and collapse/expand verified");
+
+    // 9. Auto-closing pairs & smart indentation tests
+    app.EditorState epair;
+    epair.init("fn main() {\n", "pair_test.kl");
+    epair.cursor_row = 0;
+    epair.cursor_col = 11;
+
+    epair.insert_smart_newline();
+    if (epair.cursor_row != 1 || epair.cursor_col != 4) {
+        print("FAILED: insert_smart_newline indentation level");
+        return 80;
+    }
+
+    epair.insert_char_auto_pair("(");
+    string pair_line = epair.buffer.get_line(1);
+    if (strcmp(pair_line, "    ()") != 0 || epair.cursor_col != 5) {
+        print("FAILED: insert_char_auto_pair parenthesis pairing");
+        return 81;
+    }
+
+    epair.insert_char_auto_pair("[");
+    string pair_line2 = epair.buffer.get_line(1);
+    if (strcmp(pair_line2, "    ([])") != 0 || epair.cursor_col != 6) {
+        print("FAILED: insert_char_auto_pair bracket nesting");
+        return 82;
+    }
+
+    epair.destroy();
+    print("  [PASS] Auto-closing pairs and smart indentation verified");
+
+    // 10. Comment toggling tests
+    app.EditorState ecomm;
+    ecomm.init("int a = 10;\nint b = 20;\n", "comm_test.kl");
+    ecomm.cursor_row = 0;
+    ecomm.cursor_col = 0;
+
+    ecomm.toggle_comment();
+    string com_l0 = ecomm.buffer.get_line(0);
+    if (strcmp(com_l0, "// int a = 10;") != 0) {
+        print("FAILED: toggle_comment prepend comment");
+        return 90;
+    }
+
+    ecomm.toggle_comment();
+    string uncom_l0 = ecomm.buffer.get_line(0);
+    if (strcmp(uncom_l0, "int a = 10;") != 0) {
+        print("FAILED: toggle_comment remove comment");
+        return 91;
+    }
+
+    ecomm.destroy();
+    print("  [PASS] Single-line and block comment toggling verified");
 
     print("ALL IDE EXTENSION TESTS PASSED PERFECTLY.");
     return 0;

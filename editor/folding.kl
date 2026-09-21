@@ -1,0 +1,151 @@
+// editor/folding.kl
+// Structural Code Folding Engine for Kale Flagship Code Editor
+
+import "packages/std/text/piece_table.kl" as pt;
+
+extern int strlen(string s);
+
+struct FoldManager {
+    int max_folds;
+    int fold_count;
+    int* fold_starts;
+    int* fold_ends;
+    int* fold_states; // 0 = expanded, 1 = collapsed
+}
+
+fn void FoldManager.init() {
+    this->max_folds = 64;
+    this->fold_count = 0;
+    this->fold_starts = alloc(int, 64);
+    this->fold_ends = alloc(int, 64);
+    this->fold_states = alloc(int, 64);
+
+    int i = 0;
+    while (i < 64) {
+        this->fold_starts[i] = -1;
+        this->fold_ends[i] = -1;
+        this->fold_states[i] = 0;
+        i = i + 1;
+    }
+}
+
+fn void FoldManager.destroy() {
+    if (this->fold_starts != (int*)0) {
+        free(this->fold_starts);
+        this->fold_starts = (int*)0;
+    }
+    if (this->fold_ends != (int*)0) {
+        free(this->fold_ends);
+        this->fold_ends = (int*)0;
+    }
+    if (this->fold_states != (int*)0) {
+        free(this->fold_states);
+        this->fold_states = (int*)0;
+    }
+}
+
+fn void FoldManager.clear() {
+    this->fold_count = 0;
+    int i = 0;
+    while (i < this->max_folds) {
+        this->fold_starts[i] = -1;
+        this->fold_ends[i] = -1;
+        this->fold_states[i] = 0;
+        i = i + 1;
+    }
+}
+
+fn void FoldManager.scan_folds(pt.PieceTable* buffer) {
+    if (buffer == (pt.PieceTable*)0) {
+        return;
+    }
+    this->fold_count = 0;
+
+    int stack_starts[32];
+    int stack_depth = 0;
+
+    int total_lines = buffer->line_count();
+    int r = 0;
+    while (r < total_lines && this->fold_count < this->max_folds) {
+        string line = buffer->get_line(r);
+        int len = strlen(line);
+
+        int c = 0;
+        while (c < len) {
+            char ch = line[c];
+            if (ch == '{') {
+                if (stack_depth < 32) {
+                    stack_starts[stack_depth] = r;
+                    stack_depth = stack_depth + 1;
+                }
+            } else if (ch == '}') {
+                if (stack_depth > 0) {
+                    stack_depth = stack_depth - 1;
+                    int start_row = stack_starts[stack_depth];
+                    if (r > start_row && this->fold_count < this->max_folds) {
+                        int f = this->fold_count;
+                        this->fold_starts[f] = start_row;
+                        this->fold_ends[f] = r;
+                        this->fold_states[f] = 0;
+                        this->fold_count = this->fold_count + 1;
+                    }
+                }
+            }
+            c = c + 1;
+        }
+        r = r + 1;
+    }
+}
+
+fn int FoldManager.get_fold_at(int row) {
+    int i = 0;
+    while (i < this->fold_count) {
+        if (this->fold_starts[i] == row) {
+            return i;
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+fn bool FoldManager.toggle_fold_at(int row) {
+    int idx = this->get_fold_at(row);
+    if (idx >= 0) {
+        if (this->fold_states[idx] == 0) {
+            this->fold_states[idx] = 1; // collapse
+        } else {
+            this->fold_states[idx] = 0; // expand
+        }
+        return true;
+    }
+    return false;
+}
+
+fn bool FoldManager.is_collapsed_at(int row) {
+    int idx = this->get_fold_at(row);
+    if (idx >= 0) {
+        return this->fold_states[idx] == 1;
+    }
+    return false;
+}
+
+fn bool FoldManager.is_line_folded(int row) {
+    int i = 0;
+    while (i < this->fold_count) {
+        if (this->fold_states[i] == 1) {
+            if (row > this->fold_starts[i] && row <= this->fold_ends[i]) {
+                return true;
+            }
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
+fn int FoldManager.get_fold_end(int row) {
+    int idx = this->get_fold_at(row);
+    if (idx >= 0) {
+        return this->fold_ends[idx];
+    }
+    return row;
+}

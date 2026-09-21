@@ -1,0 +1,128 @@
+// editor/split_view.kl
+// Multi-Buffer Split View Layout Engine for Kale Flagship Code Editor
+
+struct SplitView {
+    bool is_split;
+    bool is_vertical;      // true = side-by-side (vertical divider), false = stacked (horizontal divider)
+    float split_ratio;     // proportion allocated to primary pane (e.g. 0.50f)
+    int active_pane;       // 0 = primary (left/top), 1 = secondary (right/bottom)
+
+    int* pane_buf_idx;     // buffer index mapped to each pane [pane 0, pane 1]
+    int* pane_scroll_row;  // scroll row per pane
+    int* pane_scroll_col;  // scroll col per pane
+}
+
+fn void SplitView.init() {
+    this->is_split = false;
+    this->is_vertical = true;
+    this->split_ratio = 0.50f;
+    this->active_pane = 0;
+
+    this->pane_buf_idx = alloc(int, 2);
+    this->pane_buf_idx[0] = 0;
+    this->pane_buf_idx[1] = 1;
+
+    this->pane_scroll_row = alloc(int, 2);
+    this->pane_scroll_row[0] = 0;
+    this->pane_scroll_row[1] = 0;
+
+    this->pane_scroll_col = alloc(int, 2);
+    this->pane_scroll_col[0] = 0;
+    this->pane_scroll_col[1] = 0;
+}
+
+fn void SplitView.destroy() {
+    if (this->pane_buf_idx != (int*)0) {
+        free(this->pane_buf_idx);
+        this->pane_buf_idx = (int*)0;
+    }
+    if (this->pane_scroll_row != (int*)0) {
+        free(this->pane_scroll_row);
+        this->pane_scroll_row = (int*)0;
+    }
+    if (this->pane_scroll_col != (int*)0) {
+        free(this->pane_scroll_col);
+        this->pane_scroll_col = (int*)0;
+    }
+}
+
+fn void SplitView.toggle_split(bool vertical) {
+    if (!this->is_split) {
+        this->is_split = true;
+        this->is_vertical = vertical;
+        this->active_pane = 1; // switch to newly opened secondary pane
+    } else {
+        if (this->is_vertical == vertical) {
+            // Toggle off
+            this->is_split = false;
+            this->active_pane = 0;
+        } else {
+            // Change orientation
+            this->is_vertical = vertical;
+        }
+    }
+}
+
+fn void SplitView.toggle_focus() {
+    if (this->is_split) {
+        if (this->active_pane == 0) {
+            this->active_pane = 1;
+        } else {
+            this->active_pane = 0;
+        }
+    }
+}
+
+fn void SplitView.set_active_pane(int pane) {
+    if (pane == 0 || pane == 1) {
+        this->active_pane = pane;
+    }
+}
+
+fn void SplitView.set_ratio(float ratio) {
+    if (ratio < 0.15f) { ratio = 0.15f; }
+    if (ratio > 0.85f) { ratio = 0.85f; }
+    this->split_ratio = ratio;
+}
+
+fn float SplitView.get_pane_x(int pane, float total_x, float total_w) {
+    if (!this->is_split || !this->is_vertical || pane == 0) {
+        return total_x;
+    }
+    float divider_w = 4.0f;
+    float primary_w = (total_w - divider_w) * this->split_ratio;
+    return total_x + primary_w + divider_w;
+}
+
+fn float SplitView.get_pane_y(int pane, float total_y, float total_h) {
+    if (!this->is_split || this->is_vertical || pane == 0) {
+        return total_y;
+    }
+    float divider_h = 4.0f;
+    float primary_h = (total_h - divider_h) * this->split_ratio;
+    return total_y + primary_h + divider_h;
+}
+
+fn float SplitView.get_pane_width(int pane, float total_w) {
+    if (!this->is_split || !this->is_vertical) {
+        return total_w;
+    }
+    float divider_w = 4.0f;
+    float primary_w = (total_w - divider_w) * this->split_ratio;
+    if (pane == 0) {
+        return primary_w;
+    }
+    return total_w - primary_w - divider_w;
+}
+
+fn float SplitView.get_pane_height(int pane, float total_h) {
+    if (!this->is_split || this->is_vertical) {
+        return total_h;
+    }
+    float divider_h = 4.0f;
+    float primary_h = (total_h - divider_h) * this->split_ratio;
+    if (pane == 0) {
+        return primary_h;
+    }
+    return total_h - primary_h - divider_h;
+}

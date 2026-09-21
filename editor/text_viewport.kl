@@ -6,8 +6,8 @@ import "libs/render/math.kl" as rmath;
 import "libs/render/batch.kl" as rbatch;
 import "libs/render/font.kl" as rfont;
 import "packages/std/text/piece_table.kl" as pt;
-import "packages/std/text/string_builder.kl" as sb;
 import "packages/editor/syntax.kl" as syn;
+import "editor/folding.kl" as fold;
 
 extern int strlen(string s);
 
@@ -16,8 +16,8 @@ struct TextViewport {
     float y;
     float width;
     float height;
-    float char_width;
     float line_height;
+    float char_width;
 
     rmath.Color bg_color;
     rmath.Color active_line_bg;
@@ -25,7 +25,9 @@ struct TextViewport {
     rmath.Color selection_bg;
     rmath.Color find_highlight;
     rmath.Color error_color;
+    rmath.Color indent_guide_color;
 
+    // Syntax colors
     rmath.Color color_default;
     rmath.Color color_keyword;
     rmath.Color color_string;
@@ -48,6 +50,7 @@ fn void TextViewport.init(float x, float y, float w, float h, float line_h, floa
     this->selection_bg = rmath.color_rgba(0.26f, 0.38f, 0.58f, 0.70f);
     this->find_highlight = rmath.color_rgba(0.95f, 0.78f, 0.20f, 0.45f);
     this->error_color = rmath.color_rgba(0.95f, 0.25f, 0.25f, 0.90f);
+    this->indent_guide_color = rmath.color_rgba(0.25f, 0.28f, 0.35f, 0.35f);
 
     // Syntax colors
     this->color_default = rmath.color_rgba(0.85f, 0.88f, 0.92f, 1.0f);
@@ -106,7 +109,8 @@ fn void TextViewport.render(
     int sel_end_col,
     bool show_find,
     string find_query,
-    int diag_err_line
+    int diag_err_line,
+    fold.FoldManager* fold_mgr
 ) {
     // Fill viewport background panel
     renderer->push_quad(gl_ctx, this->x, this->y, this->width, this->height, this->bg_color);
@@ -126,6 +130,12 @@ fn void TextViewport.render(
         float cur_y = this->y + ((float)row_idx * this->line_height);
 
         if (current_line_num < total_lines) {
+            // Skip rendering if this line is folded inside a collapsed block
+            if (fold_mgr != (fold.FoldManager*)0 && fold_mgr->is_line_folded(current_line_num)) {
+                row_idx = row_idx + 1;
+                continue;
+            }
+
             // Draw active line highlight
             if (current_line_num == cursor_row) {
                 renderer->push_quad(gl_ctx, this->x, cur_y, this->width, this->line_height, this->active_line_bg);
@@ -133,6 +143,14 @@ fn void TextViewport.render(
 
             string line_str = buffer->get_line(current_line_num);
             int len = strlen(line_str);
+
+            // Draw indentation guide lines
+            int ic = 4;
+            while (ic < len && (int)line_str[ic - 1] == 32 && (int)line_str[ic] == 32) {
+                float guide_x = this->x + 12.0f + ((float)ic * this->char_width);
+                renderer->push_quad(gl_ctx, guide_x, cur_y, 1.0f, this->line_height, this->indent_guide_color);
+                ic = ic + 4;
+            }
 
             // 1. Draw Selection background for this line
             if (has_selection && current_line_num >= sel_start_row && current_line_num <= sel_end_row) {
@@ -223,6 +241,13 @@ fn void TextViewport.render(
                     err_w = this->char_width * 4.0f;
                 }
                 renderer->push_quad(gl_ctx, this->x + 12.0f, cur_y + this->line_height - 3.0f, err_w, 2.0f, this->error_color);
+            }
+
+            // 5. Draw fold badge pill if line is collapsed
+            if (fold_mgr != (fold.FoldManager*)0 && fold_mgr->is_collapsed_at(current_line_num)) {
+                float pill_x = this->x + 12.0f + ((float)len * this->char_width) + 8.0f;
+                renderer->push_quad(gl_ctx, pill_x, cur_y + 2.0f, 26.0f, this->line_height - 4.0f, rmath.color_rgba(0.24f, 0.28f, 0.38f, 0.85f));
+                font->draw_text(renderer, gl_ctx, "...", pill_x + 5.0f, cur_y + 1.0f, this->color_comment);
             }
         }
         row_idx = row_idx + 1;

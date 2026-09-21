@@ -238,6 +238,152 @@ fn void EditorState.insert_newline() {
     this->cursor_col = 0;
 }
 
+fn void EditorState.insert_char_auto_pair(string ch) {
+    if (this->has_selection) {
+        this->delete_selection();
+    }
+    char c = ch[0];
+    if (c == '(') {
+        int byte_offset = this->get_cursor_byte_offset();
+        this->push_undo(1, byte_offset, "()", this->cursor_row, this->cursor_col);
+        this->buffer.insert(byte_offset, "()");
+        this->cursor_col = this->cursor_col + 1;
+        this->is_dirty = true;
+        return;
+    }
+    if (c == '[') {
+        int byte_offset = this->get_cursor_byte_offset();
+        this->push_undo(1, byte_offset, "[]", this->cursor_row, this->cursor_col);
+        this->buffer.insert(byte_offset, "[]");
+        this->cursor_col = this->cursor_col + 1;
+        this->is_dirty = true;
+        return;
+    }
+    if (c == '{') {
+        int byte_offset = this->get_cursor_byte_offset();
+        this->push_undo(1, byte_offset, "{}", this->cursor_row, this->cursor_col);
+        this->buffer.insert(byte_offset, "{}");
+        this->cursor_col = this->cursor_col + 1;
+        this->is_dirty = true;
+        return;
+    }
+    if (c == '"') {
+        int byte_offset = this->get_cursor_byte_offset();
+        this->push_undo(1, byte_offset, "\"\"", this->cursor_row, this->cursor_col);
+        this->buffer.insert(byte_offset, "\"\"");
+        this->cursor_col = this->cursor_col + 1;
+        this->is_dirty = true;
+        return;
+    }
+    if (c == '\'') {
+        int byte_offset = this->get_cursor_byte_offset();
+        this->push_undo(1, byte_offset, "''", this->cursor_row, this->cursor_col);
+        this->buffer.insert(byte_offset, "''");
+        this->cursor_col = this->cursor_col + 1;
+        this->is_dirty = true;
+        return;
+    }
+
+    this->insert_char(ch);
+}
+
+fn void EditorState.insert_smart_newline() {
+    if (this->has_selection) {
+        this->delete_selection();
+    }
+
+    string cur_line = this->buffer.get_line(this->cursor_row);
+    int line_len = strlen(cur_line);
+
+    // Count leading spaces
+    int indent_spaces = 0;
+    while (indent_spaces < line_len && cur_line[indent_spaces] == ' ') {
+        indent_spaces = indent_spaces + 1;
+    }
+
+    // Check if previous character before cursor is '{'
+    bool extra_indent = false;
+    int check_col = this->cursor_col;
+    if (check_col > line_len) {
+        check_col = line_len;
+    }
+    if (check_col > 0) {
+        int p = check_col - 1;
+        while (p >= 0 && cur_line[p] == ' ') {
+            p = p - 1;
+        }
+        if (p >= 0 && cur_line[p] == '{') {
+            extra_indent = true;
+        }
+    }
+
+    int total_spaces = indent_spaces;
+    if (extra_indent) {
+        total_spaces = total_spaces + 4;
+    }
+
+    // Build newline + indent string
+    int alloc_len = total_spaces + 2;
+    char* ins_buf = alloc(char, alloc_len);
+    ins_buf[0] = '\n';
+    int i = 0;
+    while (i < total_spaces) {
+        ins_buf[1 + i] = ' ';
+        i = i + 1;
+    }
+    ins_buf[1 + total_spaces] = (char)0;
+
+    int byte_offset = this->get_cursor_byte_offset();
+    this->push_undo(1, byte_offset, (string)ins_buf, this->cursor_row, this->cursor_col);
+    this->buffer.insert(byte_offset, (string)ins_buf);
+
+    this->cursor_row = this->cursor_row + 1;
+    this->cursor_col = total_spaces;
+    this->is_dirty = true;
+
+    free((void*)ins_buf);
+}
+
+fn void EditorState.toggle_comment() {
+    int sr = this->cursor_row;
+    int er = this->cursor_row;
+    if (this->has_selection) {
+        sr = this->get_sel_start_row();
+        er = this->get_sel_end_row();
+    }
+
+    int r = sr;
+    while (r <= er && r < this->buffer.line_count()) {
+        string l = this->buffer.get_line(r);
+        int l_len = strlen(l);
+        int line_start_off = this->pos_to_byte_offset(r, 0);
+
+        if (l_len >= 2 && l[0] == '/' && l[1] == '/') {
+            // Uncomment: remove "// " or "//"
+            int del_cnt = 2;
+            if (l_len >= 3 && l[2] == ' ') {
+                del_cnt = 3;
+            }
+            string del_txt = this->buffer.get_slice(line_start_off, del_cnt);
+            this->push_undo(2, line_start_off, del_txt, r, 0);
+            this->buffer.delete(line_start_off, del_cnt);
+            if (r == this->cursor_row) {
+                this->cursor_col = this->cursor_col - del_cnt;
+                if (this->cursor_col < 0) { this->cursor_col = 0; }
+            }
+        } else {
+            // Comment: insert "// " at beginning
+            this->push_undo(1, line_start_off, "// ", r, 0);
+            this->buffer.insert(line_start_off, "// ");
+            if (r == this->cursor_row) {
+                this->cursor_col = this->cursor_col + 3;
+            }
+        }
+        r = r + 1;
+    }
+    this->is_dirty = true;
+}
+
 fn void EditorState.backspace() {
     if (this->cursor_col > 0) {
         int byte_offset = this->get_cursor_byte_offset() - 1;

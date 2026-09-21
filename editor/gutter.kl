@@ -6,6 +6,7 @@ import "libs/render/math.kl" as rmath;
 import "libs/render/batch.kl" as rbatch;
 import "libs/render/font.kl" as rfont;
 import "packages/std/text/string_builder.kl" as sb;
+import "editor/folding.kl" as fold;
 
 extern int strlen(string s);
 
@@ -42,7 +43,8 @@ fn void Gutter.render(
     int scroll_row,
     int cursor_row,
     int total_lines,
-    int diag_err_line
+    int diag_err_line,
+    fold.FoldManager* fold_mgr
 ) {
     // Fill gutter background
     renderer->push_quad(gl_ctx, this->x, this->y, this->width, this->height, this->bg);
@@ -56,6 +58,7 @@ fn void Gutter.render(
     int visible_lines = (int)(this->height / this->line_height);
     int idx = 0;
     rmath.Color error_dot_color = rmath.color_rgba(0.95f, 0.25f, 0.25f, 1.0f);
+    rmath.Color fold_icon_color = rmath.color_rgba(0.65f, 0.68f, 0.75f, 1.0f);
 
     while (idx < visible_lines) {
         int line_num = scroll_row + idx;
@@ -64,7 +67,16 @@ fn void Gutter.render(
         if (line_num < total_lines) {
             // Draw diagnostic error dot on this line if applicable
             if (line_num == diag_err_line) {
-                renderer->push_quad(gl_ctx, this->x + 4.0f, cur_y + 7.0f, 6.0f, 6.0f, error_dot_color);
+                renderer->push_quad(gl_ctx, this->x + 3.0f, cur_y + 7.0f, 6.0f, 6.0f, error_dot_color);
+            }
+
+            // Draw fold indicator chevron/icon if line has a fold range
+            if (fold_mgr != (fold.FoldManager*)0 && fold_mgr->get_fold_at(line_num) >= 0) {
+                if (fold_mgr->is_collapsed_at(line_num)) {
+                    font->draw_text(renderer, gl_ctx, "+", this->x + 10.0f, cur_y + 2.0f, this->active_fg);
+                } else {
+                    font->draw_text(renderer, gl_ctx, "-", this->x + 10.0f, cur_y + 2.0f, fold_icon_color);
+                }
             }
 
             sb.StringBuilder num_sb;

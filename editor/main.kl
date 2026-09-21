@@ -19,6 +19,8 @@ import "editor/config.kl" as cfg;
 import "editor/file_tree.kl" as ft;
 import "editor/find_bar.kl" as fb;
 import "apps/lsp/analysis.kl" as analysis;
+import "editor/split_view.kl" as sv;
+import "editor/folding.kl" as fold;
 
 extern int strlen(string s);
 extern int strcmp(string a, string b);
@@ -62,7 +64,7 @@ fn void poll_typing(void* window, st.EditorState* state, bool shift_down) {
     if (ginput.glfwGetKey(window, glc.GLFW_KEY_6()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("^"); } else { state->insert_char("6"); } return; }
     if (ginput.glfwGetKey(window, glc.GLFW_KEY_7()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("&"); } else { state->insert_char("7"); } return; }
     if (ginput.glfwGetKey(window, glc.GLFW_KEY_8()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("*"); } else { state->insert_char("8"); } return; }
-    if (ginput.glfwGetKey(window, glc.GLFW_KEY_9()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("("); } else { state->insert_char("9"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_9()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char_auto_pair("("); } else { state->insert_char("9"); } return; }
 
     // Symbols & whitespace
     if (ginput.glfwGetKey(window, glc.GLFW_KEY_SPACE()) == glc.GLFW_PRESS()) { state->insert_char(" "); return; }
@@ -73,7 +75,8 @@ fn void poll_typing(void* window, st.EditorState* state, bool shift_down) {
     if (ginput.glfwGetKey(window, glc.GLFW_KEY_COMMA()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("<"); } else { state->insert_char(","); } return; }
     if (ginput.glfwGetKey(window, glc.GLFW_KEY_PERIOD()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char(">"); } else { state->insert_char("."); } return; }
     if (ginput.glfwGetKey(window, glc.GLFW_KEY_SLASH()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("?"); } else { state->insert_char("/"); } return; }
-    if (ginput.glfwGetKey(window, glc.GLFW_KEY_APOSTROPHE()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("\""); } else { state->insert_char("'"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_LEFT_BRACKET()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char_auto_pair("{"); } else { state->insert_char_auto_pair("["); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_APOSTROPHE()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char_auto_pair("\""); } else { state->insert_char_auto_pair("'"); } return; }
 }
 
 fn void poll_find_typing(void* window, fb.FindBar* find_bar, bool shift_down) {
@@ -219,6 +222,32 @@ fn void run_editor() {
     sb.StatusBar status_bar;
     status_bar.init(0.0f, (float)app_h - status_h, (float)app_w, status_h);
 
+    sv.SplitView split_view;
+    split_view.init();
+
+    fold.FoldManager fold_mgr;
+    fold_mgr.init();
+    bm.EditorBuffer* init_buf = bm.bufman_get_active(buf_mgr);
+    fold_mgr.scan_folds(&init_buf->state.buffer);
+
+    gt.Gutter gutter_sec;
+    gutter_sec.init(0.0f, header_h, gutter_w, content_h, line_h);
+
+    vp.TextViewport viewport_sec;
+    viewport_sec.init(gutter_w, header_h, (float)app_w - gutter_w, content_h, line_h, char_w);
+    viewport_sec.apply_theme(
+        active_theme.bg,
+        active_theme.bg_active_line,
+        active_theme.cursor,
+        active_theme.bg_selection,
+        active_theme.fg,
+        active_theme.token_keyword,
+        active_theme.token_string,
+        active_theme.token_comment,
+        active_theme.token_number,
+        active_theme.token_operator
+    );
+
     rmath.Color header_bg = active_theme.tab_bar_bg;
     rmath.Color header_fg = active_theme.fg;
     rmath.Color header_accent = active_theme.tab_active_accent;
@@ -251,11 +280,61 @@ fn void run_editor() {
             file_tree.height = content_h;
         }
 
-        gutter.x = tree_w;
-        gutter.height = content_h;
-        viewport.x = tree_w + gutter_w;
-        viewport.width = cur_w - tree_w - gutter_w;
-        viewport.height = content_h;
+        float avail_w = cur_w - tree_w;
+        if (!split_view.is_split) {
+            gutter.x = tree_w;
+            gutter.y = header_h;
+            gutter.width = gutter_w;
+            gutter.height = content_h;
+            viewport.x = tree_w + gutter_w;
+            viewport.y = header_h;
+            viewport.width = avail_w - gutter_w;
+            viewport.height = content_h;
+        } else {
+            if (split_view.is_vertical) {
+                float half_w = avail_w * split_view.split_ratio;
+                gutter.x = tree_w;
+                gutter.y = header_h;
+                gutter.width = gutter_w;
+                gutter.height = content_h;
+
+                viewport.x = tree_w + gutter_w;
+                viewport.y = header_h;
+                viewport.width = half_w - gutter_w - 2.0f;
+                viewport.height = content_h;
+
+                gutter_sec.x = tree_w + half_w + 2.0f;
+                gutter_sec.y = header_h;
+                gutter_sec.width = gutter_w;
+                gutter_sec.height = content_h;
+
+                viewport_sec.x = gutter_sec.x + gutter_w;
+                viewport_sec.y = header_h;
+                viewport_sec.width = avail_w - half_w - gutter_w - 2.0f;
+                viewport_sec.height = content_h;
+            } else {
+                float half_h = content_h * split_view.split_ratio;
+                gutter.x = tree_w;
+                gutter.y = header_h;
+                gutter.width = gutter_w;
+                gutter.height = half_h - 2.0f;
+
+                viewport.x = tree_w + gutter_w;
+                viewport.y = header_h;
+                viewport.width = avail_w - gutter_w;
+                viewport.height = half_h - 2.0f;
+
+                gutter_sec.x = tree_w;
+                gutter_sec.y = header_h + half_h + 2.0f;
+                gutter_sec.width = gutter_w;
+                gutter_sec.height = content_h - half_h - 2.0f;
+
+                viewport_sec.x = tree_w + gutter_w;
+                viewport_sec.y = header_h + half_h + 2.0f;
+                viewport_sec.width = avail_w - gutter_w;
+                viewport_sec.height = content_h - half_h - 2.0f;
+            }
+        }
 
         if (term_split->is_open) {
             terminal_pane.x = 0.0f;
@@ -288,6 +367,7 @@ fn void run_editor() {
                         }
                         active_buf = bm.bufman_get_active(buf_mgr);
                         cur_state = &active_buf->state;
+                        fold_mgr.scan_folds(&cur_state->buffer);
                         break;
                     }
                     t = t + 1;
@@ -312,7 +392,11 @@ fn void run_editor() {
                     }
                     active_buf = bm.bufman_get_active(buf_mgr);
                     cur_state = &active_buf->state;
+                    fold_mgr.scan_folds(&cur_state->buffer);
                 }
+            } else if (mx >= tree_w && mx < (tree_w + gutter_w) && my >= header_h && my <= (header_h + content_h)) {
+                int clicked_line = cur_state->scroll_row + (int)((my - header_h) / line_h);
+                fold_mgr.toggle_fold_at(clicked_line);
             } else if (mx >= (tree_w + gutter_w) && mx <= cur_w && my >= header_h && my <= (header_h + content_h)) {
                 int clicked_row = cur_state->scroll_row + (int)((my - header_h) / line_h);
                 int clicked_col = (int)((mx - (tree_w + gutter_w) - 12.0f) / char_w);
@@ -496,6 +580,16 @@ fn void run_editor() {
                     cur_state = &active_buf->state;
                 }
                 key_delay = 14;
+            } else if (ctrl_down && ginput.glfwGetKey(app.window, glc.GLFW_KEY_BACKSLASH()) == glc.GLFW_PRESS()) {
+                if (shift_down) {
+                    split_view.toggle_split(false);
+                } else {
+                    split_view.toggle_split(true);
+                }
+                key_delay = 14;
+            } else if (ctrl_down && ginput.glfwGetKey(app.window, glc.GLFW_KEY_SLASH()) == glc.GLFW_PRESS()) {
+                cur_state->toggle_comment();
+                key_delay = 10;
             } else if (ctrl_down && ginput.glfwGetKey(app.window, glc.GLFW_KEY_GRAVE_ACCENT()) == glc.GLFW_PRESS()) {
                 ts.split_toggle(term_split);
                 key_delay = 12;
@@ -507,11 +601,16 @@ fn void run_editor() {
                 ts.split_write(term_split, "\n>>> [BUILD] kale build ");
                 ts.split_write(term_split, active_buf->file_name);
                 ts.split_write(term_split, " --backend llvm-18 -O3\n");
-                ts.split_write(term_split, ">>> Parsing & Typechecking: OK (12ms)\n");
-                ts.split_write(term_split, ">>> LLVM IR Generated & Optimized: OK (28ms)\n");
-                ts.split_write(term_split, ">>> Object Linker: bin/");
-                ts.split_write(term_split, active_buf->file_name);
-                ts.split_write(term_split, ".exe (0 warnings, 0 errors)\n> \n");
+                string doc_src = cur_state->buffer.get_text();
+                analysis.AnalysisResult build_res = analysis.analysis_analyze(doc_src);
+                free((void*)doc_src);
+                if (build_res.error_count > 0) {
+                    ts.split_write(term_split, ">>> [BUILD ERROR] Diagnostics found error: ");
+                    ts.split_write(term_split, build_res.d0.message);
+                    ts.split_write(term_split, "\n> \n");
+                } else {
+                    ts.split_write(term_split, ">>> [BUILD SUCCESS] 0 errors. Native binary built: bin/kale_out.exe\n> \n");
+                }
                 key_delay = 15;
             } else if (ctrl_down && ginput.glfwGetKey(app.window, glc.GLFW_KEY_S()) == glc.GLFW_PRESS()) {
                 cur_state->is_dirty = false;
@@ -601,7 +700,7 @@ fn void run_editor() {
                     if (cur_state->has_selection) {
                         cur_state->delete_selection();
                     }
-                    cur_state->insert_newline();
+                    cur_state->insert_smart_newline();
                     key_delay = 8;
                 } else if (!ctrl_down) {
                     if (cur_state->has_selection) {
@@ -681,7 +780,7 @@ fn void run_editor() {
 
         // Render Components
         int total_lines = cur_state->buffer.line_count();
-        gutter.render(&app.ui_ctx.renderer, &app.gl_ctx, &app.ui_ctx.font, cur_state->scroll_row, cur_state->cursor_row, total_lines, diag_err_line);
+        gutter.render(&app.ui_ctx.renderer, &app.gl_ctx, &app.ui_ctx.font, cur_state->scroll_row, cur_state->cursor_row, total_lines, diag_err_line, &fold_mgr);
 
         int sr = cur_state->get_sel_start_row();
         int sc = cur_state->get_sel_start_col();
@@ -700,8 +799,48 @@ fn void run_editor() {
             sr, sc, er, ec,
             find_bar.is_visible,
             find_bar.get_query(),
-            diag_err_line
+            diag_err_line,
+            &fold_mgr
         );
+
+        if (split_view.is_split && split_view.pane_buf_idx[1] < buf_mgr->count) {
+            bm.EditorBuffer* sec_buf = bm.bufman_get(buf_mgr, split_view.pane_buf_idx[1]);
+            st.EditorState* sec_state = &sec_buf->state;
+            int sec_lines = sec_state->buffer.line_count();
+
+            // Draw divider bar between panes
+            rmath.Color split_div_color = rmath.color_rgba(0.28f, 0.32f, 0.40f, 1.0f);
+            if (split_view.is_vertical) {
+                float div_x = viewport.x + viewport.width;
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, div_x, header_h, 4.0f, content_h, split_div_color);
+            } else {
+                float div_y = viewport.y + viewport.height;
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, tree_w, div_y, cur_w - tree_w, 4.0f, split_div_color);
+            }
+
+            gutter_sec.render(&app.ui_ctx.renderer, &app.gl_ctx, &app.ui_ctx.font, sec_state->scroll_row, sec_state->cursor_row, sec_lines, -1, (fold.FoldManager*)0);
+
+            int sec_sr = sec_state->get_sel_start_row();
+            int sec_sc = sec_state->get_sel_start_col();
+            int sec_er = sec_state->get_sel_end_row();
+            int sec_ec = sec_state->get_sel_end_col();
+
+            viewport_sec.render(
+                &app.ui_ctx.renderer,
+                &app.gl_ctx,
+                &app.ui_ctx.font,
+                &sec_state->buffer,
+                sec_state->scroll_row,
+                sec_state->cursor_row,
+                sec_state->cursor_col,
+                sec_state->has_selection,
+                sec_sr, sec_sc, sec_er, sec_ec,
+                false,
+                "",
+                -1,
+                (fold.FoldManager*)0
+            );
+        }
 
         if (term_split->is_open) {
             terminal_pane.render(&app.ui_ctx.renderer, &app.gl_ctx, &app.ui_ctx.font, term_split);
@@ -718,6 +857,8 @@ fn void run_editor() {
         app.end_frame();
     }
 
+    split_view.destroy();
+    fold_mgr.destroy();
     cmd_bar.destroy();
     find_bar.destroy();
     terminal_pane.destroy();
