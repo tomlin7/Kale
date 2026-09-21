@@ -22,6 +22,12 @@ from .pm.project import create_project, init_project
 from .pm.pack import pack_project
 from .pm.registry import RegistryClient, RegistryServer
 
+from .tools.fmt import run_fmt
+from .tools.lint import run_lint
+from .tools.doc import run_doc
+from .tools.repl import run_repl
+from .tools.test_runner import run_tests
+
 # Configure UTF-8 for console output
 try:
     if sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
@@ -672,6 +678,34 @@ def cmd_registry(args: argparse.Namespace) -> int:
     return 1
 
 
+def cmd_fmt(args: argparse.Namespace) -> int:
+    paths = args.paths or ["."]
+    return run_fmt(paths, check=args.check)
+
+
+def cmd_lint(args: argparse.Namespace) -> int:
+    paths = args.paths or ["."]
+    return run_lint(paths)
+
+
+def cmd_doc(args: argparse.Namespace) -> int:
+    paths = args.paths or ["."]
+    out = args.output or "docs/API.md"
+    return run_doc(paths, out_file=out)
+
+
+def cmd_repl(args: argparse.Namespace) -> int:
+    opt = getattr(args, "opt", 0)
+    return run_repl(opt_level=opt)
+
+
+def cmd_test(args: argparse.Namespace) -> int:
+    targets = args.targets or ["."]
+    jobs = getattr(args, "jobs", 4)
+    pattern = getattr(args, "pattern", None)
+    return run_tests(targets, jobs=jobs, pattern=pattern)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="kale", description="Kale Programming Language Compiler & Package Manager")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -777,6 +811,30 @@ def main() -> int:
     p_tokens = subparsers.add_parser("dump-tokens", help="Dump scanned tokens")
     p_tokens.add_argument("file", help="Path to .kl source file")
 
+    # fmt
+    p_fmt = subparsers.add_parser("fmt", help="Format Kale (.kl) source files")
+    p_fmt.add_argument("paths", nargs="*", default=[], help="Files or directories to format (default: current directory)")
+    p_fmt.add_argument("--check", action="store_true", help="Check if files are formatted without writing")
+
+    # lint
+    p_lint = subparsers.add_parser("lint", help="Static analysis and linting for Kale source code")
+    p_lint.add_argument("paths", nargs="*", default=[], help="Files or directories to lint (default: current directory)")
+
+    # doc
+    p_doc = subparsers.add_parser("doc", help="Generate API documentation from source comments")
+    p_doc.add_argument("paths", nargs="*", default=[], help="Files or directories to document (default: current directory)")
+    p_doc.add_argument("-o", "--output", default="docs/API.md", help="Output file path (default: docs/API.md)")
+
+    # repl
+    p_repl = subparsers.add_parser("repl", help="Start an interactive Kale REPL")
+    p_repl.add_argument("--opt", type=int, choices=[0, 1, 2, 3], default=0, help="Optimization level (default: 0)")
+
+    # test
+    p_test = subparsers.add_parser("test", help="Run test suites in parallel")
+    p_test.add_argument("targets", nargs="*", default=[], help="Test files or directories (default: current directory)")
+    p_test.add_argument("-j", "--jobs", type=int, default=4, help="Number of concurrent test worker jobs (default: 4)")
+    p_test.add_argument("-k", "--pattern", help="Filter tests by name pattern")
+
     args, unknown = parser.parse_known_args()
 
     # If running a script, allow unknown args to be passed forward
@@ -803,6 +861,11 @@ def main() -> int:
         "dump-llvm": cmd_dump_llvm,
         "dump-ast": cmd_dump_ast,
         "dump-tokens": cmd_dump_tokens,
+        "fmt": cmd_fmt,
+        "lint": cmd_lint,
+        "doc": cmd_doc,
+        "repl": cmd_repl,
+        "test": cmd_test,
     }
 
     cmd_fn = commands.get(args.command)
