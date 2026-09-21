@@ -1,0 +1,218 @@
+// os/kernel/dns.kl
+// Domain Name System (DNS) Client & RFC 1035 Parser for Kale OS
+// Supports QNAME label serialization, standard query formatting,
+// and IPv4 Type A answer decoding.
+
+uint16 DNS_DEFAULT_PORT     = 53 as uint16;
+uint16 DNS_FLAG_RD          = 0x0100 as uint16; // Recursion Desired (standard query)
+uint16 DNS_FLAG_QR          = 0x8000 as uint16; // 1 = Response, 0 = Query
+uint16 DNS_FLAG_RCODE_MASK  = 0x000F as uint16; // Response Code mask
+
+uint16 DNS_TYPE_A           = 1 as uint16;      // Host Address (IPv4)
+uint16 DNS_TYPE_CNAME       = 5 as uint16;      // Canonical Name
+uint16 DNS_CLASS_IN         = 1 as uint16;      // Internet Class
+
+// ==============================================================================
+// Data Structures
+// ==============================================================================
+
+struct DNSHeader {
+    uint16 id;
+    uint16 flags;
+    uint16 qdcount;
+    uint16 ancount;
+    uint16 nscount;
+    uint16 arcount;
+}
+
+struct DNSQuery {
+    uint16 id;
+    uint32 server_ip;
+    uint8[256] raw_packet;
+    int packet_len;
+    bool is_resolved;
+    uint32 resolved_ip;
+}
+
+// ==============================================================================
+// Serialization Operations
+// ==============================================================================
+
+// Encodes dotted domain name (e.g. "kale-lang.org") into length-prefixed labels
+// "[9]kale-lang[3]org[0]"
+fn int dns_encode_qname(uint8* domain, uint8* out_buf, int max_len) {
+    if (domain == null || out_buf == null || max_len < 2) {
+        return 0;
+    }
+
+    int src = 0;
+    int dst = 0;
+
+    while (domain[src] != (0 as uint8) && dst < (max_len - 2)) {
+        // Find length of next label
+        int label_start = src;
+        int label_len = 0;
+        while (domain[src] != (0 as uint8) && domain[src] != (0x2E as uint8)) { // '.' is 0x2E
+            label_len = label_len + 1;
+            src = src + 1;
+        }
+
+        if (label_len > 0) {
+            out_buf[dst] = label_len as uint8;
+            dst = dst + 1;
+
+            int i = 0;
+            while (i < label_len && dst < (max_len - 1)) {
+                out_buf[dst] = domain[label_start + i];
+                dst = dst + 1;
+                i = i + 1;
+            }
+        }
+
+        if (domain[src] == (0x2E as uint8)) {
+            src = src + 1;
+        }
+    }
+
+    // Terminate with null label (0)
+    out_buf[dst] = 0 as uint8;
+    dst = dst + 1;
+
+    return dst;
+}
+
+// Builds full 12-byte DNS header + Question packet
+fn int dns_build_query_packet(
+    DNSQuery* query,
+    uint16 id,
+    uint8* domain,
+    uint32 server_ip
+) {
+    if (query == null || domain == null) {
+        return 0;
+    }
+    query->id = id;
+    query->server_ip = server_ip;
+    query->is_resolved = false;
+    query->resolved_ip = 0 as uint32;
+
+    // 1. Write Header (12 bytes, Big Endian / Network Byte Order)
+    // ID
+    query->raw_packet[0] = ((id >> 8) & (0xFF as uint16)) as uint8;
+    query->raw_packet[1] = (id & (0xFF as uint16)) as uint8;
+    // Flags: RD = 1 (0x0100)
+    query->raw_packet[2] = 0x01 as uint8;
+    query->raw_packet[3] = 0x00 as uint8;
+    // QDCOUNT = 1
+    query->raw_packet[4] = 0x00 as uint8;
+    query->raw_packet[5] = 0x01 as uint8;
+    // ANCOUNT = 0
+    query->raw_packet[6] = 0x00 as uint8;
+    query->raw_packet[7] = 0x00 as uint8;
+    // NSCOUNT = 0
+    query->raw_packet[8] = 0x00 as uint8;
+    query->raw_packet[9] = 0x00 as uint8;
+    // ARCOUNT = 0
+    query->raw_packet[10] = 0x00 as uint8;
+    query->raw_packet[11] = 0x00 as uint8;
+
+    int offset = 12;
+
+    // 2. Encode QNAME
+    int qname_len = dns_encode_qname(domain, &query->raw_packet[offset], 200);
+    offset = offset + qname_len;
+
+    // 3. QTYPE = 1 (Type A, Host Address)
+    query->raw_packet[offset + 0] = 0x00 as uint8;
+    query->raw_packet[offset + 1] = 0x01 as uint8;
+
+    // 4. QCLASS = 1 (Class IN, Internet)
+    query->raw_packet[offset + 2] = 0x00 as uint8;
+    query->raw_packet[offset + 3] = 0x01 as uint8;
+
+    offset = offset + 4;
+    query->packet_len = offset;
+
+    return offset;
+}
+
+// Parses DNS Response and extracts first Type A IPv4 address
+fn bool dns_parse_answer(uint8* packet, int packet_len, uint32* out_ip) {
+    if (packet == null || packet_len < 16 || out_ip == null) {
+        return false;
+    }
+
+    // Check QR bit in byte 2 (must be 1 for response)
+    if ((packet[2] & (0x80 as uint8)) == (0 as uint8)) {
+        return false; // Not a response
+    }
+
+    // Check RCODE (lowest 4 bits of byte 3 == 0: No Error)
+    if ((packet[3] & (0x0F as uint8)) != (0 as uint8)) {
+        return false; // Error response (e.g. NXDOMAIN)
+    }
+
+    // ANCOUNT at bytes 6..7
+    int ancount = ((packet[6] as int) << 8) | (packet[7] as int);
+    if (ancount <= 0) {
+        return false; // No answers
+    }
+
+    // Skip Header (12 bytes)
+    int offset = 12;
+
+    // Skip Question Section: QNAME
+    while (offset < packet_len && packet[offset] != (0 as uint8)) {
+        // Check for pointer compression (0xC0)
+        if ((packet[offset] & (0xC0 as uint8)) == (0xC0 as uint8)) {
+            offset = offset + 2;
+            break;
+        } else {
+            int len = packet[offset] as int;
+            offset = offset + 1 + len;
+        }
+    }
+    if (offset < packet_len && packet[offset] == (0 as uint8)) {
+        offset = offset + 1; // skip zero byte
+    }
+    // Skip QTYPE (2) + QCLASS (2)
+    offset = offset + 4;
+
+    // Parse Answer Section
+    int ans = 0;
+    while (ans < ancount && offset < (packet_len - 10)) {
+        // Name field (might be pointer 0xC0xx or sequence of labels)
+        if ((packet[offset] & (0xC0 as uint8)) == (0xC0 as uint8)) {
+            offset = offset + 2;
+        } else {
+            while (offset < packet_len && packet[offset] != (0 as uint8)) {
+                offset = offset + 1 + (packet[offset] as int);
+            }
+            offset = offset + 1;
+        }
+
+        if (offset + 10 > packet_len) {
+            return false;
+        }
+
+        uint16 rtype = (((packet[offset + 0] as uint16) << 8) | (packet[offset + 1] as uint16));
+        uint16 rdlength = (((packet[offset + 8] as uint16) << 8) | (packet[offset + 9] as uint16));
+        offset = offset + 10; // Skip TYPE(2) + CLASS(2) + TTL(4) + RDLENGTH(2)
+
+        if (rtype == DNS_TYPE_A && rdlength == (4 as uint16)) {
+            // Found IPv4 address!
+            uint32 ip0 = packet[offset + 0] as uint32;
+            uint32 ip1 = packet[offset + 1] as uint32;
+            uint32 ip2 = packet[offset + 2] as uint32;
+            uint32 ip3 = packet[offset + 3] as uint32;
+            // Pack as network byte order / little-endian
+            *out_ip = ip0 | (ip1 << 8) | (ip2 << 16) | (ip3 << 24);
+            return true;
+        }
+
+        offset = offset + (rdlength as int);
+        ans = ans + 1;
+    }
+
+    return false;
+}

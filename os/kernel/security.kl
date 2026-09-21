@@ -1,0 +1,155 @@
+// os/kernel/security.kl
+// Security, User Credentials & POSIX Access Control Subsystem for Kale OS
+// Supports user/group IDs, effective credentials, POSIX mode bit validation,
+// and Linux-style kernel capabilities.
+
+// Standard User & Group IDs
+uint32 UID_ROOT             = 0 as uint32;
+uint32 UID_DAEMON           = 1 as uint32;
+uint32 UID_USER_DEFAULT     = 1000 as uint32;
+
+uint32 GID_ROOT             = 0 as uint32;
+uint32 GID_DAEMON           = 1 as uint32;
+uint32 GID_USERS            = 100 as uint32;
+
+// POSIX Permission Bits
+uint32 S_ISUID              = 0x0800 as uint32; // Set UID on execution (octal 04000)
+uint32 S_ISGID              = 0x0400 as uint32; // Set GID on execution (octal 02000)
+
+uint32 S_IRUSR              = 0x0100 as uint32; // User Read (octal 0400)
+uint32 S_IWUSR              = 0x0080 as uint32; // User Write (octal 0200)
+uint32 S_IXUSR              = 0x0040 as uint32; // User Execute (octal 0100)
+
+uint32 S_IRGRP              = 0x0020 as uint32; // Group Read (octal 0040)
+uint32 S_IWGRP              = 0x0010 as uint32; // Group Write (octal 0020)
+uint32 S_IXGRP              = 0x0008 as uint32; // Group Execute (octal 0010)
+
+uint32 S_IROTH              = 0x0004 as uint32; // Other Read (octal 0004)
+uint32 S_IWOTH              = 0x0002 as uint32; // Other Write (octal 0002)
+uint32 S_IXOTH              = 0x0001 as uint32; // Other Execute (octal 0001)
+
+// Access Request Flags
+uint32 ACCESS_R_OK          = 4 as uint32; // Read access
+uint32 ACCESS_W_OK          = 2 as uint32; // Write access
+uint32 ACCESS_X_OK          = 1 as uint32; // Execute access
+
+// Capabilities
+uint32 CAP_CHOWN            = 0x0001 as uint32; // Change file ownership
+uint32 CAP_DAC_OVERRIDE     = 0x0002 as uint32; // Bypass permission checks
+uint32 CAP_KILL             = 0x0004 as uint32; // Signal arbitrary processes
+uint32 CAP_SETUID           = 0x0008 as uint32; // Change user IDs
+uint32 CAP_NET_RAW          = 0x0010 as uint32; // Raw socket access
+uint32 CAP_SYS_ADMIN        = 0x0020 as uint32; // Mount filesystems, configure devices
+uint32 CAP_ALL              = 0xFFFFFFFF as uint32;
+
+// ==============================================================================
+// Data Structures
+// ==============================================================================
+
+struct Credentials {
+    uint32 uid;
+    uint32 gid;
+    uint32 euid;
+    uint32 egid;
+    uint32 suid;
+    uint32 sgid;
+    uint32 capabilities;
+}
+
+// ==============================================================================
+// Credentials Operations
+// ==============================================================================
+
+fn void creds_init_root(Credentials* creds) {
+    if (creds == null) {
+        return;
+    }
+    creds->uid = UID_ROOT;
+    creds->gid = GID_ROOT;
+    creds->euid = UID_ROOT;
+    creds->egid = GID_ROOT;
+    creds->suid = UID_ROOT;
+    creds->sgid = GID_ROOT;
+    creds->capabilities = CAP_ALL;
+}
+
+fn void creds_init_user(Credentials* creds, uint32 uid, uint32 gid) {
+    if (creds == null) {
+        return;
+    }
+    creds->uid = uid;
+    creds->gid = gid;
+    creds->euid = uid;
+    creds->egid = gid;
+    creds->suid = uid;
+    creds->sgid = gid;
+    creds->capabilities = 0 as uint32;
+}
+
+fn bool creds_has_capability(Credentials* creds, uint32 cap) {
+    if (creds == null) {
+        return false;
+    }
+    return (creds->capabilities & cap) == cap;
+}
+
+// Drops or assumes privilege via setuid/seteuid
+fn bool creds_set_euid(Credentials* creds, uint32 new_euid) {
+    if (creds == null) {
+        return false;
+    }
+    // Root can switch to any UID
+    if (creds->euid == UID_ROOT || creds_has_capability(creds, CAP_SETUID)) {
+        creds->euid = new_euid;
+        return true;
+    }
+    // Normal users can only switch between real, effective, and saved UID
+    if (new_euid == creds->uid || new_euid == creds->suid) {
+        creds->euid = new_euid;
+        return true;
+    }
+    return false;
+}
+
+// ==============================================================================
+// Access Control Verification
+// ==============================================================================
+
+// Checks if credentials satisfy requested permissions on a node
+fn bool security_check_access(
+    Credentials* creds,
+    uint32 node_uid,
+    uint32 node_gid,
+    uint32 node_mode,
+    uint32 req_flags
+) {
+    if (creds == null) {
+        return false;
+    }
+
+    // Root superuser bypass (euid == 0) or CAP_DAC_OVERRIDE
+    if (creds->euid == UID_ROOT || creds_has_capability(creds, CAP_DAC_OVERRIDE)) {
+        // If execute is requested, ensure at least one execute bit is set on the file
+        if ((req_flags & ACCESS_X_OK) != (0 as uint32)) {
+            uint32 any_exec = S_IXUSR | S_IXGRP | S_IXOTH;
+            return (node_mode & any_exec) != (0 as uint32);
+        }
+        return true;
+    }
+
+    // 1. Owner check
+    if (creds->euid == node_uid) {
+        uint32 user_bits = (node_mode >> 6) & (7 as uint32);
+        return (user_bits & req_flags) == req_flags;
+    }
+
+    // 2. Group check
+    if (creds->egid == node_gid) {
+        uint32 grp_bits = (node_mode >> 3) & (7 as uint32);
+        return (grp_bits & req_flags) == req_flags;
+    }
+
+    // 3. Other check
+    uint32 oth_bits = node_mode & (7 as uint32);
+    return (oth_bits & req_flags) == req_flags;
+}

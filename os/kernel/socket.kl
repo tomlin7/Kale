@@ -1,0 +1,245 @@
+// os/kernel/socket.kl
+// Transport Protocol Socket Abstraction & TCP State Machine for Kale OS
+// Supports AF_INET, SOCK_STREAM (TCP), SOCK_DGRAM (UDP), connection lifecycle,
+// and finite state transitions.
+
+// Socket Families & Types
+uint16 AF_INET          = 2 as uint16;
+uint16 SOCK_STREAM      = 1 as uint16; // TCP
+uint16 SOCK_DGRAM       = 2 as uint16; // UDP
+
+// TCP Finite State Machine States
+uint8 TCP_CLOSED        = 0 as uint8;
+uint8 TCP_LISTEN        = 1 as uint8;
+uint8 TCP_SYN_SENT      = 2 as uint8;
+uint8 TCP_SYN_RECEIVED  = 3 as uint8;
+uint8 TCP_ESTABLISHED   = 4 as uint8;
+uint8 TCP_FIN_WAIT_1    = 5 as uint8;
+uint8 TCP_FIN_WAIT_2    = 6 as uint8;
+uint8 TCP_CLOSE_WAIT    = 7 as uint8;
+uint8 TCP_CLOSING       = 8 as uint8;
+uint8 TCP_LAST_ACK      = 9 as uint8;
+uint8 TCP_TIME_WAIT     = 10 as uint8;
+
+int MAX_SOCKETS         = 16;
+
+// ==============================================================================
+// Data Structures
+// ==============================================================================
+
+struct Socket {
+    int fd;
+    uint16 family;
+    uint16 sock_type;
+    uint8 state;
+    uint32 local_ip;
+    uint16 local_port;
+    uint32 remote_ip;
+    uint16 remote_port;
+    uint32 seq_num;
+    uint32 ack_num;
+    uint8[256] rx_buffer;
+    int rx_len;
+    bool is_allocated;
+}
+
+struct SocketTable {
+    Socket[16] sockets;
+    int count;
+}
+
+// ==============================================================================
+// Socket Lifecycle & Management
+// ==============================================================================
+
+fn void socket_table_init(SocketTable* tbl) {
+    if (tbl == null) {
+        return;
+    }
+    tbl->count = 0;
+    int i = 0;
+    while (i < MAX_SOCKETS) {
+        tbl->sockets[i].fd = i;
+        tbl->sockets[i].family = 0 as uint16;
+        tbl->sockets[i].sock_type = 0 as uint16;
+        tbl->sockets[i].state = TCP_CLOSED;
+        tbl->sockets[i].local_ip = 0 as uint32;
+        tbl->sockets[i].local_port = 0 as uint16;
+        tbl->sockets[i].remote_ip = 0 as uint32;
+        tbl->sockets[i].remote_port = 0 as uint16;
+        tbl->sockets[i].seq_num = 0 as uint32;
+        tbl->sockets[i].ack_num = 0 as uint32;
+        tbl->sockets[i].rx_len = 0;
+        tbl->sockets[i].is_allocated = false;
+        i = i + 1;
+    }
+}
+
+fn int socket_create(SocketTable* tbl, uint16 family, uint16 sock_type) {
+    if (tbl == null || family != AF_INET) {
+        return -1;
+    }
+    int i = 0;
+    while (i < MAX_SOCKETS) {
+        if (!tbl->sockets[i].is_allocated) {
+            tbl->sockets[i].is_allocated = true;
+            tbl->sockets[i].family = family;
+            tbl->sockets[i].sock_type = sock_type;
+            tbl->sockets[i].state = TCP_CLOSED;
+            tbl->sockets[i].rx_len = 0;
+            tbl->count = tbl->count + 1;
+            return tbl->sockets[i].fd;
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+fn Socket* socket_get(SocketTable* tbl, int fd) {
+    if (tbl == null || fd < 0 || fd >= MAX_SOCKETS) {
+        return null;
+    }
+    if (!tbl->sockets[fd].is_allocated) {
+        return null;
+    }
+    return &tbl->sockets[fd];
+}
+
+fn bool socket_bind(SocketTable* tbl, int fd, uint32 ip, uint16 port) {
+    Socket* sock = socket_get(tbl, fd);
+    if (sock == null) {
+        return false;
+    }
+    sock->local_ip = ip;
+    sock->local_port = port;
+    return true;
+}
+
+fn bool socket_listen(SocketTable* tbl, int fd) {
+    Socket* sock = socket_get(tbl, fd);
+    if (sock == null || sock->sock_type != SOCK_STREAM) {
+        return false;
+    }
+    sock->state = TCP_LISTEN;
+    return true;
+}
+
+fn bool socket_connect(SocketTable* tbl, int fd, uint32 remote_ip, uint16 remote_port) {
+    Socket* sock = socket_get(tbl, fd);
+    if (sock == null) {
+        return false;
+    }
+    sock->remote_ip = remote_ip;
+    sock->remote_port = remote_port;
+
+    if (sock->sock_type == SOCK_STREAM) {
+        // TCP active open -> transition to SYN_SENT
+        sock->state = TCP_SYN_SENT;
+        sock->seq_num = 1000 as uint32; // Initial sequence number
+    } else {
+        // UDP connected state
+        sock->state = TCP_ESTABLISHED;
+    }
+    return true;
+}
+
+fn bool socket_close(SocketTable* tbl, int fd) {
+    Socket* sock = socket_get(tbl, fd);
+    if (sock == null) {
+        return false;
+    }
+    if (sock->sock_type == SOCK_STREAM) {
+        if (sock->state == TCP_ESTABLISHED) {
+            sock->state = TCP_FIN_WAIT_1;
+            return true;
+        }
+    }
+    sock->state = TCP_CLOSED;
+    sock->is_allocated = false;
+    tbl->count = tbl->count - 1;
+    return true;
+}
+
+// ==============================================================================
+// TCP Finite State Machine Transitions
+// ==============================================================================
+
+fn bool socket_tcp_process_event(
+    Socket* sock,
+    bool is_syn,
+    bool is_ack,
+    bool is_fin,
+    uint32 seq,
+    uint32 ack
+) {
+    if (sock == null || sock->sock_type != SOCK_STREAM) {
+        return false;
+    }
+
+    // 1. In SYN_SENT: Received SYN+ACK -> ESTABLISHED
+    if (sock->state == TCP_SYN_SENT) {
+        if (is_syn && is_ack) {
+            sock->state = TCP_ESTABLISHED;
+            sock->ack_num = seq + (1 as uint32);
+            return true;
+        }
+    }
+
+    // 2. In LISTEN: Received SYN -> SYN_RECEIVED
+    if (sock->state == TCP_LISTEN) {
+        if (is_syn && !is_ack) {
+            sock->state = TCP_SYN_RECEIVED;
+            sock->ack_num = seq + (1 as uint32);
+            return true;
+        }
+    }
+
+    // 3. In SYN_RECEIVED: Received ACK -> ESTABLISHED
+    if (sock->state == TCP_SYN_RECEIVED) {
+        if (is_ack && !is_syn) {
+            sock->state = TCP_ESTABLISHED;
+            return true;
+        }
+    }
+
+    // 4. In ESTABLISHED: Received FIN -> CLOSE_WAIT
+    if (sock->state == TCP_ESTABLISHED) {
+        if (is_fin) {
+            sock->state = TCP_CLOSE_WAIT;
+            sock->ack_num = seq + (1 as uint32);
+            return true;
+        }
+    }
+
+    // 5. In FIN_WAIT_1: Received ACK -> FIN_WAIT_2
+    if (sock->state == TCP_FIN_WAIT_1) {
+        if (is_ack && !is_fin) {
+            sock->state = TCP_FIN_WAIT_2;
+            return true;
+        }
+    }
+
+    // 6. In FIN_WAIT_2: Received FIN -> TIME_WAIT
+    if (sock->state == TCP_FIN_WAIT_2) {
+        if (is_fin) {
+            sock->state = TCP_TIME_WAIT;
+            return true;
+        }
+    }
+
+    // 7. In CLOSE_WAIT: Local close executed -> LAST_ACK
+    if (sock->state == TCP_CLOSE_WAIT) {
+        sock->state = TCP_LAST_ACK;
+        return true;
+    }
+
+    // 8. In LAST_ACK: Received final ACK -> CLOSED
+    if (sock->state == TCP_LAST_ACK) {
+        if (is_ack) {
+            sock->state = TCP_CLOSED;
+            return true;
+        }
+    }
+
+    return false;
+}

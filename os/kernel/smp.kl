@@ -1,0 +1,256 @@
+// os/kernel/smp.kl
+// Symmetric Multiprocessing (SMP) & Multi-Core Subsystem for Kale OS
+// Supports Local APIC register access, IPI / SIPI generation, per-CPU core structures,
+// and fair FIFO ticket spinlocks.
+
+// Local APIC Memory-Mapped Register Offsets
+uint32 LAPIC_REG_ID         = 0x0020 as uint32;
+uint32 LAPIC_REG_VERSION    = 0x0030 as uint32;
+uint32 LAPIC_REG_TPR        = 0x0080 as uint32;
+uint32 LAPIC_REG_EOI        = 0x00B0 as uint32;
+uint32 LAPIC_REG_SVR        = 0x00F0 as uint32;
+uint32 LAPIC_REG_ESR        = 0x0280 as uint32;
+uint32 LAPIC_REG_ICR_LOW    = 0x0300 as uint32;
+uint32 LAPIC_REG_ICR_HIGH   = 0x0310 as uint32;
+uint32 LAPIC_REG_LVT_TIMER  = 0x0320 as uint32;
+uint32 LAPIC_REG_TICR       = 0x0380 as uint32;
+uint32 LAPIC_REG_TCCR       = 0x0390 as uint32;
+uint32 LAPIC_REG_TDCR       = 0x03E0 as uint32;
+
+// SVR (Spurious Vector Register) Flags
+uint32 LAPIC_SVR_ENABLE     = 0x00000100 as uint32; // Bit 8: Software Enable APIC
+uint32 LAPIC_SPURIOUS_VEC   = 0x000000FF as uint32; // Vector 255 (0xFF)
+
+// IPI Delivery Modes
+uint8 IPI_DELIVERY_FIXED    = 0 as uint8;
+uint8 IPI_DELIVERY_LOWEST   = 1 as uint8;
+uint8 IPI_DELIVERY_SMI      = 2 as uint8;
+uint8 IPI_DELIVERY_NMI      = 4 as uint8;
+uint8 IPI_DELIVERY_INIT     = 5 as uint8;
+uint8 IPI_DELIVERY_STARTUP  = 6 as uint8; // SIPI
+
+// IPI Destination Shorthands
+uint8 IPI_DEST_NONE         = 0 as uint8;
+uint8 IPI_DEST_SELF         = 1 as uint8;
+uint8 IPI_DEST_ALL_INCL     = 2 as uint8;
+uint8 IPI_DEST_ALL_EXCL     = 3 as uint8;
+
+// CPU Core States
+uint8 CORE_STATE_OFFLINE    = 0 as uint8;
+uint8 CORE_STATE_BOOTING    = 1 as uint8;
+uint8 CORE_STATE_ONLINE     = 2 as uint8;
+uint8 CORE_STATE_HALTED     = 3 as uint8;
+
+// Maximum Supported CPU Cores
+int MAX_SMP_CORES           = 16;
+
+// ==============================================================================
+// Data Structures
+// ==============================================================================
+
+struct Spinlock {
+    uint32 next_ticket;
+    uint32 now_serving;
+}
+
+struct CPUCore {
+    uint8 cpu_id;
+    uint8 lapic_id;
+    uint8 state;
+    bool is_bsp;
+    uint64 stack_base;
+    uint64 stack_top;
+    uint32 current_task_id;
+    uint64 ticks;
+}
+
+struct SMPManager {
+    uint32 total_cores;
+    uint32 online_cores;
+    uint8 bsp_cpu_id;
+    uint64 lapic_base;
+    CPUCore[16] cores;
+    Spinlock global_lock;
+}
+
+// ==============================================================================
+// Ticket Spinlock Primitives
+// ==============================================================================
+
+fn void spinlock_init(Spinlock* lock) {
+    if (lock != null) {
+        lock->next_ticket = 0 as uint32;
+        lock->now_serving = 0 as uint32;
+    }
+}
+
+fn void spinlock_acquire(Spinlock* lock, uint32* out_ticket) {
+    if (lock == null) {
+        return;
+    }
+    uint32 my_ticket = lock->next_ticket;
+    lock->next_ticket = lock->next_ticket + (1 as uint32);
+    if (out_ticket != null) {
+        *out_ticket = my_ticket;
+    }
+}
+
+fn void spinlock_release(Spinlock* lock) {
+    if (lock != null) {
+        lock->now_serving = lock->now_serving + (1 as uint32);
+    }
+}
+
+fn bool spinlock_is_locked(Spinlock* lock) {
+    if (lock == null) {
+        return false;
+    }
+    return lock->next_ticket != lock->now_serving;
+}
+
+// ==============================================================================
+// Local APIC & ICR Command Generation
+// ==============================================================================
+
+// Constructs low 32 bits of Interrupt Command Register (ICR)
+fn uint32 smp_make_icr_low(
+    uint8 vector,
+    uint8 delivery_mode,
+    bool logical_dest,
+    bool delivery_pending,
+    bool assert_level,
+    bool level_trigger,
+    uint8 dest_shorthand
+) {
+    uint32 val = vector as uint32;
+    val = val | ((delivery_mode as uint32) << 8);
+
+    if (logical_dest) {
+        val = val | (1 << 11);
+    }
+    if (delivery_pending) {
+        val = val | (1 << 12);
+    }
+    if (assert_level) {
+        val = val | (1 << 14);
+    }
+    if (level_trigger) {
+        val = val | (1 << 15);
+    }
+
+    val = val | (((dest_shorthand as uint32) & (3 as uint32)) << 18);
+    return val;
+}
+
+// Constructs high 32 bits of ICR containing target Local APIC ID (bits 31..24)
+fn uint32 smp_make_icr_high(uint8 dest_apic_id) {
+    uint32 val = (dest_apic_id as uint32) << 24;
+    return val;
+}
+
+// Generates ICR low command for INIT IPI
+// Delivery = 5 (INIT), Assert = 1, Trigger = 1 (Level), Shorthand = 0 (Specified in ICR high)
+fn uint32 smp_make_init_ipi() {
+    uint32 icr = smp_make_icr_low(
+        0 as uint8,
+        IPI_DELIVERY_INIT,
+        false,
+        false,
+        true,   // Assert
+        true,   // Level
+        IPI_DEST_NONE
+    );
+    return icr;
+}
+
+// Generates ICR low command for Startup IPI (SIPI)
+// Delivery = 6 (Startup), Assert = 1, Trigger = 0 (Edge), Vector = page number (e.g. 0x08 for 0x8000)
+fn uint32 smp_make_sipi(uint8 trampoline_page_vector) {
+    uint32 icr = smp_make_icr_low(
+        trampoline_page_vector,
+        IPI_DELIVERY_STARTUP,
+        false,
+        false,
+        true,   // Assert
+        false,  // Edge
+        IPI_DEST_NONE
+    );
+    return icr;
+}
+
+// ==============================================================================
+// SMP Manager & Core Topology Operations
+// ==============================================================================
+
+fn void smp_init(SMPManager* smp, uint64 lapic_base, uint8 bsp_lapic_id) {
+    if (smp == null) {
+        return;
+    }
+    smp->total_cores = 1 as uint32;
+    smp->online_cores = 1 as uint32;
+    smp->bsp_cpu_id = 0 as uint8;
+    smp->lapic_base = lapic_base;
+    spinlock_init(&smp->global_lock);
+
+    int i = 0;
+    while (i < MAX_SMP_CORES) {
+        smp->cores[i].cpu_id = i as uint8;
+        smp->cores[i].lapic_id = 0xFF as uint8;
+        smp->cores[i].state = CORE_STATE_OFFLINE;
+        smp->cores[i].is_bsp = false;
+        smp->cores[i].stack_base = 0 as uint64;
+        smp->cores[i].stack_top = 0 as uint64;
+        smp->cores[i].current_task_id = 0 as uint32;
+        smp->cores[i].ticks = 0 as uint64;
+        i = i + 1;
+    }
+
+    // Core 0 is Bootstrap Processor (BSP)
+    smp->cores[0].lapic_id = bsp_lapic_id;
+    smp->cores[0].state = CORE_STATE_ONLINE;
+    smp->cores[0].is_bsp = true;
+    smp->cores[0].stack_top = 0x00200000 as uint64; // Default kernel stack
+}
+
+// Registers an Application Processor (AP) core
+fn int smp_register_core(SMPManager* smp, uint8 lapic_id, uint64 stack_top) {
+    if (smp == null) {
+        return -1;
+    }
+    if (smp->total_cores >= (MAX_SMP_CORES as uint32)) {
+        return -1;
+    }
+    uint32 id = smp->total_cores;
+    smp->cores[id].cpu_id = id as uint8;
+    smp->cores[id].lapic_id = lapic_id;
+    smp->cores[id].state = CORE_STATE_BOOTING;
+    smp->cores[id].is_bsp = false;
+    smp->cores[id].stack_top = stack_top;
+    smp->total_cores = smp->total_cores + (1 as uint32);
+
+    return id as int;
+}
+
+fn bool smp_set_core_state(SMPManager* smp, uint8 cpu_id, uint8 state) {
+    if (smp == null || (cpu_id as int) >= MAX_SMP_CORES) {
+        return false;
+    }
+    uint8 prev_state = smp->cores[cpu_id].state;
+    smp->cores[cpu_id].state = state;
+
+    if (prev_state != CORE_STATE_ONLINE && state == CORE_STATE_ONLINE) {
+        smp->online_cores = smp->online_cores + (1 as uint32);
+    } else if (prev_state == CORE_STATE_ONLINE && state != CORE_STATE_ONLINE) {
+        if (smp->online_cores > (0 as uint32)) {
+            smp->online_cores = smp->online_cores - (1 as uint32);
+        }
+    }
+    return true;
+}
+
+fn CPUCore* smp_get_core(SMPManager* smp, uint8 cpu_id) {
+    if (smp == null || (cpu_id as int) >= MAX_SMP_CORES) {
+        return null;
+    }
+    return &smp->cores[cpu_id];
+}
