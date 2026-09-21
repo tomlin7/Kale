@@ -1,0 +1,127 @@
+// os/kernel/pipe.kl
+// Anonymous Pipes IPC Subsystem for Kale OS
+// Supports ring buffer data transmission, blocking/non-blocking reads,
+// EOF on closed write end, and SIGPIPE generation on broken pipe.
+
+int PIPE_BUF_SIZE       = 256;
+int PIPE_ERR_BROKEN     = -32; // -EPIPE
+int MAX_PIPES           = 8;
+
+// ==============================================================================
+// Data Structures
+// ==============================================================================
+
+struct Pipe {
+    uint8[256] buffer;
+    int head;
+    int tail;
+    int count;
+    int readers;
+    int writers;
+    bool is_allocated;
+}
+
+struct PipeTable {
+    Pipe[8] pipes;
+    int active_pipes;
+}
+
+// ==============================================================================
+// Pipe Operations
+// ==============================================================================
+
+fn void pipe_table_init(PipeTable* tbl) {
+    if (tbl == null) {
+        return;
+    }
+    tbl->active_pipes = 0;
+    int i = 0;
+    while (i < MAX_PIPES) {
+        tbl->pipes[i].head = 0;
+        tbl->pipes[i].tail = 0;
+        tbl->pipes[i].count = 0;
+        tbl->pipes[i].readers = 0;
+        tbl->pipes[i].writers = 0;
+        tbl->pipes[i].is_allocated = false;
+        i = i + 1;
+    }
+}
+
+fn int pipe_create(PipeTable* tbl) {
+    if (tbl == null) {
+        return -1;
+    }
+    int i = 0;
+    while (i < MAX_PIPES) {
+        if (!tbl->pipes[i].is_allocated) {
+            tbl->pipes[i].is_allocated = true;
+            tbl->pipes[i].head = 0;
+            tbl->pipes[i].tail = 0;
+            tbl->pipes[i].count = 0;
+            tbl->pipes[i].readers = 1;
+            tbl->pipes[i].writers = 1;
+            tbl->active_pipes = tbl->active_pipes + 1;
+            return i;
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+// Writes data to the pipe ring buffer
+// Returns number of bytes written, or PIPE_ERR_BROKEN (-32) if no readers remain
+fn int pipe_write(Pipe* p, uint8* src, int len) {
+    if (p == null || src == null || len <= 0) {
+        return 0;
+    }
+
+    // Broken pipe: write to a pipe with no readers
+    if (p->readers <= 0) {
+        return PIPE_ERR_BROKEN;
+    }
+
+    int written = 0;
+    while (written < len && p->count < PIPE_BUF_SIZE) {
+        p->buffer[p->head] = src[written];
+        p->head = (p->head + 1) % PIPE_BUF_SIZE;
+        p->count = p->count + 1;
+        written = written + 1;
+    }
+
+    return written;
+}
+
+// Reads data from the pipe ring buffer
+// Returns number of bytes read, or 0 (EOF) if buffer is empty and all writers have closed
+fn int pipe_read(Pipe* p, uint8* dst, int max_len) {
+    if (p == null || dst == null || max_len <= 0) {
+        return 0;
+    }
+
+    // EOF: Empty buffer and no active writers
+    if (p->count == 0 && p->writers <= 0) {
+        return 0; // EOF
+    }
+
+    int bytes_read = 0;
+    while (bytes_read < max_len && p->count > 0) {
+        dst[bytes_read] = p->buffer[p->tail];
+        p->tail = (p->tail + 1) % PIPE_BUF_SIZE;
+        p->count = p->count - 1;
+        bytes_read = bytes_read + 1;
+    }
+
+    return bytes_read;
+}
+
+fn void pipe_close_write(Pipe* p) {
+    if (p != null && p->writers > 0) {
+        p->writers = p->writers - 1;
+    }
+}
+
+fn void pipe_close_read(Pipe* p) {
+    if (p != null && p->readers > 0) {
+        p->readers = p->readers - 1;
+    }
+}

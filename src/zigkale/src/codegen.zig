@@ -7,6 +7,7 @@ const Checker = checker_mod.Checker;
 const Module = checker_mod.Module;
 const Symbol = checker_mod.Symbol;
 const TokenKind = @import("token.zig").TokenKind;
+const parser_mod = @import("parser.zig");
 
 pub const Codegen = struct {
     allocator: std.mem.Allocator,
@@ -20,6 +21,9 @@ pub const Codegen = struct {
     struct_names: std.StringHashMap(void),
     struct_methods: std.StringHashMap([]const u8),
     all_method_names: std.StringHashMap([]const u8),
+    struct_operators: std.StringHashMap(ast.TypeRef),
+    standalone_operators: std.StringHashMap(ast.TypeRef),
+    standalone_op_left_type: std.StringHashMap([]const u8),
     var_types: std.StringHashMap(ast.TypeRef),
     struct_fields: std.StringHashMap([]ast.Field),
     fn_return_types: std.StringHashMap(ast.TypeRef),
@@ -38,6 +42,9 @@ pub const Codegen = struct {
             .struct_names = std.StringHashMap(void).init(allocator),
             .struct_methods = std.StringHashMap([]const u8).init(allocator),
             .all_method_names = std.StringHashMap([]const u8).init(allocator),
+            .struct_operators = std.StringHashMap(ast.TypeRef).init(allocator),
+            .standalone_operators = std.StringHashMap(ast.TypeRef).init(allocator),
+            .standalone_op_left_type = std.StringHashMap([]const u8).init(allocator),
             .var_types = std.StringHashMap(ast.TypeRef).init(allocator),
             .struct_fields = std.StringHashMap([]ast.Field).init(allocator),
             .fn_return_types = std.StringHashMap(ast.TypeRef).init(allocator),
@@ -317,10 +324,23 @@ pub const Codegen = struct {
                             try self.all_method_names.put(fn_d.name, sname);
                             try self.fn_return_types.put(key, fn_d.ret_type);
                             try self.fn_return_types.put(fn_d.name, fn_d.ret_type);
+                            if (std.mem.startsWith(u8, fn_d.name, "operator")) {
+                                try self.struct_operators.put(key, fn_d.ret_type);
+                            }
                         } else {
                             try self.fn_return_types.put(fn_d.name, fn_d.ret_type);
                             const mod_key = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ m.name, fn_d.name });
                             try self.fn_return_types.put(mod_key, fn_d.ret_type);
+                            if (std.mem.startsWith(u8, fn_d.name, "operator")) {
+                                try self.standalone_operators.put(fn_d.name, fn_d.ret_type);
+                                if (fn_d.params.len > 0) {
+                                    var p0_name = fn_d.params[0].type_ref.name;
+                                    if (std.mem.lastIndexOfScalar(u8, p0_name, '.')) |dot| {
+                                        p0_name = p0_name[dot + 1 ..];
+                                    }
+                                    try self.standalone_op_left_type.put(fn_d.name, p0_name);
+                                }
+                            }
                         }
                     },
                     .var_decl => {
@@ -466,7 +486,12 @@ pub const Codegen = struct {
                             try self.writeLineFmt("extern {s} {s}({s});", .{ ret_str, fn_d.name, p_str });
                         }
                     } else if (fn_d.struct_name) |sname| {
-                        const mangled = try std.fmt.allocPrint(self.allocator, "kale_{s}_{s}", .{ sname, fn_d.name });
+                        var mangled = try std.fmt.allocPrint(self.allocator, "kale_{s}_{s}", .{ sname, fn_d.name });
+                        if (std.mem.startsWith(u8, fn_d.name, "operator")) {
+                            const op_str = fn_d.name["operator".len..];
+                            const suffix = types.getOperatorSuffix(op_str) orelse op_str;
+                            mangled = try std.fmt.allocPrint(self.allocator, "kale_{s}_op_{s}", .{ sname, suffix });
+                        }
                         const ret_str = try self.mapTypeRef(fn_d.ret_type);
                         var param_buf: std.ArrayList(u8) = .{};
                         try param_buf.appendSlice(self.allocator, try std.fmt.allocPrint(self.allocator, "struct {s}* this", .{sname}));
@@ -479,7 +504,12 @@ pub const Codegen = struct {
                         }
                         try self.writeLineFmt("{s} {s}({s});", .{ ret_str, mangled, param_buf.items });
                     } else {
-                        const mangled = try self.getMangledFnName(m, fn_d.name);
+                        var mangled = try self.getMangledFnName(m, fn_d.name);
+                        if (std.mem.startsWith(u8, fn_d.name, "operator")) {
+                            const op_str = fn_d.name["operator".len..];
+                            const suffix = types.getOperatorSuffix(op_str) orelse op_str;
+                            mangled = try std.fmt.allocPrint(self.allocator, "kale_op_{s}", .{suffix});
+                        }
                         const ret_str = try self.mapTypeRef(fn_d.ret_type);
                         var param_buf: std.ArrayList(u8) = .{};
                         for (fn_d.params, 0..) |p, p_idx| {
@@ -510,6 +540,11 @@ pub const Codegen = struct {
 
                     if (fn_d.struct_name) |sname| {
                         mangled = try std.fmt.allocPrint(self.allocator, "kale_{s}_{s}", .{ sname, fn_d.name });
+                        if (std.mem.startsWith(u8, fn_d.name, "operator")) {
+                            const op_str = fn_d.name["operator".len..];
+                            const suffix = types.getOperatorSuffix(op_str) orelse op_str;
+                            mangled = try std.fmt.allocPrint(self.allocator, "kale_{s}_op_{s}", .{ sname, suffix });
+                        }
                         try self.var_types.put("this", ast.TypeRef{ .name = sname, .ptr_depth = 1 });
                         try param_buf.appendSlice(self.allocator, try std.fmt.allocPrint(self.allocator, "struct {s}* this", .{sname}));
                         for (fn_d.params) |p| {
@@ -522,6 +557,11 @@ pub const Codegen = struct {
                         }
                     } else {
                         mangled = try self.getMangledFnName(m, fn_d.name);
+                        if (std.mem.startsWith(u8, fn_d.name, "operator")) {
+                            const op_str = fn_d.name["operator".len..];
+                            const suffix = types.getOperatorSuffix(op_str) orelse op_str;
+                            mangled = try std.fmt.allocPrint(self.allocator, "kale_op_{s}", .{suffix});
+                        }
                         for (fn_d.params, 0..) |p, p_idx| {
                             try self.var_types.put(p.name, p.type_ref);
                             const pt_str = try self.mapTypeRef(p.type_ref);
@@ -955,6 +995,23 @@ pub const Codegen = struct {
                 return try std.fmt.allocPrint(self.allocator, "({s})", .{s});
             },
             .unary => |un| {
+                const operand_str = try self.emitExpr(m, un.operand.*);
+                if (!un.is_postfix) {
+                    const op_sym = parser_mod.Parser.operatorSymbol(un.op);
+                    if (op_sym.len > 0) {
+                        const op_fn_name = try std.fmt.allocPrint(self.allocator, "operator{s}", .{op_sym});
+                        const target_struct = self.getExprStructType(m, un.operand.*);
+                        if (target_struct) |sname| {
+                            const key = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ sname, op_fn_name });
+                            if (self.struct_operators.contains(key)) {
+                                const suffix = types.getOperatorSuffix(op_sym) orelse op_sym;
+                                const fn_call_name = try std.fmt.allocPrint(self.allocator, "kale_{s}_op_{s}", .{ sname, suffix });
+                                const arg = if (self.isExprPointer(m, un.operand.*)) operand_str else try std.fmt.allocPrint(self.allocator, "&({s})", .{operand_str});
+                                return try std.fmt.allocPrint(self.allocator, "{s}({s})", .{ fn_call_name, arg });
+                            }
+                        }
+                    }
+                }
                 const op_str = switch (un.op) {
                     .minus => "-",
                     .bang => "!",
@@ -966,7 +1023,6 @@ pub const Codegen = struct {
                     .caret => "*",
                     else => "-",
                 };
-                const operand_str = try self.emitExpr(m, un.operand.*);
                 if (un.is_postfix) {
                     if (un.op == .caret) {
                         return try std.fmt.allocPrint(self.allocator, "(*({s}))", .{operand_str});
@@ -980,6 +1036,44 @@ pub const Codegen = struct {
                 const r_str = try self.emitExpr(m, bin.right.*);
                 if (bin.op == .star_star) {
                     return try std.fmt.allocPrint(self.allocator, "pow((double)({s}), (double)({s}))", .{ l_str, r_str });
+                }
+
+                const op_sym = parser_mod.Parser.operatorSymbol(bin.op);
+                if (op_sym.len > 0) {
+                    const op_fn_name = try std.fmt.allocPrint(self.allocator, "operator{s}", .{op_sym});
+                    const left_struct = self.getExprStructType(m, bin.left.*);
+                    const right_struct = self.getExprStructType(m, bin.right.*);
+
+                    if (left_struct) |sname| {
+                        const key = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ sname, op_fn_name });
+                        if (self.struct_operators.contains(key)) {
+                            const suffix = types.getOperatorSuffix(op_sym) orelse op_sym;
+                            const fn_call_name = try std.fmt.allocPrint(self.allocator, "kale_{s}_op_{s}", .{ sname, suffix });
+                            const arg1 = if (self.isExprPointer(m, bin.left.*)) l_str else try std.fmt.allocPrint(self.allocator, "&({s})", .{l_str});
+                            const arg2 = if (right_struct != null and !self.isExprPointer(m, bin.right.*))
+                                try std.fmt.allocPrint(self.allocator, "&({s})", .{r_str})
+                            else
+                                r_str;
+                            return try std.fmt.allocPrint(self.allocator, "{s}({s}, {s})", .{ fn_call_name, arg1, arg2 });
+                        }
+                    }
+
+                    if (self.standalone_operators.contains(op_fn_name) and left_struct != null) {
+                        const expected_left = self.standalone_op_left_type.get(op_fn_name);
+                        if (expected_left == null or std.mem.eql(u8, expected_left.?, left_struct.?)) {
+                            const suffix = types.getOperatorSuffix(op_sym) orelse op_sym;
+                            const fn_call_name = try std.fmt.allocPrint(self.allocator, "kale_op_{s}", .{suffix});
+                            const arg1 = if (!self.isExprPointer(m, bin.left.*))
+                                try std.fmt.allocPrint(self.allocator, "&({s})", .{l_str})
+                            else
+                                l_str;
+                            const arg2 = if (right_struct != null and !self.isExprPointer(m, bin.right.*))
+                                try std.fmt.allocPrint(self.allocator, "&({s})", .{r_str})
+                            else
+                                r_str;
+                            return try std.fmt.allocPrint(self.allocator, "{s}({s}, {s})", .{ fn_call_name, arg1, arg2 });
+                        }
+                    }
                 }
                 const op_str = switch (bin.op) {
                     .plus => "+",
@@ -1115,6 +1209,14 @@ pub const Codegen = struct {
             .index => |idx| {
                 const t_str = try self.emitExpr(m, idx.target.*);
                 const i_str = try self.emitExpr(m, idx.index.*);
+                const target_struct = self.getExprStructType(m, idx.target.*);
+                if (target_struct) |sname| {
+                    const key = try std.fmt.allocPrint(self.allocator, "{s}.operator[]", .{sname});
+                    if (self.struct_operators.contains(key)) {
+                        const arg1 = if (self.isExprPointer(m, idx.target.*)) t_str else try std.fmt.allocPrint(self.allocator, "&({s})", .{t_str});
+                        return try std.fmt.allocPrint(self.allocator, "kale_{s}_op_index({s}, {s})", .{ sname, arg1, i_str });
+                    }
+                }
                 return try std.fmt.allocPrint(self.allocator, "{s}[{s}]", .{ t_str, i_str });
             },
             .member => |mem| {

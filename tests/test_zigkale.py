@@ -465,3 +465,109 @@ def test_zigkale_chained_method_calls(tmp_path):
     assert run_res.returncode == 0
     assert run_res.stdout.strip() == "35"
 
+@pytest.mark.skipif(not HAS_ZIG, reason="zig not installed")
+def test_zigkale_operator_overloading(tmp_path):
+    code = """
+    struct Vec2 {
+        int x;
+        int y;
+    };
+
+    fn Vec2 Vec2.operator+(Vec2* other) {
+        Vec2 res;
+        res.x = this->x + other->x;
+        res.y = this->y + other->y;
+        return res;
+    }
+
+    fn Vec2 Vec2.operator*(int scale) {
+        Vec2 res;
+        res.x = this->x * scale;
+        res.y = this->y * scale;
+        return res;
+    }
+
+    fn Vec2 Vec2.operator-() {
+        Vec2 res;
+        res.x = 0 - this->x;
+        res.y = 0 - this->y;
+        return res;
+    }
+
+    struct IntPair {
+        int first;
+        int second;
+    };
+
+    fn int IntPair.operator[](int idx) {
+        if (idx == 0) {
+            return this->first;
+        }
+        return this->second;
+    }
+
+    struct Point {
+        int x;
+        int y;
+    };
+
+    fn bool Point.operator==(Point* other) {
+        return this->x == other->x && this->y == other->y;
+    }
+
+    fn Point operator+(Point* a, Point* b) {
+        Point p;
+        p.x = a->x + b->x;
+        p.y = a->y + b->y;
+        return p;
+    }
+
+    Vec2 v1;
+    v1.x = 10;
+    v1.y = 20;
+
+    Vec2 v2;
+    v2.x = 30;
+    v2.y = 40;
+
+    Vec2 v3 = v1 + v2;
+    print(v3.x, v3.y); // 40 60
+
+    Vec2 v4 = v1 * 3;
+    print(v4.x, v4.y); // 30 60
+
+    Vec2 vneg = -v1;
+    print(vneg.x, vneg.y); // -10 -20
+
+    IntPair pair;
+    pair.first = 100;
+    pair.second = 200;
+    print(pair[0], pair[1]); // 100 200
+
+    Point p1;
+    p1.x = 5;
+    p1.y = 7;
+
+    Point p2;
+    p2.x = 5;
+    p2.y = 7;
+
+    Point p3;
+    p3.x = 1;
+    p3.y = 2;
+
+    print(p1 == p2, p1 == p3); // 1 0
+
+    Point psum = p1 + p3;
+    print(psum.x, psum.y); // 6 9
+    """
+    run_res = _run_zigkale_snippet(tmp_path, code)
+    assert run_res.returncode == 0
+    lines = run_res.stdout.strip().splitlines()
+    assert lines[0] == "40 60"
+    assert lines[1] == "30 60"
+    assert lines[2] == "-10 -20"
+    assert lines[3] == "100 200"
+    assert lines[4] == "true false"
+    assert lines[5] == "6 9"
+

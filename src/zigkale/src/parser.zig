@@ -252,6 +252,40 @@ pub const Parser = struct {
         };
     }
 
+    pub fn isOverloadableOp(kind: TokenKind) bool {
+        return switch (kind) {
+            .plus, .minus, .star, .slash, .percent, .star_star,
+            .eq_eq, .bang_eq, .lt, .lt_eq, .gt, .gt_eq,
+            .amp, .pipe, .caret, .shl, .shr, .bang, .tilde => true,
+            else => false,
+        };
+    }
+
+    pub fn operatorSymbol(kind: TokenKind) []const u8 {
+        return switch (kind) {
+            .plus => "+",
+            .minus => "-",
+            .star => "*",
+            .slash => "/",
+            .percent => "%",
+            .star_star => "**",
+            .eq_eq => "==",
+            .bang_eq => "!=",
+            .lt => "<",
+            .lt_eq => "<=",
+            .gt => ">",
+            .gt_eq => ">=",
+            .amp => "&",
+            .pipe => "|",
+            .caret => "^",
+            .shl => "<<",
+            .shr => ">>",
+            .bang => "!",
+            .tilde => "~",
+            else => "",
+        };
+    }
+
     fn isFunctionDeclarationStart(self: *const Parser) bool {
         var idx: usize = 0;
         if (self.peek(idx).kind == .kw_fn) {
@@ -295,16 +329,28 @@ pub const Parser = struct {
         }
 
         // Next must be function name or operator
-        if (self.peek(idx).kind != .identifier and self.peek(idx).kind != .kw_operator) return false;
+        if (self.peek(idx).kind == .kw_operator) {
+            idx += 1;
+            if (self.peek(idx).kind == .lbracket and self.peek(idx + 1).kind == .rbracket) {
+                idx += 2;
+            } else if (isOverloadableOp(self.peek(idx).kind)) {
+                idx += 1;
+            }
+            return self.peek(idx).kind == .lparen;
+        }
+
+        if (self.peek(idx).kind != .identifier) return false;
         idx += 1;
 
-        // Method qualifier Struct.method?
+        // Method qualifier Struct.method or Struct.operator+?
         if (self.peek(idx).kind == .dot) {
             idx += 1;
             if (self.peek(idx).kind == .kw_operator) {
                 idx += 1;
                 if (self.peek(idx).kind == .lbracket and self.peek(idx + 1).kind == .rbracket) {
                     idx += 2;
+                } else if (isOverloadableOp(self.peek(idx).kind)) {
+                    idx += 1;
                 }
             } else if (self.peek(idx).kind == .identifier) {
                 idx += 1;
@@ -555,21 +601,38 @@ pub const Parser = struct {
             has_explicit_ret = true;
         }
 
-        var fn_name = (try self.expect(.identifier)).text;
+        var fn_name: []const u8 = undefined;
         var struct_name: ?[]const u8 = null;
 
-        if (self.match(.dot)) {
-            struct_name = fn_name;
-            if (self.match(.kw_operator)) {
-                if (self.match(.lbracket) and self.match(.rbracket)) {
-                    fn_name = "operator_index";
-                } else if (self.check(.identifier)) {
-                    fn_name = self.advance().text;
-                } else {
-                    fn_name = "operator";
-                }
+        if (self.match(.kw_operator)) {
+            if (self.match(.lbracket) and self.match(.rbracket)) {
+                fn_name = "operator[]";
+            } else if (isOverloadableOp(self.cur().kind)) {
+                const op_tok = self.advance();
+                fn_name = try std.fmt.allocPrint(self.allocator, "operator{s}", .{operatorSymbol(op_tok.kind)});
+            } else if (self.check(.identifier)) {
+                fn_name = self.advance().text;
             } else {
-                fn_name = (try self.expect(.identifier)).text;
+                fn_name = "operator";
+            }
+        } else {
+            fn_name = (try self.expect(.identifier)).text;
+            if (self.match(.dot)) {
+                struct_name = fn_name;
+                if (self.match(.kw_operator)) {
+                    if (self.match(.lbracket) and self.match(.rbracket)) {
+                        fn_name = "operator[]";
+                    } else if (isOverloadableOp(self.cur().kind)) {
+                        const op_tok = self.advance();
+                        fn_name = try std.fmt.allocPrint(self.allocator, "operator{s}", .{operatorSymbol(op_tok.kind)});
+                    } else if (self.check(.identifier)) {
+                        fn_name = self.advance().text;
+                    } else {
+                        fn_name = "operator";
+                    }
+                } else {
+                    fn_name = (try self.expect(.identifier)).text;
+                }
             }
         }
 

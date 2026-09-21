@@ -1,0 +1,171 @@
+// os/kernel/signal.kl
+// POSIX Signals Subsystem for Kale OS
+// Supports signal masks, pending/blocked resolution, uncatchable signals (SIGKILL, SIGSTOP),
+// default actions, and user signal handlers.
+
+// POSIX Signal Numbers
+int SIGHUP              = 1;
+int SIGINT              = 2;  // Terminal interrupt (^C)
+int SIGQUIT             = 3;  // Terminal quit (^\)
+int SIGILL              = 4;  // Illegal instruction
+int SIGKILL             = 9;  // Uncatchable kill
+int SIGSEGV             = 11; // Segmentation fault
+int SIGPIPE             = 13; // Broken pipe
+int SIGALRM             = 14; // Alarm clock
+int SIGTERM             = 15; // Termination signal
+int SIGCHLD             = 17; // Child status changed
+int SIGCONT             = 18; // Continue stopped process
+int SIGSTOP             = 19; // Uncatchable stop
+
+uint64 SIG_DFL          = 0 as uint64;
+uint64 SIG_IGN          = 1 as uint64;
+
+// Signal Action Results
+int ACT_TERMINATE       = 1;
+int ACT_IGNORE          = 2;
+int ACT_STOP            = 3;
+int ACT_CONTINUE        = 4;
+int ACT_HANDLER         = 5;
+
+// ==============================================================================
+// Data Structures
+// ==============================================================================
+
+struct SignalState {
+    uint32 pending_mask;
+    uint32 blocked_mask;
+    uint64[32] handlers;
+}
+
+// ==============================================================================
+// Signal State Operations
+// ==============================================================================
+
+fn void signal_state_init(SignalState* state) {
+    if (state == null) {
+        return;
+    }
+    state->pending_mask = 0 as uint32;
+    state->blocked_mask = 0 as uint32;
+
+    int i = 0;
+    while (i < 32) {
+        state->handlers[i] = SIG_DFL;
+        i = i + 1;
+    }
+}
+
+fn bool signal_send(SignalState* state, int signum) {
+    if (state == null || signum <= 0 || signum >= 32) {
+        return false;
+    }
+    state->pending_mask = state->pending_mask | ((1 as uint32) << signum);
+    return true;
+}
+
+fn bool signal_block(SignalState* state, int signum) {
+    if (state == null || signum <= 0 || signum >= 32) {
+        return false;
+    }
+    // SIGKILL and SIGSTOP cannot be blocked
+    if (signum == SIGKILL || signum == SIGSTOP) {
+        return false;
+    }
+    state->blocked_mask = state->blocked_mask | ((1 as uint32) << signum);
+    return true;
+}
+
+fn bool signal_unblock(SignalState* state, int signum) {
+    if (state == null || signum <= 0 || signum >= 32) {
+        return false;
+    }
+    uint32 bit = (1 as uint32) << signum;
+    state->blocked_mask = state->blocked_mask & (~bit);
+    return true;
+}
+
+fn bool signal_set_handler(SignalState* state, int signum, uint64 handler) {
+    if (state == null || signum <= 0 || signum >= 32) {
+        return false;
+    }
+    // SIGKILL and SIGSTOP cannot have their handlers changed
+    if (signum == SIGKILL || signum == SIGSTOP) {
+        return false;
+    }
+    state->handlers[signum] = handler;
+    return true;
+}
+
+// Determines the highest priority unblocked deliverable signal, or 0 if none
+fn int signal_next_deliverable(SignalState* state) {
+    if (state == null) {
+        return 0;
+    }
+
+    // 1. Check uncatchable signals first (SIGKILL and SIGSTOP ignore blocked mask)
+    uint32 kill_bit = (1 as uint32) << SIGKILL;
+    if ((state->pending_mask & kill_bit) != (0 as uint32)) {
+        state->pending_mask = state->pending_mask & (~kill_bit);
+        return SIGKILL;
+    }
+
+    uint32 stop_bit = (1 as uint32) << SIGSTOP;
+    if ((state->pending_mask & stop_bit) != (0 as uint32)) {
+        state->pending_mask = state->pending_mask & (~stop_bit);
+        return SIGSTOP;
+    }
+
+    // 2. Deliverable mask = pending & (~blocked)
+    uint32 deliverable = state->pending_mask & (~state->blocked_mask);
+    if (deliverable == (0 as uint32)) {
+        return 0;
+    }
+
+    // Scan from signal 1 up to 31
+    int sig = 1;
+    while (sig < 32) {
+        uint32 b = (1 as uint32) << sig;
+        if ((deliverable & b) != (0 as uint32)) {
+            // Consume signal
+            state->pending_mask = state->pending_mask & (~b);
+            return sig;
+        }
+        sig = sig + 1;
+    }
+
+    return 0;
+}
+
+// Resolves the action for a delivered signal
+fn int signal_get_action(SignalState* state, int signum) {
+    if (state == null || signum <= 0 || signum >= 32) {
+        return ACT_IGNORE;
+    }
+
+    // SIGKILL always terminates, SIGSTOP always stops
+    if (signum == SIGKILL) {
+        return ACT_TERMINATE;
+    }
+    if (signum == SIGSTOP) {
+        return ACT_STOP;
+    }
+
+    uint64 h = state->handlers[signum];
+    if (h == SIG_IGN) {
+        return ACT_IGNORE;
+    }
+    if (h != SIG_DFL) {
+        return ACT_HANDLER;
+    }
+
+    // Default actions
+    if (signum == SIGCHLD) {
+        return ACT_IGNORE;
+    }
+    if (signum == SIGCONT) {
+        return ACT_CONTINUE;
+    }
+
+    // SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGSEGV, SIGPIPE, SIGALRM, SIGTERM terminate
+    return ACT_TERMINATE;
+}

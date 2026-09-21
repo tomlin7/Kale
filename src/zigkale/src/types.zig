@@ -220,3 +220,27 @@ pub const TypeContext = struct {
         return t;
     }
 };
+
+pub fn getOperatorSuffix(op_str: []const u8) ?[]const u8 {
+    if (std.mem.eql(u8, op_str, "+")) return "add";
+    if (std.mem.eql(u8, op_str, "-")) return "sub";
+    if (std.mem.eql(u8, op_str, "*")) return "mul";
+    if (std.mem.eql(u8, op_str, "/")) return "div";
+    if (std.mem.eql(u8, op_str, "%")) return "mod";
+    if (std.mem.eql(u8, op_str, "**")) return "pow";
+    if (std.mem.eql(u8, op_str, "==")) return "eq";
+    if (std.mem.eql(u8, op_str, "!=")) return "ne";
+    if (std.mem.eql(u8, op_str, "<")) return "lt";
+    if (std.mem.eql(u8, op_str, "<=")) return "le";
+    if (std.mem.eql(u8, op_str, ">")) return "gt";
+    if (std.mem.eql(u8, op_str, ">=")) return "ge";
+    if (std.mem.eql(u8, op_str, "&")) return "band";
+    if (std.mem.eql(u8, op_str, "|")) return "bor";
+    if (std.mem.eql(u8, op_str, "^")) return "bxor";
+    if (std.mem.eql(u8, op_str, "<<")) return "shl";
+    if (std.mem.eql(u8, op_str, ">>")) return "shr";
+    if (std.mem.eql(u8, op_str, "!")) return "not";
+    if (std.mem.eql(u8, op_str, "~")) return "bnot";
+    if (std.mem.eql(u8, op_str, "[]")) return "index";
+    return null;
+}

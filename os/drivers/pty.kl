@@ -1,0 +1,258 @@
+// os/drivers/pty.kl
+// Pseudo-Terminal (PTY) & POSIX Termios Line Discipline Subsystem for Kale OS
+// Supports master/slave terminal endpoints, canonical line editing,
+// input CR to NL conversion, output NL to CR-NL expansion, and signal generation (^C, ^\).
+
+// Termios Input Flags
+uint32 TERMIOS_ICRNL        = 0x0100 as uint32; // Map CR to NL on input
+uint32 TERMIOS_IXON         = 0x0400 as uint32; // Enable XON/XOFF flow control
+
+// Termios Output Flags
+uint32 TERMIOS_OPOST        = 0x0001 as uint32; // Post-process output
+uint32 TERMIOS_ONLCR        = 0x0004 as uint32; // Map NL to CR-NL on output
+
+// Termios Local Flags
+uint32 TERMIOS_ISIG         = 0x0001 as uint32; // Enable signal generation
+uint32 TERMIOS_ICANON       = 0x0002 as uint32; // Canonical mode (line-by-line)
+uint32 TERMIOS_ECHO         = 0x0008 as uint32; // Echo input characters
+uint32 TERMIOS_ECHOE        = 0x0010 as uint32; // Visual erase on backspace
+
+// Control Character Indices
+int CC_VINTR                = 0;
+int CC_VQUIT                = 1;
+int CC_VERASE               = 2;
+int CC_VKILL                = 3;
+int CC_VEOF                 = 4;
+
+int PTY_QUEUE_SIZE          = 256;
+
+// ==============================================================================
+// Data Structures
+// ==============================================================================
+
+struct Termios {
+    uint32 c_iflag;
+    uint32 c_oflag;
+    uint32 c_cflag;
+    uint32 c_lflag;
+    uint8[8] c_cc;
+}
+
+struct PTY {
+    int id;
+    Termios termios;
+    uint8[128] line_buf;
+    int line_len;
+    uint8[256] slave_rx;
+    int slave_head;
+    int slave_tail;
+    int slave_count;
+    uint8[256] master_rx;
+    int master_head;
+    int master_tail;
+    int master_count;
+    int pending_signal; // e.g. 2 for SIGINT, 3 for SIGQUIT
+    bool is_open;
+}
+
+// ==============================================================================
+// Termios & PTY Lifecycle
+// ==============================================================================
+
+fn void termios_init_default(Termios* t) {
+    if (t == null) {
+        return;
+    }
+    t->c_iflag = TERMIOS_ICRNL;
+    t->c_oflag = TERMIOS_OPOST | TERMIOS_ONLCR;
+    t->c_cflag = 0 as uint32;
+    t->c_lflag = TERMIOS_ISIG | TERMIOS_ICANON | TERMIOS_ECHO | TERMIOS_ECHOE;
+
+    t->c_cc[CC_VINTR]  = 0x03 as uint8; // ^C
+    t->c_cc[CC_VQUIT]  = 0x1C as uint8; // ^\
+    t->c_cc[CC_VERASE] = 0x08 as uint8; // \b
+    t->c_cc[CC_VKILL]  = 0x15 as uint8; // ^U
+    t->c_cc[CC_VEOF]   = 0x04 as uint8; // ^D
+}
+
+fn void pty_init(PTY* pty, int id) {
+    if (pty == null) {
+        return;
+    }
+    pty->id = id;
+    termios_init_default(&pty->termios);
+    pty->line_len = 0;
+    pty->slave_head = 0;
+    pty->slave_tail = 0;
+    pty->slave_count = 0;
+    pty->master_head = 0;
+    pty->master_tail = 0;
+    pty->master_count = 0;
+    pty->pending_signal = 0;
+    pty->is_open = true;
+}
+
+// Helper: Push byte to master receive queue (echo or output)
+fn void pty_push_master(PTY* pty, uint8 byte_val) {
+    if (pty->master_count < PTY_QUEUE_SIZE) {
+        pty->master_rx[pty->master_head] = byte_val;
+        pty->master_head = (pty->master_head + 1) % PTY_QUEUE_SIZE;
+        pty->master_count = pty->master_count + 1;
+    }
+}
+
+// Helper: Push byte to slave receive queue (input to shell)
+fn void pty_push_slave(PTY* pty, uint8 byte_val) {
+    if (pty->slave_count < PTY_QUEUE_SIZE) {
+        pty->slave_rx[pty->slave_head] = byte_val;
+        pty->slave_head = (pty->slave_head + 1) % PTY_QUEUE_SIZE;
+        pty->slave_count = pty->slave_count + 1;
+    }
+}
+
+// ==============================================================================
+// Master Terminal Input & Line Discipline
+// ==============================================================================
+
+// Processes a typed keystroke character from the terminal UI into the PTY
+fn bool pty_input_char(PTY* pty, uint8 ch) {
+    if (pty == null || !pty->is_open) {
+        return false;
+    }
+
+    // 1. ISIG Signal generation check
+    if ((pty->termios.c_lflag & TERMIOS_ISIG) != (0 as uint32)) {
+        if (ch == pty->termios.c_cc[CC_VINTR]) { // ^C
+            pty->pending_signal = 2; // SIGINT
+            return true;
+        }
+        if (ch == pty->termios.c_cc[CC_VQUIT]) { // ^\
+            pty->pending_signal = 3; // SIGQUIT
+            return true;
+        }
+    }
+
+    // 2. ICRNL translation (\r -> \n)
+    uint8 c = ch;
+    if (c == (0x0D as uint8) && ((pty->termios.c_iflag & TERMIOS_ICRNL) != (0 as uint32))) {
+        c = 0x0A as uint8;
+    }
+
+    // 3. Canonical Mode vs Raw Mode
+    bool is_canon = (pty->termios.c_lflag & TERMIOS_ICANON) != (0 as uint32);
+    bool do_echo = (pty->termios.c_lflag & TERMIOS_ECHO) != (0 as uint32);
+
+    if (is_canon) {
+        // Backspace / Erase: \b or 127
+        if (c == pty->termios.c_cc[CC_VERASE] || c == (127 as uint8)) {
+            if (pty->line_len > 0) {
+                pty->line_len = pty->line_len - 1;
+                if (do_echo && ((pty->termios.c_lflag & TERMIOS_ECHOE) != (0 as uint32))) {
+                    // Echo backspace, space, backspace
+                    pty_push_master(pty, 0x08 as uint8);
+                    pty_push_master(pty, 0x20 as uint8);
+                    pty_push_master(pty, 0x08 as uint8);
+                }
+            }
+            return true;
+        }
+
+        // Kill line: ^U
+        if (c == pty->termios.c_cc[CC_VKILL]) {
+            pty->line_len = 0;
+            return true;
+        }
+
+        // Newline: Flush line to slave input buffer
+        if (c == (0x0A as uint8)) {
+            int i = 0;
+            while (i < pty->line_len) {
+                pty_push_slave(pty, pty->line_buf[i]);
+                i = i + 1;
+            }
+            pty_push_slave(pty, 0x0A as uint8);
+            pty->line_len = 0;
+
+            if (do_echo) {
+                if ((pty->termios.c_oflag & TERMIOS_ONLCR) != (0 as uint32)) {
+                    pty_push_master(pty, 0x0D as uint8);
+                }
+                pty_push_master(pty, 0x0A as uint8);
+            }
+            return true;
+        }
+
+        // Regular character in canonical mode
+        if (pty->line_len < 127) {
+            pty->line_buf[pty->line_len] = c;
+            pty->line_len = pty->line_len + 1;
+            if (do_echo) {
+                pty_push_master(pty, c);
+            }
+        }
+    } else {
+        // Raw mode: deliver byte directly to slave
+        pty_push_slave(pty, c);
+        if (do_echo) {
+            pty_push_master(pty, c);
+        }
+    }
+
+    return true;
+}
+
+// ==============================================================================
+// Slave I/O (Shell Interface)
+// ==============================================================================
+
+fn int pty_slave_read(PTY* pty, uint8* dst, int max_len) {
+    if (pty == null || dst == null || max_len <= 0) {
+        return 0;
+    }
+    int count = 0;
+    while (count < max_len && pty->slave_count > 0) {
+        dst[count] = pty->slave_rx[pty->slave_tail];
+        pty->slave_tail = (pty->slave_tail + 1) % PTY_QUEUE_SIZE;
+        pty->slave_count = pty->slave_count - 1;
+        count = count + 1;
+    }
+    return count;
+}
+
+// Shell writes stdout/stderr data to slave endpoint
+// If OPOST and ONLCR enabled, translates \n to \r\n
+fn int pty_slave_write(PTY* pty, uint8* src, int len) {
+    if (pty == null || src == null || len <= 0) {
+        return 0;
+    }
+    bool onlcr = ((pty->termios.c_oflag & TERMIOS_OPOST) != (0 as uint32)) &&
+                 ((pty->termios.c_oflag & TERMIOS_ONLCR) != (0 as uint32));
+
+    int count = 0;
+    while (count < len) {
+        uint8 b = src[count];
+        if (b == (0x0A as uint8) && onlcr) {
+            pty_push_master(pty, 0x0D as uint8); // \r
+            pty_push_master(pty, 0x0A as uint8); // \n
+        } else {
+            pty_push_master(pty, b);
+        }
+        count = count + 1;
+    }
+    return count;
+}
+
+// GUI Terminal Emulator reads output to render on screen
+fn int pty_master_read(PTY* pty, uint8* dst, int max_len) {
+    if (pty == null || dst == null || max_len <= 0) {
+        return 0;
+    }
+    int count = 0;
+    while (count < max_len && pty->master_count > 0) {
+        dst[count] = pty->master_rx[pty->master_tail];
+        pty->master_tail = (pty->master_tail + 1) % PTY_QUEUE_SIZE;
+        pty->master_count = pty->master_count - 1;
+        count = count + 1;
+    }
+    return count;
+}

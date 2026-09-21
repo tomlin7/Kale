@@ -1,0 +1,323 @@
+// os/drivers/usb.kl
+// Universal Serial Bus (USB) Subsystem & UHCI Host Controller Driver for Kale OS
+// Supports USB standard descriptors, UHCI Transfer Descriptors (TDs),
+// and HID mouse/keyboard report decoding.
+
+// Descriptor Types
+uint8 USB_DESC_DEVICE       = 1 as uint8;
+uint8 USB_DESC_CONFIG       = 2 as uint8;
+uint8 USB_DESC_STRING       = 3 as uint8;
+uint8 USB_DESC_INTERFACE    = 4 as uint8;
+uint8 USB_DESC_ENDPOINT     = 5 as uint8;
+uint8 USB_DESC_HID          = 0x21 as uint8;
+
+// USB Classes
+uint8 USB_CLASS_PER_IF      = 0 as uint8;
+uint8 USB_CLASS_HID         = 3 as uint8;
+uint8 USB_CLASS_HUB         = 9 as uint8;
+
+// HID Protocols
+uint8 USB_HID_PROTO_NONE    = 0 as uint8;
+uint8 USB_HID_PROTO_KBD     = 1 as uint8;
+uint8 USB_HID_PROTO_MOUSE   = 2 as uint8;
+
+// Endpoint Transfer Types
+uint8 USB_EP_CONTROL        = 0 as uint8;
+uint8 USB_EP_ISOC           = 1 as uint8;
+uint8 USB_EP_BULK           = 2 as uint8;
+uint8 USB_EP_INTERRUPT      = 3 as uint8;
+
+// UHCI Packet IDs (PID)
+uint8 USB_PID_SETUP         = 0x2D as uint8;
+uint8 USB_PID_IN            = 0x69 as uint8;
+uint8 USB_PID_OUT           = 0xE1 as uint8;
+
+// UHCI I/O Registers
+uint16 UHCI_REG_USBCMD      = 0x00 as uint16;
+uint16 UHCI_REG_USBSTS      = 0x02 as uint16;
+uint16 UHCI_REG_USBINTR     = 0x04 as uint16;
+uint16 UHCI_REG_FRNUM       = 0x06 as uint16;
+uint16 UHCI_REG_FRBASEADD   = 0x08 as uint16;
+uint16 UHCI_REG_PORTSC1     = 0x10 as uint16;
+uint16 UHCI_REG_PORTSC2     = 0x12 as uint16;
+
+// UHCI TD Status Bits
+uint32 UHCI_TD_ACTIVE       = 0x00800000 as uint32; // Bit 23: Active
+uint32 UHCI_TD_STALLED      = 0x00400000 as uint32; // Bit 22: Stalled
+uint32 UHCI_TD_IOC          = 0x01000000 as uint32; // Bit 24: Interrupt On Completion
+
+// ==============================================================================
+// Data Structures
+// ==============================================================================
+
+struct USBDeviceDescriptor {
+    uint8 bLength;
+    uint8 bDescriptorType;
+    uint16 bcdUSB;
+    uint8 bDeviceClass;
+    uint8 bDeviceSubClass;
+    uint8 bDeviceProtocol;
+    uint8 bMaxPacketSize0;
+    uint16 idVendor;
+    uint16 idProduct;
+    uint16 bcdDevice;
+    uint8 iManufacturer;
+    uint8 iProduct;
+    uint8 iSerialNumber;
+    uint8 bNumConfigurations;
+    bool is_valid;
+}
+
+struct USBConfigDescriptor {
+    uint8 bLength;
+    uint8 bDescriptorType;
+    uint16 wTotalLength;
+    uint8 bNumInterfaces;
+    uint8 bConfigurationValue;
+    uint8 iConfiguration;
+    uint8 bmAttributes;
+    uint8 bMaxPower;
+    bool is_valid;
+}
+
+struct USBInterfaceDescriptor {
+    uint8 bLength;
+    uint8 bDescriptorType;
+    uint8 bInterfaceNumber;
+    uint8 bAlternateSetting;
+    uint8 bNumEndpoints;
+    uint8 bInterfaceClass;
+    uint8 bInterfaceSubClass;
+    uint8 bInterfaceProtocol;
+    uint8 iInterface;
+    bool is_valid;
+}
+
+struct USBEndpointDescriptor {
+    uint8 bLength;
+    uint8 bDescriptorType;
+    uint8 bEndpointAddress;
+    uint8 bmAttributes;
+    uint16 wMaxPacketSize;
+    uint8 bInterval;
+    bool is_valid;
+}
+
+struct UHCITransferDescriptor {
+    uint32 link_pointer;
+    uint32 status;
+    uint32 token;
+    uint32 buffer_pointer;
+}
+
+struct HIDMouseReport {
+    bool left_btn;
+    bool right_btn;
+    bool middle_btn;
+    int delta_x;
+    int delta_y;
+}
+
+struct HIDKeyboardReport {
+    uint8 modifiers;
+    uint8[6] keycodes;
+}
+
+// ==============================================================================
+// UHCI Transfer Descriptor Token Construction
+// ==============================================================================
+
+// Constructs the 32-bit token dword for a UHCI Transfer Descriptor:
+// Bits 7..0   : Packet ID (PID: SETUP, IN, OUT)
+// Bits 14..8  : Device Address (0..127)
+// Bits 18..15 : Endpoint Number (0..15)
+// Bit 19      : Data Toggle (0 or 1)
+// Bits 31..21 : Maximum Length (0..1279, encoded as length - 1, or 0x7FF for 0)
+fn uint32 usb_make_td_token(
+    uint8 pid,
+    uint8 dev_addr,
+    uint8 ep,
+    bool data_toggle,
+    uint16 max_len
+) {
+    uint32 val = pid as uint32;
+    val = val | (((dev_addr as uint32) & (0x7F as uint32)) << 8);
+    val = val | (((ep as uint32) & (0x0F as uint32)) << 15);
+
+    if (data_toggle) {
+        val = val | (1 << 19);
+    }
+
+    uint32 len_enc = 0x7FF as uint32;
+    if (max_len > (0 as uint16)) {
+        len_enc = (max_len as uint32) - (1 as uint32);
+    }
+    val = val | ((len_enc & (0x7FF as uint32)) << 21);
+
+    return val;
+}
+
+fn void uhci_td_init(
+    UHCITransferDescriptor* td,
+    uint32 link_ptr,
+    uint32 status,
+    uint32 token,
+    uint32 buffer_ptr
+) {
+    if (td == null) {
+        return;
+    }
+    td->link_pointer = link_ptr;
+    td->status = status;
+    td->token = token;
+    td->buffer_pointer = buffer_ptr;
+}
+
+// ==============================================================================
+// USB Standard Descriptor Parsing
+// ==============================================================================
+
+fn bool usb_parse_device_descriptor(USBDeviceDescriptor* desc, uint8* bytes) {
+    if (desc == null || bytes == null) {
+        return false;
+    }
+    if (bytes[0] != (18 as uint8) || bytes[1] != USB_DESC_DEVICE) {
+        desc->is_valid = false;
+        return false;
+    }
+
+    desc->bLength = bytes[0];
+    desc->bDescriptorType = bytes[1];
+    desc->bcdUSB = ((bytes[3] as uint16) << 8) | (bytes[2] as uint16);
+    desc->bDeviceClass = bytes[4];
+    desc->bDeviceSubClass = bytes[5];
+    desc->bDeviceProtocol = bytes[6];
+    desc->bMaxPacketSize0 = bytes[7];
+    desc->idVendor = ((bytes[9] as uint16) << 8) | (bytes[8] as uint16);
+    desc->idProduct = ((bytes[11] as uint16) << 8) | (bytes[10] as uint16);
+    desc->bcdDevice = ((bytes[13] as uint16) << 8) | (bytes[12] as uint16);
+    desc->iManufacturer = bytes[14];
+    desc->iProduct = bytes[15];
+    desc->iSerialNumber = bytes[16];
+    desc->bNumConfigurations = bytes[17];
+    desc->is_valid = true;
+
+    return true;
+}
+
+fn bool usb_parse_config_descriptor(USBConfigDescriptor* desc, uint8* bytes) {
+    if (desc == null || bytes == null) {
+        return false;
+    }
+    if (bytes[0] != (9 as uint8) || bytes[1] != USB_DESC_CONFIG) {
+        desc->is_valid = false;
+        return false;
+    }
+
+    desc->bLength = bytes[0];
+    desc->bDescriptorType = bytes[1];
+    desc->wTotalLength = ((bytes[3] as uint16) << 8) | (bytes[2] as uint16);
+    desc->bNumInterfaces = bytes[4];
+    desc->bConfigurationValue = bytes[5];
+    desc->iConfiguration = bytes[6];
+    desc->bmAttributes = bytes[7];
+    desc->bMaxPower = bytes[8];
+    desc->is_valid = true;
+
+    return true;
+}
+
+fn bool usb_parse_interface_descriptor(USBInterfaceDescriptor* desc, uint8* bytes) {
+    if (desc == null || bytes == null) {
+        return false;
+    }
+    if (bytes[0] != (9 as uint8) || bytes[1] != USB_DESC_INTERFACE) {
+        desc->is_valid = false;
+        return false;
+    }
+
+    desc->bLength = bytes[0];
+    desc->bDescriptorType = bytes[1];
+    desc->bInterfaceNumber = bytes[2];
+    desc->bAlternateSetting = bytes[3];
+    desc->bNumEndpoints = bytes[4];
+    desc->bInterfaceClass = bytes[5];
+    desc->bInterfaceSubClass = bytes[6];
+    desc->bInterfaceProtocol = bytes[7];
+    desc->iInterface = bytes[8];
+    desc->is_valid = true;
+
+    return true;
+}
+
+fn bool usb_parse_endpoint_descriptor(USBEndpointDescriptor* desc, uint8* bytes) {
+    if (desc == null || bytes == null) {
+        return false;
+    }
+    if (bytes[0] != (7 as uint8) || bytes[1] != USB_DESC_ENDPOINT) {
+        desc->is_valid = false;
+        return false;
+    }
+
+    desc->bLength = bytes[0];
+    desc->bDescriptorType = bytes[1];
+    desc->bEndpointAddress = bytes[2];
+    desc->bmAttributes = bytes[3];
+    desc->wMaxPacketSize = ((bytes[5] as uint16) << 8) | (bytes[4] as uint16);
+    desc->bInterval = bytes[6];
+    desc->is_valid = true;
+
+    return true;
+}
+
+// ==============================================================================
+// USB HID Report Decoding
+// ==============================================================================
+
+// Decodes standard 3-byte USB boot mouse report:
+// Byte 0: Buttons (bit 0 = Left, bit 1 = Right, bit 2 = Middle)
+// Byte 1: Signed 8-bit Delta X
+// Byte 2: Signed 8-bit Delta Y
+fn bool usb_hid_parse_mouse_report(HIDMouseReport* report, uint8* bytes, int len) {
+    if (report == null || bytes == null || len < 3) {
+        return false;
+    }
+
+    report->left_btn = (bytes[0] & (1 as uint8)) != (0 as uint8);
+    report->right_btn = (bytes[0] & (2 as uint8)) != (0 as uint8);
+    report->middle_btn = (bytes[0] & (4 as uint8)) != (0 as uint8);
+
+    // Sign extend 8-bit signed delta
+    int dx = bytes[1] as int;
+    if ((bytes[1] & (0x80 as uint8)) != (0 as uint8)) {
+        dx = dx - 256;
+    }
+    report->delta_x = dx;
+
+    int dy = bytes[2] as int;
+    if ((bytes[2] & (0x80 as uint8)) != (0 as uint8)) {
+        dy = dy - 256;
+    }
+    report->delta_y = dy;
+
+    return true;
+}
+
+// Decodes standard 8-byte USB boot keyboard report:
+// Byte 0: Modifier keys bitmask
+// Byte 1: Reserved
+// Bytes 2..7: Keycode array (up to 6 concurrent keypresses)
+fn bool usb_hid_parse_keyboard_report(HIDKeyboardReport* report, uint8* bytes, int len) {
+    if (report == null || bytes == null || len < 8) {
+        return false;
+    }
+
+    report->modifiers = bytes[0];
+    int i = 0;
+    while (i < 6) {
+        report->keycodes[i] = bytes[2 + i];
+        i = i + 1;
+    }
+
+    return true;
+}

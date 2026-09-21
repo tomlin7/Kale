@@ -394,7 +394,17 @@ pub const Checker = struct {
 
                 var mangled: []const u8 = fn_d.name;
                 if (fn_d.struct_name) |sname| {
-                    mangled = try std.fmt.allocPrint(self.allocator, "kale_{s}_{s}", .{ sname, fn_d.name });
+                    if (std.mem.startsWith(u8, fn_d.name, "operator")) {
+                        const op_str = fn_d.name["operator".len..];
+                        const suffix = types.getOperatorSuffix(op_str) orelse op_str;
+                        mangled = try std.fmt.allocPrint(self.allocator, "kale_{s}_op_{s}", .{ sname, suffix });
+                    } else {
+                        mangled = try std.fmt.allocPrint(self.allocator, "kale_{s}_{s}", .{ sname, fn_d.name });
+                    }
+                } else if (std.mem.startsWith(u8, fn_d.name, "operator")) {
+                    const op_str = fn_d.name["operator".len..];
+                    const suffix = types.getOperatorSuffix(op_str) orelse op_str;
+                    mangled = try std.fmt.allocPrint(self.allocator, "kale_op_{s}", .{suffix});
                 } else if (!fn_d.is_extern and !std.mem.eql(u8, fn_d.name, "main")) {
                     mangled = try std.fmt.allocPrint(self.allocator, "kale_{s}_{s}", .{ mod.name, fn_d.name });
                 }

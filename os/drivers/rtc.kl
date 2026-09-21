@@ -1,0 +1,219 @@
+// os/drivers/rtc.kl
+// Real-Time Clock (RTC) & MC146818 CMOS Subsystem for Kale OS
+// Supports CMOS register index/data access, BCD conversion, 12h/24h time decoding,
+// leap year tracking, and Unix epoch timestamp calculation.
+
+// CMOS Ports
+uint16 CMOS_PORT_INDEX       = 0x0070 as uint16;
+uint16 CMOS_PORT_DATA        = 0x0071 as uint16;
+
+// RTC Register Offsets
+uint8 RTC_REG_SECONDS        = 0x00 as uint8;
+uint8 RTC_REG_MINUTES        = 0x02 as uint8;
+uint8 RTC_REG_HOURS          = 0x04 as uint8;
+uint8 RTC_REG_DAY_OF_WEEK    = 0x06 as uint8;
+uint8 RTC_REG_DAY_OF_MONTH   = 0x07 as uint8;
+uint8 RTC_REG_MONTH          = 0x08 as uint8;
+uint8 RTC_REG_YEAR           = 0x09 as uint8;
+uint8 RTC_REG_CENTURY        = 0x32 as uint8; // Standard ACPI century offset
+uint8 RTC_REG_STATUS_A       = 0x0A as uint8;
+uint8 RTC_REG_STATUS_B       = 0x0B as uint8;
+
+// Status Flags
+uint8 RTC_STATUS_A_UIP       = 0x80 as uint8; // Update In Progress
+uint8 RTC_STATUS_B_24H       = 0x02 as uint8; // 24-hour mode enabled
+uint8 RTC_STATUS_B_BINARY    = 0x04 as uint8; // Binary mode enabled (vs BCD)
+uint8 RTC_STATUS_B_PIE       = 0x40 as uint8; // Periodic Interrupt Enable
+
+// ==============================================================================
+// Data Structures
+// ==============================================================================
+
+struct RTCDateTime {
+    uint8 second;
+    uint8 minute;
+    uint8 hour;
+    uint8 day;
+    uint8 month;
+    uint16 year;
+    uint8 century;
+    bool is_valid;
+}
+
+// ==============================================================================
+// BCD Conversion & Date Utilities
+// ==============================================================================
+
+// Converts a BCD byte (e.g. 0x26) to binary (26)
+fn uint8 rtc_bcd_to_binary(uint8 bcd) {
+    uint8 low = bcd & (0x0F as uint8);
+    uint8 high = (bcd >> 4) & (0x0F as uint8);
+    uint8 res = low + (high * (10 as uint8));
+    return res;
+}
+
+fn bool rtc_is_leap_year(uint16 year) {
+    int y = year as int;
+    if ((y % 4) != 0) {
+        return false;
+    }
+    if ((y % 100) == 0 && (y % 400) != 0) {
+        return false;
+    }
+    return true;
+}
+
+fn int rtc_days_in_month(uint16 year, uint8 month) {
+    int m = month as int;
+    if (m == 1 || m == 3 || m == 5 || m == 7 || m == 8 || m == 10 || m == 12) {
+        return 31;
+    }
+    if (m == 4 || m == 6 || m == 9 || m == 11) {
+        return 30;
+    }
+    if (m == 2) {
+        if (rtc_is_leap_year(year)) {
+            return 29;
+        }
+        return 28;
+    }
+    return 30;
+}
+
+// ==============================================================================
+// RTC Register Decoding
+// ==============================================================================
+
+fn bool rtc_decode_registers(
+    RTCDateTime* dt,
+    uint8 sec,
+    uint8 min,
+    uint8 hr,
+    uint8 day,
+    uint8 mon,
+    uint8 yr,
+    uint8 cen,
+    uint8 status_b
+) {
+    if (dt == null) {
+        return false;
+    }
+
+    bool is_bcd = (status_b & RTC_STATUS_B_BINARY) == (0 as uint8);
+    bool is_24h = (status_b & RTC_STATUS_B_24H) != (0 as uint8);
+
+    // Decode BCD if necessary
+    uint8 s = sec;
+    uint8 m = min;
+    uint8 h = hr;
+    uint8 d = day;
+    uint8 mo = mon;
+    uint8 y = yr;
+    uint8 c = cen;
+
+    if (is_bcd) {
+        s = rtc_bcd_to_binary(sec);
+        m = rtc_bcd_to_binary(min);
+        // If 12h mode, preserve top bit (PM flag: 0x80)
+        if (!is_24h && ((hr & (0x80 as uint8)) != (0 as uint8))) {
+            h = rtc_bcd_to_binary(hr & (0x7F as uint8)) | (0x80 as uint8);
+        } else {
+            h = rtc_bcd_to_binary(hr);
+        }
+        d = rtc_bcd_to_binary(day);
+        mo = rtc_bcd_to_binary(mon);
+        y = rtc_bcd_to_binary(yr);
+        if (cen != (0 as uint8)) {
+            c = rtc_bcd_to_binary(cen);
+        }
+    }
+
+    // Convert 12-hour AM/PM to 24-hour
+    if (!is_24h) {
+        bool is_pm = (h & (0x80 as uint8)) != (0 as uint8);
+        h = h & (0x7F as uint8);
+        if (is_pm && h < (12 as uint8)) {
+            h = h + (12 as uint8);
+        } else if (!is_pm && h == (12 as uint8)) {
+            h = 0 as uint8;
+        }
+    }
+
+    // Full 4-digit year
+    uint16 full_year = 0 as uint16;
+    if (c != (0 as uint8)) {
+        full_year = ((c as uint16) * (100 as uint16)) + (y as uint16);
+    } else {
+        // Assume 21st century (2000+)
+        full_year = (2000 as uint16) + (y as uint16);
+        c = 20 as uint8;
+    }
+
+    dt->second = s;
+    dt->minute = m;
+    dt->hour = h;
+    dt->day = d;
+    dt->month = mo;
+    dt->year = full_year;
+    dt->century = c;
+    dt->is_valid = true;
+
+    return true;
+}
+
+// ==============================================================================
+// Unix Epoch Timestamp Conversion
+// ==============================================================================
+
+fn uint64 rtc_to_unix_epoch(RTCDateTime* dt) {
+    if (dt == null || !dt->is_valid || dt->year < (1970 as uint16)) {
+        return 0 as uint64;
+    }
+
+    // 1. Days from years 1970 up to dt->year - 1
+    uint64 total_days = 0 as uint64;
+    int y = 1970;
+    int target_y = dt->year as int;
+    while (y < target_y) {
+        if (rtc_is_leap_year(y as uint16)) {
+            total_days = total_days + (366 as uint64);
+        } else {
+            total_days = total_days + (365 as uint64);
+        }
+        y = y + 1;
+    }
+
+    // 2. Days in elapsed months of target year
+    int m = 1;
+    int target_m = dt->month as int;
+    while (m < target_m) {
+        int dim = rtc_days_in_month(dt->year, m as uint8);
+        total_days = total_days + (dim as uint64);
+        m = m + 1;
+    }
+
+    // 3. Days in current month (day is 1-indexed, so add day - 1)
+    if (dt->day > (0 as uint8)) {
+        total_days = total_days + ((dt->day - (1 as uint8)) as uint64);
+    }
+
+    // 4. Multiply by seconds per day (86400) + hours, minutes, seconds
+    uint64 epoch = total_days * (86400 as uint64);
+    epoch = epoch + ((dt->hour as uint64) * (3600 as uint64));
+    epoch = epoch + ((dt->minute as uint64) * (60 as uint64));
+    epoch = epoch + (dt->second as uint64);
+
+    return epoch;
+}
+
+// Computes the interrupt frequency in Hz for Status Register A rate codes
+fn uint32 rtc_calc_periodic_rate(uint8 rate_code) {
+    int r = (rate_code & (0x0F as uint8)) as int;
+    if (r < 3 || r > 15) {
+        return 0 as uint32;
+    }
+    // Frequency = 32768 >> (rate - 1)
+    int shift = r - 1;
+    int freq = 32768 >> shift;
+    return freq as uint32;
+}
