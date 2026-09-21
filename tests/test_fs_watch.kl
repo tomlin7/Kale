@@ -1,5 +1,6 @@
 import "libs/fs_watch/watcher.kl" as watcher;
 import "libs/fs_watch/event.kl" as event;
+import "libs/fs_watch/debouncer.kl" as debounce;
 
 fn int main_entry() {
     print("[TEST] Initializing libs/fs_watch directory watcher...");
@@ -11,6 +12,17 @@ fn int main_entry() {
     event.WatchEvent ev = watcher.watcher_poll(w);
     if (ev.action == 3) {
         print("  [PASS] File change event polled: Modified (action=3)");
+    }
+
+    // Debouncer test
+    debounce.FsDebouncer d = debounce.debouncer_new(100);
+    bool emit1 = debounce.debouncer_should_emit(&d, ev, 1000);
+    if (emit1) {
+        print("  [PASS] Initial file change event emitted");
+    }
+    bool emit2 = debounce.debouncer_should_emit(&d, ev, 1050); // within 100ms
+    if (!emit2) {
+        print("  [PASS] Burst filesystem modification event correctly debounced & coalesced");
     }
     
     watcher.watcher_free(w);

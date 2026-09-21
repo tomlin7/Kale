@@ -14,8 +14,13 @@ import "editor/command_bar.kl" as cb;
 import "apps/editor/buffer_manager.kl" as bm;
 import "apps/editor/terminal_split.kl" as ts;
 import "editor/terminal_pane.kl" as tp;
+import "editor/theme.kl" as theme;
+import "editor/config.kl" as cfg;
+import "editor/file_tree.kl" as ft;
+import "editor/find_bar.kl" as fb;
 
 extern int strlen(string s);
+extern int strcmp(string a, string b);
 
 fn void poll_typing(void* window, st.EditorState* state, bool shift_down) {
     // Letters A-Z
@@ -70,6 +75,38 @@ fn void poll_typing(void* window, st.EditorState* state, bool shift_down) {
     if (ginput.glfwGetKey(window, glc.GLFW_KEY_APOSTROPHE()) == glc.GLFW_PRESS()) { if (shift_down) { state->insert_char("\""); } else { state->insert_char("'"); } return; }
 }
 
+fn void poll_find_typing(void* window, fb.FindBar* find_bar, bool shift_down) {
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_A()) == glc.GLFW_PRESS()) { if (shift_down) { find_bar->append_char("A"); } else { find_bar->append_char("a"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_B()) == glc.GLFW_PRESS()) { if (shift_down) { find_bar->append_char("B"); } else { find_bar->append_char("b"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_C()) == glc.GLFW_PRESS()) { if (shift_down) { find_bar->append_char("C"); } else { find_bar->append_char("c"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_D()) == glc.GLFW_PRESS()) { if (shift_down) { find_bar->append_char("D"); } else { find_bar->append_char("d"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_E()) == glc.GLFW_PRESS()) { if (shift_down) { find_bar->append_char("E"); } else { find_bar->append_char("e"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_F()) == glc.GLFW_PRESS()) { if (shift_down) { find_bar->append_char("F"); } else { find_bar->append_char("f"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_G()) == glc.GLFW_PRESS()) { if (shift_down) { find_bar->append_char("G"); } else { find_bar->append_char("g"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_H()) == glc.GLFW_PRESS()) { if (shift_down) { find_bar->append_char("H"); } else { find_bar->append_char("h"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_I()) == glc.GLFW_PRESS()) { if (shift_down) { find_bar->append_char("I"); } else { find_bar->append_char("i"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_J()) == glc.GLFW_PRESS()) { if (shift_down) { find_bar->append_char("J"); } else { find_bar->append_char("j"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_K()) == glc.GLFW_PRESS()) { if (shift_down) { find_bar->append_char("K"); } else { find_bar->append_char("k"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_L()) == glc.GLFW_PRESS()) { if (shift_down) { find_bar->append_char("L"); } else { find_bar->append_char("l"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_M()) == glc.GLFW_PRESS()) { if (shift_down) { find_bar->append_char("M"); } else { find_bar->append_char("m"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_N()) == glc.GLFW_PRESS()) { if (shift_down) { find_bar->append_char("N"); } else { find_bar->append_char("n"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_O()) == glc.GLFW_PRESS()) { if (shift_down) { find_bar->append_char("O"); } else { find_bar->append_char("o"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_P()) == glc.GLFW_PRESS()) { if (shift_down) { find_bar->append_char("P"); } else { find_bar->append_char("p"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_Q()) == glc.GLFW_PRESS()) { if (shift_down) { find_bar->append_char("Q"); } else { find_bar->append_char("q"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_R()) == glc.GLFW_PRESS()) { if (shift_down) { find_bar->append_char("R"); } else { find_bar->append_char("r"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_S()) == glc.GLFW_PRESS()) { if (shift_down) { find_bar->append_char("S"); } else { find_bar->append_char("s"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_T()) == glc.GLFW_PRESS()) { if (shift_down) { find_bar->append_char("T"); } else { find_bar->append_char("t"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_U()) == glc.GLFW_PRESS()) { if (shift_down) { find_bar->append_char("U"); } else { find_bar->append_char("u"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_V()) == glc.GLFW_PRESS()) { if (shift_down) { find_bar->append_char("V"); } else { find_bar->append_char("v"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_W()) == glc.GLFW_PRESS()) { if (shift_down) { find_bar->append_char("W"); } else { find_bar->append_char("w"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_X()) == glc.GLFW_PRESS()) { if (shift_down) { find_bar->append_char("X"); } else { find_bar->append_char("x"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_Y()) == glc.GLFW_PRESS()) { if (shift_down) { find_bar->append_char("Y"); } else { find_bar->append_char("y"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_Z()) == glc.GLFW_PRESS()) { if (shift_down) { find_bar->append_char("Z"); } else { find_bar->append_char("z"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_SPACE()) == glc.GLFW_PRESS()) { find_bar->append_char(" "); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_MINUS()) == glc.GLFW_PRESS()) { if (shift_down) { find_bar->append_char("_"); } else { find_bar->append_char("-"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_PERIOD()) == glc.GLFW_PRESS()) { find_bar->append_char("."); return; }
+}
+
 fn void run_editor() {
     int app_w = 1180;
     int app_h = 760;
@@ -99,11 +136,22 @@ fn void run_editor() {
     ts.TerminalSplit* term_split = ts.split_new(120, 24, "Kale Terminal");
     ts.split_write(term_split, "Kale GPU Developer Terminal v1.0.0 (x86_64-windows)\n");
     ts.split_write(term_split, "Loaded 3 project buffers. Ready for compilation.\n");
-    ts.split_write(term_split, "Shortcuts: [Ctrl+`] Toggle Terminal | [F5] Compile | [Ctrl+Tab] Cycle Buffers\n");
+    ts.split_write(term_split, "Shortcuts: [Ctrl+`] Toggle Terminal | [F5] Compile | [Ctrl+B] Explorer | [Ctrl+F] Find\n");
     ts.split_write(term_split, "> Ready.\n");
 
     cb.CommandBar cmd_bar;
     cmd_bar.init();
+
+    cfg.EditorConfig editor_cfg = cfg.config_defaults();
+    theme.SyntaxTheme active_theme = theme.theme_load(editor_cfg.theme_id);
+
+    ft.FileTree file_tree;
+    file_tree.init(0.0f, 0.0f, 200.0f, 600.0f, 22.0f);
+    ft.ft_populate_default(&file_tree);
+    bool show_file_tree = false;
+
+    fb.FindBar find_bar;
+    find_bar.init(0.0f, 0.0f, 320.0f, 36.0f);
 
     float header_h = 42.0f;
     float status_h = 28.0f;
@@ -119,6 +167,17 @@ fn void run_editor() {
 
     vp.TextViewport viewport;
     viewport.init(gutter_w, header_h, (float)app_w - gutter_w, content_h, line_h, char_w);
+    viewport.apply_theme(
+        active_theme.bg,
+        active_theme.bg_active_line,
+        active_theme.cursor,
+        active_theme.fg,
+        active_theme.token_keyword,
+        active_theme.token_string,
+        active_theme.token_comment,
+        active_theme.token_number,
+        active_theme.token_operator
+    );
 
     tp.TerminalPane terminal_pane;
     terminal_pane.init(0.0f, 0.0f, (float)app_w, 220.0f, line_h, char_w);
@@ -126,9 +185,9 @@ fn void run_editor() {
     sb.StatusBar status_bar;
     status_bar.init(0.0f, (float)app_h - status_h, (float)app_w, status_h);
 
-    rmath.Color header_bg = rmath.color_rgba(0.15f, 0.16f, 0.19f, 1.0f);
-    rmath.Color header_fg = rmath.color_rgba(0.88f, 0.90f, 0.94f, 1.0f);
-    rmath.Color header_accent = rmath.color_rgba(0.20f, 0.65f, 0.50f, 1.0f);
+    rmath.Color header_bg = active_theme.tab_bar_bg;
+    rmath.Color header_fg = active_theme.fg;
+    rmath.Color header_accent = active_theme.tab_active_accent;
 
     int key_delay = 0;
 
@@ -149,8 +208,19 @@ fn void run_editor() {
         if (content_h < 50.0f) { content_h = 50.0f; }
         visible_rows = (int)(content_h / line_h);
 
+        float tree_w = 0.0f;
+        if (show_file_tree) {
+            tree_w = 200.0f;
+            file_tree.x = 0.0f;
+            file_tree.y = header_h;
+            file_tree.width = tree_w;
+            file_tree.height = content_h;
+        }
+
+        gutter.x = tree_w;
         gutter.height = content_h;
-        viewport.width = cur_w - gutter_w;
+        viewport.x = tree_w + gutter_w;
+        viewport.width = cur_w - tree_w - gutter_w;
         viewport.height = content_h;
 
         if (term_split->is_open) {
@@ -188,9 +258,30 @@ fn void run_editor() {
                     }
                     t = t + 1;
                 }
-            } else if (mx >= gutter_w && mx <= cur_w && my >= header_h && my <= (header_h + content_h)) {
+            } else if (show_file_tree && mx >= 0.0f && mx < tree_w && my >= header_h && my <= (header_h + content_h)) {
+                string clicked_path = ft.ft_click(&file_tree, mx, my);
+                if (strlen(clicked_path) > 0) {
+                    // Check if file is already open
+                    int buf_i = 0;
+                    bool found = false;
+                    while (buf_i < buf_mgr->count) {
+                        bm.EditorBuffer* b = bm.bufman_get(buf_mgr, buf_i);
+                        if (strcmp(b->file_name, clicked_path) == 0) {
+                            bm.bufman_switch(buf_mgr, buf_i);
+                            found = true;
+                            break;
+                        }
+                        buf_i = buf_i + 1;
+                    }
+                    if (!found && buf_mgr->count < 8) {
+                        bm.bufman_open(buf_mgr, clicked_path, clicked_path, "// New buffer from explorer\n");
+                    }
+                    active_buf = bm.bufman_get_active(buf_mgr);
+                    cur_state = &active_buf->state;
+                }
+            } else if (mx >= (tree_w + gutter_w) && mx <= cur_w && my >= header_h && my <= (header_h + content_h)) {
                 int clicked_row = cur_state->scroll_row + (int)((my - header_h) / line_h);
-                int clicked_col = (int)((mx - gutter_w - 12.0f) / char_w);
+                int clicked_col = (int)((mx - (tree_w + gutter_w) - 12.0f) / char_w);
                 if (clicked_col < 0) { clicked_col = 0; }
                 cur_state->cursor_row = clicked_row;
                 cur_state->cursor_col = clicked_col;
@@ -198,7 +289,7 @@ fn void run_editor() {
             }
         }
 
-        // Keyboard Navigation, Typing, & Command Palette handling
+        // Keyboard Navigation, Typing, & Shortcuts handling
         if (key_delay > 0) {
             key_delay = key_delay - 1;
         } else {
@@ -207,10 +298,51 @@ fn void run_editor() {
             bool shift_down = ginput.glfwGetKey(app.window, glc.GLFW_KEY_LEFT_SHIFT()) == glc.GLFW_PRESS() ||
                               ginput.glfwGetKey(app.window, glc.GLFW_KEY_RIGHT_SHIFT()) == glc.GLFW_PRESS();
 
-            if ((ctrl_down && ginput.glfwGetKey(app.window, glc.GLFW_KEY_P()) == glc.GLFW_PRESS()) ||
+            if (find_bar.is_visible) {
+                if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_ESCAPE()) == glc.GLFW_PRESS()) {
+                    find_bar.toggle();
+                    key_delay = 10;
+                } else if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_BACKSPACE()) == glc.GLFW_PRESS()) {
+                    find_bar.backspace();
+                    key_delay = 6;
+                } else if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_ENTER()) == glc.GLFW_PRESS()) {
+                    find_bar.toggle();
+                    key_delay = 10;
+                } else if (!ctrl_down) {
+                    poll_find_typing(app.window, &find_bar, shift_down);
+                    key_delay = 6;
+                }
+            } else if ((ctrl_down && ginput.glfwGetKey(app.window, glc.GLFW_KEY_P()) == glc.GLFW_PRESS()) ||
                 ginput.glfwGetKey(app.window, glc.GLFW_KEY_F1()) == glc.GLFW_PRESS()) {
                 cmd_bar.toggle();
                 key_delay = 12;
+            } else if (ctrl_down && ginput.glfwGetKey(app.window, glc.GLFW_KEY_F()) == glc.GLFW_PRESS()) {
+                find_bar.toggle();
+                key_delay = 12;
+            } else if (ctrl_down && ginput.glfwGetKey(app.window, glc.GLFW_KEY_B()) == glc.GLFW_PRESS()) {
+                show_file_tree = !show_file_tree;
+                key_delay = 12;
+            } else if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_F2()) == glc.GLFW_PRESS()) {
+                cfg.config_cycle_theme(&editor_cfg);
+                active_theme = theme.theme_load(editor_cfg.theme_id);
+                viewport.apply_theme(
+                    active_theme.bg,
+                    active_theme.bg_active_line,
+                    active_theme.cursor,
+                    active_theme.fg,
+                    active_theme.token_keyword,
+                    active_theme.token_string,
+                    active_theme.token_comment,
+                    active_theme.token_number,
+                    active_theme.token_operator
+                );
+                header_bg = active_theme.tab_bar_bg;
+                header_fg = active_theme.fg;
+                header_accent = active_theme.tab_active_accent;
+                gutter.bg = active_theme.gutter_bg;
+                gutter.fg = active_theme.gutter_fg;
+                gutter.active_fg = active_theme.gutter_active_fg;
+                key_delay = 15;
             } else if (ctrl_down && ginput.glfwGetKey(app.window, glc.GLFW_KEY_TAB()) == glc.GLFW_PRESS()) {
                 if (shift_down) {
                     bm.bufman_prev(buf_mgr);
@@ -322,9 +454,9 @@ fn void run_editor() {
 
         // Render Header bar & Multi-Buffer Tabs
         rmath.Color header_divider = rmath.color_rgba(0.22f, 0.24f, 0.28f, 1.0f);
-        rmath.Color tab_inactive_bg = rmath.color_rgba(0.11f, 0.12f, 0.14f, 1.0f);
-        rmath.Color tab_active_bg = rmath.color_rgba(0.16f, 0.17f, 0.21f, 1.0f);
-        rmath.Color tab_inactive_fg = rmath.color_rgba(0.55f, 0.60f, 0.70f, 1.0f);
+        rmath.Color tab_inactive_bg = active_theme.tab_bar_bg;
+        rmath.Color tab_active_bg = active_theme.tab_active_bg;
+        rmath.Color tab_inactive_fg = active_theme.tab_inactive_fg;
 
         app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, 0.0f, cur_w, header_h, header_bg);
         app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, header_h - 1.0f, cur_w, 1.0f, header_divider);
@@ -367,7 +499,12 @@ fn void run_editor() {
 
         // Right header shortcuts indicator
         rmath.Color hint_fg = rmath.color_rgba(0.48f, 0.52f, 0.60f, 1.0f);
-        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "[Ctrl+Tab] Tabs   [Ctrl+`] Term   [F5] Build   [Ctrl+P] Palette", cur_w - 530.0f, 12.0f, hint_fg);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "[Ctrl+B] Tree  [Ctrl+F] Find  [F2] Theme  [Ctrl+Tab] Tabs  [Ctrl+`] Term", cur_w - 650.0f, 12.0f, hint_fg);
+
+        // Render File Tree Panel if visible
+        if (show_file_tree) {
+            file_tree.render(&app.ui_ctx.renderer, &app.gl_ctx, &app.ui_ctx.font, active_buf->file_name);
+        }
 
         // Render Components
         int total_lines = cur_state->buffer.line_count();
@@ -380,12 +517,16 @@ fn void run_editor() {
 
         status_bar.render(&app.ui_ctx.renderer, &app.gl_ctx, &app.ui_ctx.font, cur_state->cursor_row, cur_state->cursor_col, total_lines, cur_state->is_dirty);
 
+        // Render Floating Find Bar
+        find_bar.render(&app.ui_ctx.renderer, &app.gl_ctx, &app.ui_ctx.font, cur_w, cur_h);
+
         // Render Command Bar Overlay if active
         cmd_bar.render(&app.ui_ctx.renderer, &app.gl_ctx, &app.ui_ctx.font, cur_w, cur_h);
 
         app.end_frame();
     }
 
+    find_bar.destroy();
     terminal_pane.destroy();
     bm.bufman_free(buf_mgr);
     ts.split_free(term_split);

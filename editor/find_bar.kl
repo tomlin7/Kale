@@ -1,0 +1,133 @@
+// editor/find_bar.kl
+// Find & Replace Floating Toolbar for Kale IDE
+
+import "libs/render/math.kl" as rmath;
+import "libs/render/batch.kl" as rbatch;
+import "libs/render/font.kl" as rfont;
+import "libs/gl/loader.kl" as glloader;
+
+extern int strlen(string s);
+
+struct FindBar {
+    bool is_visible;
+    char* query_buf;
+    int query_len;
+    int match_count;
+    int current_match;
+    float x;
+    float y;
+    float width;
+    float height;
+
+    rmath.Color bg;
+    rmath.Color border;
+    rmath.Color text_color;
+    rmath.Color highlight_color;
+}
+
+fn void FindBar.init(float x, float y, float w, float h) {
+    this->x = x;
+    this->y = y;
+    this->width = w;
+    this->height = h;
+    this->is_visible = false;
+    this->query_buf = alloc(char, 256);
+    this->query_buf[0] = (char)0;
+    this->query_len = 0;
+    this->match_count = 0;
+    this->current_match = 0;
+
+    this->bg = rmath.color_rgba(0.18f, 0.20f, 0.25f, 0.95f);
+    this->border = rmath.color_rgba(0.35f, 0.40f, 0.50f, 1.0f);
+    this->text_color = rmath.color_rgba(0.90f, 0.92f, 0.95f, 1.0f);
+    this->highlight_color = rmath.color_rgba(0.95f, 0.75f, 0.20f, 0.4f);
+}
+
+fn void FindBar.destroy() {
+    if (this->query_buf != (char*)0) {
+        free(this->query_buf);
+    }
+}
+
+fn void FindBar.toggle() {
+    this->is_visible = !this->is_visible;
+}
+
+fn void FindBar.append_char(string ch) {
+    if (this->query_len < 250 && ch[0] != (char)0) {
+        this->query_buf[this->query_len] = ch[0];
+        this->query_len = this->query_len + 1;
+        this->query_buf[this->query_len] = (char)0;
+    }
+}
+
+fn void FindBar.backspace() {
+    if (this->query_len > 0) {
+        this->query_len = this->query_len - 1;
+        this->query_buf[this->query_len] = (char)0;
+    }
+}
+
+fn void FindBar.clear() {
+    this->query_len = 0;
+    this->query_buf[0] = (char)0;
+    this->match_count = 0;
+    this->current_match = 0;
+}
+
+fn string FindBar.get_query() {
+    return (string)this->query_buf;
+}
+
+fn void FindBar.render(
+    rbatch.BatchRenderer* renderer,
+    glloader.GLContext* gl_ctx,
+    rfont.FontAtlas* font,
+    float win_w,
+    float win_h
+) {
+    if (!this->is_visible) {
+        return;
+    }
+
+    // Anchor near top-right of editor view
+    float bar_w = 320.0f;
+    float bar_h = 36.0f;
+    float bar_x = win_w - bar_w - 20.0f;
+    float bar_y = 50.0f;
+
+    this->x = bar_x;
+    this->y = bar_y;
+    this->width = bar_w;
+    this->height = bar_h;
+
+    // Panel background & outline
+    renderer->push_quad(gl_ctx, bar_x, bar_y, bar_w, bar_h, this->bg);
+    renderer->push_rect_outline(gl_ctx, bar_x, bar_y, bar_w, bar_h, 1.0f, this->border);
+
+    // Label: Find:
+    rmath.Color label_color = rmath.color_rgba(0.60f, 0.65f, 0.75f, 1.0f);
+    font->draw_text(renderer, gl_ctx, "Find: ", bar_x + 10.0f, bar_y + 8.0f, label_color);
+
+    // Query text box background
+    float input_x = bar_x + 55.0f;
+    float input_w = 170.0f;
+    float input_h = 24.0f;
+    float input_y = bar_y + 6.0f;
+    rmath.Color input_bg = rmath.color_rgba(0.12f, 0.13f, 0.16f, 1.0f);
+    renderer->push_quad(gl_ctx, input_x, input_y, input_w, input_h, input_bg);
+
+    // Query text
+    font->draw_text(renderer, gl_ctx, (string)this->query_buf, input_x + 6.0f, input_y + 3.0f, this->text_color);
+
+    // Blinking cursor / indicator
+    float q_width = font->measure_text((string)this->query_buf);
+    renderer->push_quad(gl_ctx, input_x + 6.0f + q_width + 1.0f, input_y + 3.0f, 2.0f, 18.0f, this->text_color);
+
+    // Match count or status
+    if (this->query_len > 0) {
+        font->draw_text(renderer, gl_ctx, "Matches", bar_x + 235.0f, bar_y + 8.0f, label_color);
+    } else {
+        font->draw_text(renderer, gl_ctx, "[Esc] close", bar_x + 235.0f, bar_y + 8.0f, label_color);
+    }
+}

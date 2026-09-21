@@ -1,5 +1,6 @@
 import "libs/audio/buffer.kl" as buffer;
 import "libs/audio/synth.kl" as synth;
+import "libs/audio/mixer.kl" as mixer;
 
 fn int main_entry() {
     print("[TEST] Initializing libs/audio sound engine...");
@@ -12,7 +13,21 @@ fn int main_entry() {
     if (b->samples[0] == 16000) {
         print("  [PASS] 440Hz waveform synthesized successfully");
     }
-    
+
+    // Mixer test
+    mixer.AudioMixer* m = mixer.mixer_new();
+    mixer.Channel ch = mixer.channel_new(b);
+    ch.volume = 50;
+    mixer.mixer_add_channel(m, ch);
+
+    buffer.AudioBuffer* out_b = buffer.buffer_new(44100, 2, 4410);
+    mixer.mixer_mix(m, out_b);
+    if (out_b->samples[0] == 8000) {
+        print("  [PASS] Multi-channel mixer attenuation and channel mixing verified");
+    }
+
+    buffer.buffer_free(out_b);
+    mixer.mixer_free(m);
     buffer.buffer_free(b);
     print("ALL LIBS/AUDIO TESTS PASSED PERFECTLY.");
     return 0;

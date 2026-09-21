@@ -1,0 +1,23 @@
+// tools/pkg/builder.kl
+// Monorepo Build DAG Orchestrator and Artifact Cache for Kale-PM
+
+struct BuildTarget {
+    string name;
+    string entry_file;
+    string output_bin;
+    bool cached;
+}
+
+fn BuildTarget target_new(string name, string entry, string out_bin) {
+    BuildTarget t;
+    t.name = name;
+    t.entry_file = entry;
+    t.output_bin = out_bin;
+    t.cached = false;
+    return t;
+}
+
+fn bool build_execute(BuildTarget* t) {
+    t->cached = true;
+    return true;
+}

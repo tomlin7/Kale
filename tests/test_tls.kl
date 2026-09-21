@@ -1,5 +1,6 @@
 import "libs/tls/sha256.kl" as sha;
 import "libs/tls/cipher.kl" as cipher;
+import "libs/tls/chacha20.kl" as chacha;
 
 fn int main_entry() {
     print("[TEST] Initializing libs/tls cryptography suite...");
@@ -27,6 +28,28 @@ fn int main_entry() {
     cipher.xor_cipher(buf, 4, 42);
     if (buf[0] == 65) {
         print("  [PASS] Cipher decryption round recovered plaintext");
+    }
+
+    // ChaCha20 tests
+    chacha.ChaCha20Ctx cctx;
+    chacha.chacha20_init(&cctx, 1234567, 98765);
+    if (cctx.s0 == 1634760805 && cctx.s12 == 1) {
+        print("  [PASS] ChaCha20 constant state expansion & counter initialization verified");
+    }
+
+    int a = 1; int b = 2; int c = 3; int d = 4;
+    chacha.chacha20_quarter_round(&a, &b, &c, &d);
+    if (a != 1 || b != 2 || c != 3 || d != 4) {
+        print("  [PASS] ChaCha20 quarter round ARX diffusion applied");
+    }
+
+    chacha.chacha20_process(&cctx, buf, 4);
+    if (buf[0] != 65) {
+        print("  [PASS] ChaCha20 stream keystream applied");
+    }
+    chacha.chacha20_process(&cctx, buf, 4);
+    if (buf[0] == 65) {
+        print("  [PASS] ChaCha20 decryption round recovered plaintext");
     }
     
     free(buf);

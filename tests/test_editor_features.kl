@@ -1,0 +1,139 @@
+// tests/test_editor_features.kl
+// Unit tests for Editor Theme, Config, File Tree, and Find Bar
+
+import "editor/theme.kl" as theme;
+import "editor/config.kl" as cfg;
+import "editor/file_tree.kl" as ft;
+import "editor/find_bar.kl" as fb;
+
+extern int strcmp(string a, string b);
+
+fn int main_entry() {
+    print("[TEST] Starting IDE Extensions test suite (theme, config, file_tree, find_bar)...");
+
+    // 1. Theme Engine tests
+    theme.SyntaxTheme drac = theme.theme_dracula();
+    if (drac.theme_id != theme.THEME_DRACULA()) {
+        print("FAILED: dracula theme id mismatch");
+        return 1;
+    }
+    if (drac.bg.a != 1.0f) {
+        print("FAILED: theme alpha mismatch");
+        return 2;
+    }
+
+    int next_t = theme.theme_next(drac.theme_id);
+    if (next_t != theme.THEME_MONOKAI()) {
+        print("FAILED: theme_next transition");
+        return 3;
+    }
+    string t_name = theme.theme_name(theme.THEME_MONOKAI());
+    if (strcmp(t_name, "Monokai") != 0) {
+        print("FAILED: theme_name for Monokai");
+        return 4;
+    }
+    print("  [PASS] Theme engine palettes and transitions verified");
+
+    // 2. Config tests
+    cfg.EditorConfig conf = cfg.config_defaults();
+    if (conf.theme_id != 0 || conf.tab_width != 4 || !conf.show_line_nums) {
+        print("FAILED: default config values");
+        return 10;
+    }
+
+    char* serialized = cfg.config_serialize(&conf);
+    cfg.EditorConfig parsed = cfg.config_parse((string)serialized);
+    if (parsed.tab_width != 4 || parsed.theme_id != 0 || !parsed.show_line_nums) {
+        print("FAILED: config parse roundtrip");
+        return 11;
+    }
+    free((void*)serialized);
+
+    cfg.config_cycle_theme(&conf);
+    if (conf.theme_id != 1) {
+        print("FAILED: config theme cycle");
+        return 12;
+    }
+    print("  [PASS] Editor config defaults, serialization, and roundtrip verified");
+
+    // 3. File Tree tests
+    ft.FileTree tree;
+    tree.init(0.0f, 0.0f, 200.0f, 600.0f, 20.0f);
+    ft.ft_populate_default(&tree);
+
+    if (tree.entry_count < 5) {
+        print("FAILED: default file tree population");
+        return 20;
+    }
+
+    // Hit test header area should return -1
+    int hit_header = ft.ft_hit_test(&tree, 50.0f, 5.0f);
+    if (hit_header != -1) {
+        print("FAILED: header hit test should be -1");
+        return 21;
+    }
+
+    // Hit test first item (editor/ dir)
+    int hit_first = ft.ft_hit_test(&tree, 50.0f, 32.0f);
+    if (hit_first != 0) {
+        print("FAILED: first item hit test");
+        return 22;
+    }
+
+    // Toggle dir expansion
+    string path = ft.ft_click(&tree, 50.0f, 32.0f);
+    if (strcmp(path, "") != 0) {
+        print("FAILED: clicking directory should return empty path");
+        return 23;
+    }
+
+    // Sync active buffer
+    ft.ft_sync_active(&tree, "editor_main.kl");
+    if (tree.selected_idx < 0) {
+        print("FAILED: sync active file in tree");
+        return 24;
+    }
+    print("  [PASS] File Tree panel hierarchy, hit-testing, and buffer synchronization verified");
+
+    // 4. Find Bar tests
+    fb.FindBar fbar;
+    fbar.init(0.0f, 0.0f, 320.0f, 36.0f);
+    if (fbar.is_visible) {
+        print("FAILED: find bar should be initially hidden");
+        return 30;
+    }
+
+    fbar.toggle();
+    if (!fbar.is_visible) {
+        print("FAILED: find bar toggle open");
+        return 31;
+    }
+
+    fbar.append_char("k");
+    fbar.append_char("a");
+    fbar.append_char("l");
+    fbar.append_char("e");
+    if (fbar.query_len != 4 || strcmp(fbar.get_query(), "kale") != 0) {
+        print("FAILED: find bar query input");
+        return 32;
+    }
+
+    fbar.backspace();
+    if (fbar.query_len != 3 || strcmp(fbar.get_query(), "kal") != 0) {
+        print("FAILED: find bar backspace");
+        return 33;
+    }
+
+    fbar.clear();
+    if (fbar.query_len != 0) {
+        print("FAILED: find bar clear");
+        return 34;
+    }
+    fbar.destroy();
+    print("  [PASS] Find & Replace floating toolbar interaction and buffer management verified");
+
+    print("ALL IDE EXTENSION TESTS PASSED PERFECTLY.");
+    return 0;
+}
+
+main_entry();

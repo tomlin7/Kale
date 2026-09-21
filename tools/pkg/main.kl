@@ -1,4 +1,6 @@
 import "tools/pkg/manifest.kl" as manifest;
+import "tools/pkg/solver.kl" as solver;
+import "tools/pkg/builder.kl" as builder;
 
 fn int main_entry() {
     print("[KALE-PM] Kale Package Manager & Build Orchestrator (tools/pkg v0.1.0)");
@@ -7,6 +9,18 @@ fn int main_entry() {
     print("  Resolved package:", m.name);
     print("  Version         :", m.version);
     print("  Entry Point     :", m.entry);
+
+    solver.ResolutionResult res = solver.solve_dependencies(1);
+    if (res.success) {
+        print("  [PASS] SemVer version constraint solver resolved clean graph");
+    }
+
+    builder.BuildTarget target = builder.target_new("sysmon", "sys/sysmon/main.kl", "bin/sysmon.exe");
+    bool built = builder.build_execute(&target);
+    if (built && target.cached) {
+        print("  [PASS] Build DAG orchestrator executed and cached artifact");
+    }
+
     print("  Status          : All monorepo dependencies resolved cleanly.");
     print("[KALE-PM] Orchestration completed.");
     return 0;

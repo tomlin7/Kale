@@ -52,6 +52,28 @@ fn void TextViewport.init(float x, float y, float w, float h, float line_h, floa
     this->color_operator = rmath.color_rgba(0.75f, 0.75f, 0.80f, 1.0f);
 }
 
+fn void TextViewport.apply_theme(
+    rmath.Color bg,
+    rmath.Color active_line,
+    rmath.Color cursor,
+    rmath.Color def,
+    rmath.Color kw,
+    rmath.Color str,
+    rmath.Color com,
+    rmath.Color num,
+    rmath.Color op
+) {
+    this->bg_color = bg;
+    this->active_line_bg = active_line;
+    this->cursor_color = cursor;
+    this->color_default = def;
+    this->color_keyword = kw;
+    this->color_string = str;
+    this->color_comment = com;
+    this->color_number = num;
+    this->color_operator = op;
+}
+
 fn rmath.Color TextViewport.get_token_color(int token_type) {
     if (token_type == 1) { return this->color_keyword; }
     if (token_type == 2) { return this->color_string; }

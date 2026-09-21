@@ -1,0 +1,47 @@
+// libs/fs_watch/debouncer.kl
+// Filesystem Watcher Event Debouncer
+
+import "libs/fs_watch/event.kl" as event;
+
+struct DebounceBucket {
+    string path;
+    int last_timestamp;
+    int action;
+    bool has_pending;
+}
+
+struct FsDebouncer {
+    int delay_ms;
+    int bucket_count;
+    DebounceBucket b0;
+    DebounceBucket b1;
+    DebounceBucket b2;
+    DebounceBucket b3;
+}
+
+fn FsDebouncer debouncer_new(int delay_ms) {
+    FsDebouncer d;
+    d.delay_ms = delay_ms;
+    d.bucket_count = 0;
+    return d;
+}
+
+// Check if incoming event is within debounce threshold
+fn bool debouncer_should_emit(FsDebouncer* d, event.WatchEvent ev, int now_ts) {
+    if (d->bucket_count == 0) {
+        d->b0.path = ev.file_path;
+        d->b0.last_timestamp = now_ts;
+        d->b0.action = ev.action;
+        d->b0.has_pending = false;
+        d->bucket_count = 1;
+        return true;
+    }
+    // Check if within window
+    if (now_ts - d->b0.last_timestamp < d->delay_ms) {
+        d->b0.has_pending = true;
+        return false; // suppressed by debounce
+    }
+    d->b0.last_timestamp = now_ts;
+    d->b0.has_pending = false;
+    return true;
+}

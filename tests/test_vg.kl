@@ -1,5 +1,6 @@
 import "libs/vg/geom.kl" as geom;
 import "libs/vg/canvas.kl" as canvas;
+import "libs/vg/path.kl" as path;
 
 fn int main_entry() {
     print("[TEST] Initializing libs/vg vector graphics canvas (640x480)...");
@@ -12,6 +13,21 @@ fn int main_entry() {
     int px = canvas.canvas_get_pixel(c, 25, 25);
     if (px == crimson) {
         print("  [PASS] Vector rectangle rasterized at (25, 25) with Imperial Crimson");
+    }
+
+    // Path test
+    path.VgPath p = path.path_new();
+    path.path_move_to(&p, 100, 100);
+    path.path_line_to(&p, 200, 100);
+    path.path_line_to(&p, 200, 200);
+    if (p.command_count == 3) {
+        print("  [PASS] Vector Path command sequence constructed (MoveTo, LineTo x2)");
+    }
+
+    path.path_stroke(&p, c, crimson);
+    int p_px = canvas.canvas_get_pixel(c, 150, 100);
+    if (p_px == crimson) {
+        print("  [PASS] Vector Path stroked into canvas raster");
     }
     
     canvas.canvas_free(c);

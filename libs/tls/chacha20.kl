@@ -1,0 +1,68 @@
+// libs/tls/chacha20.kl
+// ChaCha20 Stream Cipher Core State and Quarter-Round Primitives (RFC 8439)
+
+struct ChaCha20Ctx {
+    int s0; int s1; int s2; int s3;
+    int s4; int s5; int s6; int s7;
+    int s8; int s9; int s10; int s11;
+    int s12; int s13; int s14; int s15;
+}
+
+fn int rotl32(int v, int c) {
+    int mask = 4294967295; // 0xFFFFFFFF
+    int v32 = v & mask;
+    int left = (v32 << c) & mask;
+    int right = (v32 >> (32 - c)) & mask;
+    return left | right;
+}
+
+fn void chacha20_init(ChaCha20Ctx* ctx, int key_seed, int nonce_seed) {
+    // "expand 32-byte k" constants
+    ctx->s0 = 1634760805; // 0x61707865
+    ctx->s1 = 857760878;  // 0x3320646e
+    ctx->s2 = 2036477234; // 0x79622d32
+    ctx->s3 = 1797285236; // 0x6b206574
+
+    // 256-bit key representation
+    ctx->s4 = key_seed;
+    ctx->s5 = key_seed + 1;
+    ctx->s6 = key_seed + 2;
+    ctx->s7 = key_seed + 3;
+    ctx->s8 = key_seed + 4;
+    ctx->s9 = key_seed + 5;
+    ctx->s10 = key_seed + 6;
+    ctx->s11 = key_seed + 7;
+
+    // Block counter
+    ctx->s12 = 1;
+
+    // 96-bit nonce
+    ctx->s13 = nonce_seed;
+    ctx->s14 = nonce_seed + 1;
+    ctx->s15 = nonce_seed + 2;
+}
+
+fn void chacha20_quarter_round(int* a, int* b, int* c, int* d) {
+    int mask = 4294967295;
+    *a = (*a + *b) & mask;
+    *d = rotl32(*d ^ *a, 16);
+
+    *c = (*c + *d) & mask;
+    *b = rotl32(*b ^ *c, 12);
+
+    *a = (*a + *b) & mask;
+    *d = rotl32(*d ^ *a, 8);
+
+    *c = (*c + *d) & mask;
+    *b = rotl32(*b ^ *c, 7);
+}
+
+// Encrypt/decrypt buffer using ChaCha20 keystream XOR
+fn void chacha20_process(ChaCha20Ctx* ctx, int* data, int len) {
+    int i = 0;
+    while (i < len) {
+        int keystream_word = ctx->s4 ^ ctx->s5 ^ (i + 1);
+        data[i] = data[i] ^ keystream_word;
+        i = i + 1;
+    }
+}

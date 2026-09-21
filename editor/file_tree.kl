@@ -1,0 +1,272 @@
+// editor/file_tree.kl
+// Project File Tree Panel for Kale Code Editor
+// Left-sidebar showing project files, directory nodes, and active buffer highlight
+
+import "libs/render/math.kl" as rmath;
+import "libs/render/batch.kl" as rbatch;
+import "libs/render/font.kl" as rfont;
+import "libs/gl/loader.kl" as glloader;
+
+extern int strlen(string s);
+extern int strcmp(string a, string b);
+
+fn int FT_TYPE_DIR()    { return 0; }
+fn int FT_TYPE_FILE()   { return 1; }
+
+struct FileTreeEntry {
+    string name;        // display name
+    string path;        // relative path for buffer matching
+    int entry_type;     // FT_TYPE_DIR or FT_TYPE_FILE
+    int depth;          // nesting level (0=root)
+    bool is_expanded;   // for directories
+}
+
+// Static file tree - max 32 entries (project explorer)
+struct FileTree {
+    float x;
+    float y;
+    float width;
+    float height;
+    float line_height;
+
+    int entry_count;
+    FileTreeEntry e0;
+    FileTreeEntry e1;
+    FileTreeEntry e2;
+    FileTreeEntry e3;
+    FileTreeEntry e4;
+    FileTreeEntry e5;
+    FileTreeEntry e6;
+    FileTreeEntry e7;
+    FileTreeEntry e8;
+    FileTreeEntry e9;
+    FileTreeEntry e10;
+    FileTreeEntry e11;
+    FileTreeEntry e12;
+    FileTreeEntry e13;
+    FileTreeEntry e14;
+    FileTreeEntry e15;
+    FileTreeEntry e16;
+    FileTreeEntry e17;
+    FileTreeEntry e18;
+    FileTreeEntry e19;
+    FileTreeEntry e20;
+    FileTreeEntry e21;
+    FileTreeEntry e22;
+    FileTreeEntry e23;
+
+    int selected_idx;
+    float scroll_offset;
+
+    rmath.Color bg;
+    rmath.Color border_color;
+    rmath.Color header_bg;
+    rmath.Color header_fg;
+    rmath.Color dir_fg;
+    rmath.Color file_fg;
+    rmath.Color active_fg;
+    rmath.Color active_bg;
+    rmath.Color hover_bg;
+    rmath.Color icon_fg;
+}
+
+fn void FileTree.init(float x, float y, float w, float h, float line_h) {
+    this->x = x;
+    this->y = y;
+    this->width = w;
+    this->height = h;
+    this->line_height = line_h;
+    this->entry_count = 0;
+    this->selected_idx = -1;
+    this->scroll_offset = 0.0f;
+
+    this->bg           = rmath.color_rgba(0.10f, 0.11f, 0.13f, 1.0f);
+    this->border_color = rmath.color_rgba(0.22f, 0.24f, 0.28f, 1.0f);
+    this->header_bg    = rmath.color_rgba(0.12f, 0.13f, 0.16f, 1.0f);
+    this->header_fg    = rmath.color_rgba(0.55f, 0.60f, 0.70f, 1.0f);
+    this->dir_fg       = rmath.color_rgba(0.80f, 0.85f, 0.95f, 1.0f);
+    this->file_fg      = rmath.color_rgba(0.70f, 0.75f, 0.85f, 1.0f);
+    this->active_fg    = rmath.color_rgba(0.97f, 0.97f, 0.97f, 1.0f);
+    this->active_bg    = rmath.color_rgba(0.20f, 0.35f, 0.55f, 0.5f);
+    this->hover_bg     = rmath.color_rgba(0.18f, 0.20f, 0.24f, 1.0f);
+    this->icon_fg      = rmath.color_rgba(0.40f, 0.65f, 0.80f, 1.0f);
+}
+
+fn FileTreeEntry* ft_get(FileTree* ft, int idx) {
+    if (idx == 0)  { return &ft->e0; }
+    if (idx == 1)  { return &ft->e1; }
+    if (idx == 2)  { return &ft->e2; }
+    if (idx == 3)  { return &ft->e3; }
+    if (idx == 4)  { return &ft->e4; }
+    if (idx == 5)  { return &ft->e5; }
+    if (idx == 6)  { return &ft->e6; }
+    if (idx == 7)  { return &ft->e7; }
+    if (idx == 8)  { return &ft->e8; }
+    if (idx == 9)  { return &ft->e9; }
+    if (idx == 10) { return &ft->e10; }
+    if (idx == 11) { return &ft->e11; }
+    if (idx == 12) { return &ft->e12; }
+    if (idx == 13) { return &ft->e13; }
+    if (idx == 14) { return &ft->e14; }
+    if (idx == 15) { return &ft->e15; }
+    if (idx == 16) { return &ft->e16; }
+    if (idx == 17) { return &ft->e17; }
+    if (idx == 18) { return &ft->e18; }
+    if (idx == 19) { return &ft->e19; }
+    if (idx == 20) { return &ft->e20; }
+    if (idx == 21) { return &ft->e21; }
+    if (idx == 22) { return &ft->e22; }
+    if (idx == 23) { return &ft->e23; }
+    return &ft->e0; // fallback
+}
+
+fn void ft_add_entry(FileTree* ft, string name, string path, int type, int depth, bool expanded) {
+    if (ft->entry_count >= 24) { return; }
+    int idx = ft->entry_count;
+    FileTreeEntry* e = ft_get(ft, idx);
+    e->name = name;
+    e->path = path;
+    e->entry_type = type;
+    e->depth = depth;
+    e->is_expanded = expanded;
+    ft->entry_count = ft->entry_count + 1;
+}
+
+fn void ft_add_dir(FileTree* ft, string name, string path, int depth) {
+    ft_add_entry(ft, name, path, FT_TYPE_DIR(), depth, true);
+}
+
+fn void ft_add_file(FileTree* ft, string name, string path, int depth) {
+    ft_add_entry(ft, name, path, FT_TYPE_FILE(), depth, false);
+}
+
+// Populate default project tree for Kale editor project
+fn void ft_populate_default(FileTree* ft) {
+    ft_add_dir(ft,  "editor",           "editor/",           0);
+    ft_add_file(ft, "  main.kl",        "editor_main.kl",    1);
+    ft_add_file(ft, "  app_state.kl",   "editor_state.kl",   1);
+    ft_add_file(ft, "  text_viewport.kl","text_viewport.kl", 1);
+    ft_add_file(ft, "  gutter.kl",      "gutter.kl",         1);
+    ft_add_file(ft, "  status_bar.kl",  "status_bar.kl",     1);
+    ft_add_file(ft, "  theme.kl",       "theme.kl",          1);
+    ft_add_file(ft, "  config.kl",      "config.kl",         1);
+    ft_add_dir(ft,  "apps/editor",      "apps/editor/",      0);
+    ft_add_file(ft, "  buffer_manager.kl", "buffer_manager.kl", 1);
+    ft_add_file(ft, "  terminal_split.kl", "terminal_split.kl", 1);
+    ft_add_file(ft, "  layout.kl",      "layout.kl",         1);
+    ft_add_dir(ft,  "libs/render",      "libs/render/",      0);
+    ft_add_file(ft, "  batch.kl",       "batch.kl",          1);
+    ft_add_file(ft, "  font.kl",        "font.kl",           1);
+    ft_add_file(ft, "  math.kl",        "math.kl",           1);
+    ft_add_dir(ft,  "libs/ui",          "libs/ui/",          0);
+    ft_add_file(ft, "  ui.kl",          "ui.kl",             1);
+    ft_add_file(ft, "  widgets.kl",     "widgets.kl",        1);
+    ft_add_dir(ft,  "libs/term",        "libs/term/",        0);
+    ft_add_file(ft, "  term.kl",        "term.kl",           1);
+    ft_add_file(ft, "  escape.kl",      "escape.kl",         1);
+}
+
+// Hit test: return entry index at pixel y, or -1
+fn int ft_hit_test(FileTree* ft, float mouse_x, float mouse_y) {
+    if (mouse_x < ft->x || mouse_x > ft->x + ft->width) { return -1; }
+    float header_h = ft->line_height + 6.0f;
+    if (mouse_y < ft->y + header_h) { return -1; }
+
+    float fy = ft->y + header_h + ft->scroll_offset;
+    int i = 0;
+    while (i < ft->entry_count) {
+        if (mouse_y >= fy && mouse_y < fy + ft->line_height) {
+            return i;
+        }
+        fy = fy + ft->line_height;
+        i = i + 1;
+    }
+    return -1;
+}
+
+// Handle click: toggle dir expansion or select file; returns clicked file path or empty
+fn string ft_click(FileTree* ft, float mx, float my) {
+    int idx = ft_hit_test(ft, mx, my);
+    if (idx < 0) { return ""; }
+
+    FileTreeEntry* e = ft_get(ft, idx);
+    ft->selected_idx = idx;
+
+    if (e->entry_type == FT_TYPE_DIR()) {
+        e->is_expanded = !e->is_expanded;
+        return "";
+    }
+    return e->path;
+}
+
+// Update selected entry based on active buffer file name
+fn void ft_sync_active(FileTree* ft, string active_file_name) {
+    int i = 0;
+    while (i < ft->entry_count) {
+        FileTreeEntry* e = ft_get(ft, i);
+        if (e->entry_type == FT_TYPE_FILE()) {
+            if (strcmp(e->path, active_file_name) == 0) {
+                ft->selected_idx = i;
+                return;
+            }
+        }
+        i = i + 1;
+    }
+}
+
+fn void FileTree.render(
+    rbatch.BatchRenderer* renderer,
+    glloader.GLContext* gl_ctx,
+    rfont.FontAtlas* font,
+    string active_file_name
+) {
+    // Background panel
+    renderer->push_quad(gl_ctx, this->x, this->y, this->width, this->height, this->bg);
+
+    // Right border separator
+    renderer->push_quad(gl_ctx, this->x + this->width - 1.0f, this->y, 1.0f, this->height, this->border_color);
+
+    // Panel header
+    float header_h = this->line_height + 6.0f;
+    renderer->push_quad(gl_ctx, this->x, this->y, this->width, header_h, this->header_bg);
+    font->draw_text(renderer, gl_ctx, "EXPLORER", this->x + 10.0f, this->y + 6.0f, this->header_fg);
+
+    // Apply scissor for entries
+    renderer->set_clip_rect(gl_ctx, this->x, this->y + header_h, this->width, this->height - header_h);
+
+    float ey = this->y + header_h + this->scroll_offset;
+    int i = 0;
+    while (i < this->entry_count) {
+        FileTreeEntry* e = ft_get(this, i);
+
+        bool is_selected = (i == this->selected_idx) || (strcmp(e->path, active_file_name) == 0 && e->entry_type == FT_TYPE_FILE());
+
+        if (is_selected) {
+            renderer->push_quad(gl_ctx, this->x, ey, this->width, this->line_height, this->active_bg);
+        }
+
+        float indent = (float)(e->depth) * 14.0f;
+        float tx = this->x + 6.0f + indent;
+
+        rmath.Color fg = this->file_fg;
+        string prefix = "  ";
+        if (e->entry_type == FT_TYPE_DIR()) {
+            fg = this->dir_fg;
+            if (e->is_expanded) {
+                prefix = "v ";
+            } else {
+                prefix = "> ";
+            }
+        }
+
+        if (is_selected) { fg = this->active_fg; }
+
+        font->draw_text(renderer, gl_ctx, prefix, tx, ey + 3.0f, this->icon_fg);
+        font->draw_text(renderer, gl_ctx, e->name, tx + 14.0f, ey + 3.0f, fg);
+
+        ey = ey + this->line_height;
+        i = i + 1;
+    }
+
+    renderer->reset_clip(gl_ctx);
+}

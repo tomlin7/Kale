@@ -1,0 +1,67 @@
+// libs/audio/mixer.kl
+// Multi-Channel Audio Mixer with Volume & Panning Controls
+
+import "libs/audio/buffer.kl" as buffer;
+
+struct Channel {
+    buffer.AudioBuffer* source;
+    int volume; // 0 to 100 percentage
+    int pan;    // -100 (left) to 100 (right), 0 = center
+    bool is_playing;
+}
+
+fn Channel channel_new(buffer.AudioBuffer* src) {
+    Channel ch;
+    ch.source = src;
+    ch.volume = 100;
+    ch.pan = 0;
+    ch.is_playing = true;
+    return ch;
+}
+
+struct AudioMixer {
+    int master_volume; // 0 to 100
+    int channel_count;
+    Channel ch0;
+    Channel ch1;
+}
+
+fn AudioMixer* mixer_new() {
+    AudioMixer* m = alloc(AudioMixer);
+    m->master_volume = 100;
+    m->channel_count = 0;
+    return m;
+}
+
+fn void mixer_free(AudioMixer* m) {
+    if (m != (AudioMixer*)0) {
+        free(m);
+    }
+}
+
+fn void mixer_add_channel(AudioMixer* m, Channel ch) {
+    if (m->channel_count == 0) {
+        m->ch0 = ch;
+        m->channel_count = 1;
+    } else if (m->channel_count == 1) {
+        m->ch1 = ch;
+        m->channel_count = 2;
+    }
+}
+
+// Mix active channels into output buffer with master volume scaling
+fn void mixer_mix(AudioMixer* m, buffer.AudioBuffer* out_buf) {
+    int total = out_buf->sample_count * out_buf->channels;
+    int i = 0;
+    while (i < total) {
+        int sample = 0;
+        if (m->channel_count >= 1 && m->ch0.is_playing && m->ch0.source != (buffer.AudioBuffer*)0) {
+            sample = sample + (m->ch0.source->samples[i] * m->ch0.volume / 100);
+        }
+        if (m->channel_count >= 2 && m->ch1.is_playing && m->ch1.source != (buffer.AudioBuffer*)0) {
+            sample = sample + (m->ch1.source->samples[i] * m->ch1.volume / 100);
+        }
+        out_buf->samples[i] = sample * m->master_volume / 100;
+        i = i + 1;
+    }
+}

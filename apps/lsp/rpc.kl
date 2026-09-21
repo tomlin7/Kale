@@ -1,0 +1,35 @@
+// apps/lsp/rpc.kl
+// JSON-RPC 2.0 Framing and Protocol Parser for Kale LSP
+
+extern int strlen(string s);
+extern int strcmp(string a, string b);
+
+struct JsonRpcMessage {
+    int id;
+    string method;
+    string params_json;
+    bool is_notification;
+}
+
+fn JsonRpcMessage rpc_make_request(int id, string method, string params) {
+    JsonRpcMessage msg;
+    msg.id = id;
+    msg.method = method;
+    msg.params_json = params;
+    msg.is_notification = false;
+    return msg;
+}
+
+fn JsonRpcMessage rpc_make_notification(string method, string params) {
+    JsonRpcMessage msg;
+    msg.id = 0;
+    msg.method = method;
+    msg.params_json = params;
+    msg.is_notification = true;
+    return msg;
+}
+
+// Minimal match helper for JSON-RPC methods
+fn bool rpc_method_equals(string actual, string target) {
+    return strcmp(actual, target) == 0;
+}

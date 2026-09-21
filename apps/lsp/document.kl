@@ -1,0 +1,53 @@
+// apps/lsp/document.kl
+// Document Store and Tracking for Kale LSP Server
+
+extern int strlen(string s);
+extern int strcmp(string a, string b);
+
+struct LspDocument {
+    string uri;
+    int version;
+    string content;
+    int line_count;
+    bool is_open;
+}
+
+fn LspDocument* document_new(string uri, int version, string content) {
+    LspDocument* doc = alloc(LspDocument);
+    doc->uri = uri;
+    doc->version = version;
+    doc->content = content;
+    doc->is_open = true;
+
+    // Count lines in content
+    int lines = 1;
+    int i = 0;
+    while (content[i] != (char)0) {
+        if (content[i] == (char)10) {
+            lines = lines + 1;
+        }
+        i = i + 1;
+    }
+    doc->line_count = lines;
+    return doc;
+}
+
+fn void document_free(LspDocument* doc) {
+    if (doc != (LspDocument*)0) {
+        free(doc);
+    }
+}
+
+fn void document_update(LspDocument* doc, int new_version, string new_content) {
+    doc->version = new_version;
+    doc->content = new_content;
+    int lines = 1;
+    int i = 0;
+    while (new_content[i] != (char)0) {
+        if (new_content[i] == (char)10) {
+            lines = lines + 1;
+        }
+        i = i + 1;
+    }
+    doc->line_count = lines;
+}

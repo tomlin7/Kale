@@ -1,0 +1,218 @@
+// editor/config.kl
+// Settings and Configuration Persistence for Kale Code Editor
+// Stores: theme ID, tab width, font size, terminal height, show minimap flag
+// Serializes to/from a flat key=value text file format
+
+extern int strlen(string s);
+extern int strcmp(string a, string b);
+
+// Config file format: "key=value\n" pairs, one per line
+
+struct EditorConfig {
+    int theme_id;         // 0=Dracula, 1=Monokai, 2=Nord, 4=One Dark
+    int tab_width;        // spaces per tab (2, 4, 8)
+    int font_size;        // font height in pixels (12-24)
+    int terminal_height;  // terminal pane height in pixels (120-400)
+    bool show_line_nums;  // show gutter line numbers
+    bool show_minimap;    // show minimap sidebar
+    bool word_wrap;       // soft word wrap in viewport
+    bool auto_indent;     // auto-indent on newline
+}
+
+fn EditorConfig config_defaults() {
+    EditorConfig cfg;
+    cfg.theme_id        = 0;    // Dracula
+    cfg.tab_width       = 4;
+    cfg.font_size       = 16;
+    cfg.terminal_height = 220;
+    cfg.show_line_nums  = true;
+    cfg.show_minimap    = false;
+    cfg.word_wrap       = false;
+    cfg.auto_indent     = true;
+    return cfg;
+}
+
+fn int config_digit(char c) {
+    if (c >= (char)48 && c <= (char)57) {
+        return (int)c - 48;
+    }
+    return 0;
+}
+
+// Parse a small positive integer string (up to 6 digits)
+fn int config_parse_int(string s, int start, int end_exclusive) {
+    int val = 0;
+    int i = start;
+    while (i < end_exclusive && s[i] >= (char)48 && s[i] <= (char)57) {
+        val = val * 10 + config_digit(s[i]);
+        i = i + 1;
+    }
+    return val;
+}
+
+fn bool config_parse_bool(string s, int start) {
+    // "1" or "true"
+    if (s[start] == (char)49) { return true; }   // '1'
+    if (s[start] == (char)116) { return true; }  // 't' (true)
+    return false;
+}
+
+// Serialize config to a string buffer (caller must free)
+fn char* config_serialize(EditorConfig* cfg) {
+    // Max config text ~256 bytes
+    char* buf = alloc(char, 512);
+    int pos = 0;
+
+    // Helper: write string literal into buf at pos, return new pos
+    // We'll inline-write each key=value\n manually
+
+    // theme_id=N\n
+    string k0 = "theme_id=";
+    int i = 0;
+    while (k0[i] != (char)0) { buf[pos] = k0[i]; pos = pos + 1; i = i + 1; }
+    int tv = cfg->theme_id;
+    if (tv >= 10) { buf[pos] = (char)(48 + tv / 10); pos = pos + 1; }
+    buf[pos] = (char)(48 + tv % 10); pos = pos + 1;
+    buf[pos] = (char)10; pos = pos + 1;
+
+    // tab_width=N\n
+    string k1 = "tab_width=";
+    i = 0;
+    while (k1[i] != (char)0) { buf[pos] = k1[i]; pos = pos + 1; i = i + 1; }
+    buf[pos] = (char)(48 + cfg->tab_width % 10); pos = pos + 1;
+    buf[pos] = (char)10; pos = pos + 1;
+
+    // font_size=NN\n
+    string k2 = "font_size=";
+    i = 0;
+    while (k2[i] != (char)0) { buf[pos] = k2[i]; pos = pos + 1; i = i + 1; }
+    int fsz = cfg->font_size;
+    if (fsz >= 10) { buf[pos] = (char)(48 + fsz / 10); pos = pos + 1; }
+    buf[pos] = (char)(48 + fsz % 10); pos = pos + 1;
+    buf[pos] = (char)10; pos = pos + 1;
+
+    // terminal_height=NNN\n
+    string k3 = "terminal_height=";
+    i = 0;
+    while (k3[i] != (char)0) { buf[pos] = k3[i]; pos = pos + 1; i = i + 1; }
+    int th = cfg->terminal_height;
+    if (th >= 100) { buf[pos] = (char)(48 + th / 100); pos = pos + 1; }
+    if (th >= 10)  { buf[pos] = (char)(48 + (th / 10) % 10); pos = pos + 1; }
+    buf[pos] = (char)(48 + th % 10); pos = pos + 1;
+    buf[pos] = (char)10; pos = pos + 1;
+
+    // show_line_nums=N\n
+    string k4 = "show_line_nums=";
+    i = 0;
+    while (k4[i] != (char)0) { buf[pos] = k4[i]; pos = pos + 1; i = i + 1; }
+    if (cfg->show_line_nums) { buf[pos] = (char)49; } else { buf[pos] = (char)48; }
+    pos = pos + 1;
+    buf[pos] = (char)10; pos = pos + 1;
+
+    // show_minimap=N\n
+    string k5 = "show_minimap=";
+    i = 0;
+    while (k5[i] != (char)0) { buf[pos] = k5[i]; pos = pos + 1; i = i + 1; }
+    if (cfg->show_minimap) { buf[pos] = (char)49; } else { buf[pos] = (char)48; }
+    pos = pos + 1;
+    buf[pos] = (char)10; pos = pos + 1;
+
+    // word_wrap=N\n
+    string k6 = "word_wrap=";
+    i = 0;
+    while (k6[i] != (char)0) { buf[pos] = k6[i]; pos = pos + 1; i = i + 1; }
+    if (cfg->word_wrap) { buf[pos] = (char)49; } else { buf[pos] = (char)48; }
+    pos = pos + 1;
+    buf[pos] = (char)10; pos = pos + 1;
+
+    // auto_indent=N\n
+    string k7 = "auto_indent=";
+    i = 0;
+    while (k7[i] != (char)0) { buf[pos] = k7[i]; pos = pos + 1; i = i + 1; }
+    if (cfg->auto_indent) { buf[pos] = (char)49; } else { buf[pos] = (char)48; }
+    pos = pos + 1;
+    buf[pos] = (char)10; pos = pos + 1;
+
+    buf[pos] = (char)0;
+    return buf;
+}
+
+// Parse a line in format "key=value" where key ends at '='
+// Returns the offset of the '=' if key matches, or -1
+fn int config_match_key(string line, string key) {
+    int ki = 0;
+    int li = 0;
+    while (key[ki] != (char)0 && line[li] != (char)0) {
+        if (line[li] != key[ki]) { return -1; }
+        ki = ki + 1;
+        li = li + 1;
+    }
+    if (key[ki] == (char)0 && line[li] == (char)61) { // '='
+        return li + 1; // return index of value start
+    }
+    return -1;
+}
+
+// Parse config from text blob (null-terminated)
+fn EditorConfig config_parse(string text) {
+    EditorConfig cfg = config_defaults();
+    int len = strlen(text);
+    int line_start = 0;
+
+    int i = 0;
+    while (i <= len) {
+        bool eol = (i == len) || (text[i] == (char)10) || (text[i] == (char)13);
+        if (eol && i > line_start) {
+            // Process line [line_start, i)
+            // Temporarily null-terminate by reading as range
+            string line = text; // shares buffer — we use offsets
+
+            int vs;
+            vs = config_match_key(line + line_start, "theme_id");
+            if (vs >= 0) { cfg.theme_id = config_parse_int(line, line_start + vs, i); }
+
+            vs = config_match_key(line + line_start, "tab_width");
+            if (vs >= 0) { cfg.tab_width = config_parse_int(line, line_start + vs, i); }
+
+            vs = config_match_key(line + line_start, "font_size");
+            if (vs >= 0) { cfg.font_size = config_parse_int(line, line_start + vs, i); }
+
+            vs = config_match_key(line + line_start, "terminal_height");
+            if (vs >= 0) { cfg.terminal_height = config_parse_int(line, line_start + vs, i); }
+
+            vs = config_match_key(line + line_start, "show_line_nums");
+            if (vs >= 0) { cfg.show_line_nums = config_parse_bool(line, line_start + vs); }
+
+            vs = config_match_key(line + line_start, "show_minimap");
+            if (vs >= 0) { cfg.show_minimap = config_parse_bool(line, line_start + vs); }
+
+            vs = config_match_key(line + line_start, "word_wrap");
+            if (vs >= 0) { cfg.word_wrap = config_parse_bool(line, line_start + vs); }
+
+            vs = config_match_key(line + line_start, "auto_indent");
+            if (vs >= 0) { cfg.auto_indent = config_parse_bool(line, line_start + vs); }
+
+            line_start = i + 1;
+        } else if (eol) {
+            line_start = i + 1;
+        }
+        i = i + 1;
+    }
+    return cfg;
+}
+
+// Validate and clamp config values to safe ranges
+fn void config_validate(EditorConfig* cfg) {
+    if (cfg->theme_id < 0 || cfg->theme_id > 4) { cfg->theme_id = 0; }
+    if (cfg->tab_width < 1 || cfg->tab_width > 8) { cfg->tab_width = 4; }
+    if (cfg->font_size < 10 || cfg->font_size > 32) { cfg->font_size = 16; }
+    if (cfg->terminal_height < 80 || cfg->terminal_height > 600) { cfg->terminal_height = 220; }
+}
+
+// Toggle theme cycling
+fn void config_cycle_theme(EditorConfig* cfg) {
+    cfg->theme_id = cfg->theme_id + 1;
+    if (cfg->theme_id > 4) { cfg->theme_id = 0; }
+    // skip 3 (solarized — not yet implemented)
+    if (cfg->theme_id == 3) { cfg->theme_id = 4; }
+}

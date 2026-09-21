@@ -1,4 +1,7 @@
 import "apps/lsp/protocol.kl" as proto;
+import "apps/lsp/rpc.kl" as rpc;
+import "apps/lsp/document.kl" as doc;
+import "apps/lsp/analysis.kl" as analysis;
 import "apps/lsp/server.kl" as server;
 
 fn int main_entry() {
@@ -7,12 +10,26 @@ fn int main_entry() {
     if (s->is_initialized) {
         print("  [PASS] LSP server initialized: JSON-RPC 2.0 transport ready");
     }
-    
-    proto.LspDiagnostic d = proto.diagnostic_new(10, 4, "Kale Language Diagnostic: Type verification complete");
-    if (d.severity == 1) {
-        print("  [PASS] Diagnostic published on active document");
+
+    // 1. JSON-RPC test
+    rpc.JsonRpcMessage init_req = rpc.rpc_make_request(1, "initialize", "{\"capabilities\":{}}");
+    if (rpc.rpc_method_equals(init_req.method, "initialize")) {
+        print("  [PASS] JSON-RPC request framing and method matching verified");
     }
-    
+
+    // 2. Document tracking test
+    doc.LspDocument* d = doc.document_new("file:///main.kl", 1, "fn main() {\n    return 0;\n}\n");
+    if (d->line_count == 4) {
+        print("  [PASS] Document store tracking buffer version & line indexing verified");
+    }
+
+    // 3. Incremental Analysis test
+    analysis.AnalysisResult res = analysis.analysis_analyze("fn broken() {");
+    if (res.error_count > 0) {
+        print("  [PASS] Incremental symbol & syntax diagnostics verification active");
+    }
+
+    doc.document_free(d);
     server.server_free(s);
     print("[KALE-LSP] LSP Server stopped cleanly.");
     return 0;

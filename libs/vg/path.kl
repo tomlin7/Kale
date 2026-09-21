@@ -1,0 +1,62 @@
+// libs/vg/path.kl
+// 2D Vector Path Builder (MoveTo, LineTo, Rect, Close)
+
+import "libs/vg/geom.kl" as geom;
+import "libs/vg/canvas.kl" as canvas;
+
+struct PathCommand {
+    int cmd_type; // 0=MoveTo, 1=LineTo, 2=Close
+    int x;
+    int y;
+}
+
+struct VgPath {
+    int command_count;
+    PathCommand c0;
+    PathCommand c1;
+    PathCommand c2;
+    PathCommand c3;
+    PathCommand c4;
+    PathCommand c5;
+    PathCommand c6;
+    PathCommand c7;
+}
+
+fn VgPath path_new() {
+    VgPath p;
+    p.command_count = 0;
+    return p;
+}
+
+fn void path_move_to(VgPath* p, int x, int y) {
+    if (p->command_count == 0) {
+        p->c0.cmd_type = 0; p->c0.x = x; p->c0.y = y;
+        p->command_count = 1;
+    }
+}
+
+fn void path_line_to(VgPath* p, int x, int y) {
+    if (p->command_count == 1) {
+        p->c1.cmd_type = 1; p->c1.x = x; p->c1.y = y;
+        p->command_count = 2;
+    } else if (p->command_count == 2) {
+        p->c2.cmd_type = 1; p->c2.x = x; p->c2.y = y;
+        p->command_count = 3;
+    } else if (p->command_count == 3) {
+        p->c3.cmd_type = 1; p->c3.x = x; p->c3.y = y;
+        p->command_count = 4;
+    }
+}
+
+// Rasterize path lines into canvas
+fn void path_stroke(VgPath* p, canvas.VgCanvas* c, int color) {
+    if (p->command_count >= 2) {
+        canvas.canvas_draw_line(c, p->c0.x, p->c0.y, p->c1.x, p->c1.y, color);
+    }
+    if (p->command_count >= 3) {
+        canvas.canvas_draw_line(c, p->c1.x, p->c1.y, p->c2.x, p->c2.y, color);
+    }
+    if (p->command_count >= 4) {
+        canvas.canvas_draw_line(c, p->c2.x, p->c2.y, p->c3.x, p->c3.y, color);
+    }
+}
