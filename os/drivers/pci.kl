@@ -1,0 +1,258 @@
+// os/drivers/pci.kl
+// Peripheral Component Interconnect (PCI) Bus Driver for Kale OS
+// Supports configuration space I/O (0x0CF8 / 0x0CFC), bus enumeration,
+// multi-function devices, BAR decoding (MMIO and PIO), and driver matching.
+
+// PCI Ports
+uint16 PCI_PORT_ADDRESS = 0x0CF8 as uint16;
+uint16 PCI_PORT_DATA    = 0x0CFC as uint16;
+
+// PCI Command Bits
+uint16 PCI_CMD_IO_SPACE     = 0x0001 as uint16;
+uint16 PCI_CMD_MEM_SPACE    = 0x0002 as uint16;
+uint16 PCI_CMD_BUS_MASTER   = 0x0004 as uint16;
+uint16 PCI_CMD_SPECIAL      = 0x0008 as uint16;
+uint16 PCI_CMD_MEM_INV      = 0x0010 as uint16;
+uint16 PCI_CMD_INT_DISABLE  = 0x0400 as uint16;
+
+// Standard Configuration Registers
+uint8 PCI_REG_VENDOR_ID       = 0x00 as uint8;
+uint8 PCI_REG_DEVICE_ID       = 0x02 as uint8;
+uint8 PCI_REG_COMMAND         = 0x04 as uint8;
+uint8 PCI_REG_STATUS          = 0x06 as uint8;
+uint8 PCI_REG_REVISION        = 0x08 as uint8;
+uint8 PCI_REG_PROG_IF         = 0x09 as uint8;
+uint8 PCI_REG_SUBCLASS        = 0x0A as uint8;
+uint8 PCI_REG_CLASS           = 0x0B as uint8;
+uint8 PCI_REG_CACHE_LINE_SIZE = 0x0C as uint8;
+uint8 PCI_REG_LATENCY_TIMER   = 0x0D as uint8;
+uint8 PCI_REG_HEADER_TYPE     = 0x0E as uint8;
+uint8 PCI_REG_BIST            = 0x0F as uint8;
+uint8 PCI_REG_BAR0            = 0x10 as uint8;
+uint8 PCI_REG_BAR1            = 0x14 as uint8;
+uint8 PCI_REG_BAR2            = 0x18 as uint8;
+uint8 PCI_REG_BAR3            = 0x1C as uint8;
+uint8 PCI_REG_BAR4            = 0x20 as uint8;
+uint8 PCI_REG_BAR5            = 0x24 as uint8;
+uint8 PCI_REG_INTERRUPT_LINE  = 0x3C as uint8;
+uint8 PCI_REG_INTERRUPT_PIN   = 0x3D as uint8;
+
+// Device Class Codes
+uint8 PCI_CLASS_MASS_STORAGE  = 0x01 as uint8;
+uint8 PCI_CLASS_NETWORK       = 0x02 as uint8;
+uint8 PCI_CLASS_DISPLAY       = 0x03 as uint8;
+uint8 PCI_CLASS_MULTIMEDIA    = 0x04 as uint8;
+uint8 PCI_CLASS_BRIDGE        = 0x06 as uint8;
+
+// Driver Identifiers
+int DRIVER_NONE     = 0;
+int DRIVER_ATA_IDE  = 1;
+int DRIVER_RTL8139  = 2;
+int DRIVER_E1000    = 3;
+int DRIVER_VGA_BGA  = 4;
+int DRIVER_AC97     = 5;
+
+// ==============================================================================
+// Data Structures
+// ==============================================================================
+
+struct PCIBAR {
+    uint64 base_address;
+    uint64 size;
+    bool is_io;
+    bool is_64bit;
+    bool is_prefetchable;
+}
+
+struct PCIDevice {
+    uint8 bus;
+    uint8 slot;
+    uint8 func;
+    uint16 vendor_id;
+    uint16 device_id;
+    uint8 class_code;
+    uint8 subclass;
+    uint8 prog_if;
+    uint8 revision;
+    uint8 header_type;
+    uint8 irq_line;
+    uint8 irq_pin;
+    PCIBAR[6] bars;
+    bool is_valid;
+}
+
+struct PCIBusManager {
+    uint32 device_count;
+    PCIDevice[32] devices;
+}
+
+// ==============================================================================
+// Configuration Space Accessors
+// ==============================================================================
+
+fn uint32 pci_make_address(uint8 bus, uint8 slot, uint8 func, uint8 offset) {
+    uint32 lbus = bus as uint32;
+    uint32 lslot = slot as uint32;
+    uint32 lfunc = func as uint32;
+    uint32 loffset = (offset as uint32) & (0xFC as uint32);
+
+    // Bit 31: Enable Configuration Space Mapping (0x80000000)
+    uint32 addr = (0x80000000 as uint32) | (lbus << 16) | (lslot << 11) | (lfunc << 8) | loffset;
+    return addr;
+}
+
+// Decode raw BAR values into structured PCIBAR
+fn void pci_decode_bar(PCIBAR* bar, uint32 raw_val, uint32 mask_val) {
+    if (bar == null) {
+        return;
+    }
+    if ((raw_val & (1 as uint32)) != (0 as uint32)) {
+        // I/O Port Space BAR
+        bar->is_io = true;
+        bar->is_64bit = false;
+        bar->is_prefetchable = false;
+        // Port I/O address is bits 31..2
+        uint32 io_base = raw_val & (0xFFFFFFFC as uint32);
+        bar->base_address = io_base as uint64;
+
+        if (mask_val != (0 as uint32)) {
+            uint32 io_mask = mask_val & (0xFFFFFFFC as uint32);
+            uint32 io_size = (~io_mask) + (1 as uint32);
+            bar->size = io_size as uint64;
+        } else {
+            bar->size = 0 as uint64;
+        }
+    } else {
+        // Memory-Mapped I/O (MMIO) Space BAR
+        bar->is_io = false;
+        uint32 mem_type = (raw_val >> 1) & (3 as uint32);
+        bar->is_64bit = (mem_type == (2 as uint32));
+        bar->is_prefetchable = ((raw_val & (8 as uint32)) != (0 as uint32));
+
+        // Memory address is bits 31..4
+        uint32 mem_base = raw_val & (0xFFFFFFF0 as uint32);
+        bar->base_address = mem_base as uint64;
+
+        if (mask_val != (0 as uint32)) {
+            uint32 mem_mask = mask_val & (0xFFFFFFF0 as uint32);
+            uint32 mem_size = (~mem_mask) + (1 as uint32);
+            bar->size = mem_size as uint64;
+        } else {
+            bar->size = 0 as uint64;
+        }
+    }
+}
+
+// ==============================================================================
+// Device Initialization & Registry
+// ==============================================================================
+
+fn void pci_bus_init(PCIBusManager* mgr) {
+    if (mgr == null) {
+        return;
+    }
+    mgr->device_count = 0 as uint32;
+    int i = 0;
+    while (i < 32) {
+        mgr->devices[i].is_valid = false;
+        mgr->devices[i].vendor_id = 0xFFFF as uint16;
+        mgr->devices[i].device_id = 0xFFFF as uint16;
+        i = i + 1;
+    }
+}
+
+fn bool pci_bus_add_device(PCIBusManager* mgr, PCIDevice* dev) {
+    if (mgr == null || dev == null) {
+        return false;
+    }
+    if (mgr->device_count >= (32 as uint32)) {
+        return false;
+    }
+    uint32 idx = mgr->device_count;
+    mgr->devices[idx] = *dev;
+    mgr->devices[idx].is_valid = true;
+    mgr->device_count = mgr->device_count + (1 as uint32);
+    return true;
+}
+
+fn PCIDevice* pci_find_device(PCIBusManager* mgr, uint16 vendor_id, uint16 device_id) {
+    if (mgr == null) {
+        return null;
+    }
+    int i = 0;
+    int count = mgr->device_count as int;
+    while (i < count) {
+        if (mgr->devices[i].is_valid) {
+            if (mgr->devices[i].vendor_id == vendor_id && mgr->devices[i].device_id == device_id) {
+                return &mgr->devices[i];
+            }
+        }
+        i = i + 1;
+    }
+    return null;
+}
+
+fn PCIDevice* pci_find_by_class(PCIBusManager* mgr, uint8 class_code, uint8 subclass) {
+    if (mgr == null) {
+        return null;
+    }
+    int i = 0;
+    int count = mgr->device_count as int;
+    while (i < count) {
+        if (mgr->devices[i].is_valid) {
+            if (mgr->devices[i].class_code == class_code && mgr->devices[i].subclass == subclass) {
+                return &mgr->devices[i];
+            }
+        }
+        i = i + 1;
+    }
+    return null;
+}
+
+// Matches a discovered PCI device to known drivers
+fn int pci_match_driver(PCIDevice* dev) {
+    if (dev == null || !dev->is_valid) {
+        return DRIVER_NONE;
+    }
+
+    // Intel PIIX3 / PIIX4 IDE Controller (0x8086:0x7010 / 0x7111)
+    if (dev->vendor_id == (0x8086 as uint16) && (dev->device_id == (0x7010 as uint16) || dev->device_id == (0x7111 as uint16))) {
+        return DRIVER_ATA_IDE;
+    }
+
+    // Realtek RTL8139 Fast Ethernet (0x10EC:0x8139)
+    if (dev->vendor_id == (0x10EC as uint16) && dev->device_id == (0x8139 as uint16)) {
+        return DRIVER_RTL8139;
+    }
+
+    // Intel E1000 Gigabit Ethernet (0x8086:0x100E)
+    if (dev->vendor_id == (0x8086 as uint16) && dev->device_id == (0x100E as uint16)) {
+        return DRIVER_E1000;
+    }
+
+    // Bochs / QEMU Standard VGA (0x1234:0x1111)
+    if (dev->vendor_id == (0x1234 as uint16) && dev->device_id == (0x1111 as uint16)) {
+        return DRIVER_VGA_BGA;
+    }
+
+    // Intel 82801AA / AC97 Audio (0x8086:0x2415)
+    if (dev->vendor_id == (0x8086 as uint16) && dev->device_id == (0x2415 as uint16)) {
+        return DRIVER_AC97;
+    }
+
+    // Fallback classification by class code
+    if (dev->class_code == PCI_CLASS_MASS_STORAGE) {
+        return DRIVER_ATA_IDE;
+    }
+    if (dev->class_code == PCI_CLASS_NETWORK) {
+        return DRIVER_RTL8139;
+    }
+    if (dev->class_code == PCI_CLASS_DISPLAY) {
+        return DRIVER_VGA_BGA;
+    }
+    if (dev->class_code == PCI_CLASS_MULTIMEDIA) {
+        return DRIVER_AC97;
+    }
+
+    return DRIVER_NONE;
+}

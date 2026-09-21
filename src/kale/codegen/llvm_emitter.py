@@ -1059,7 +1059,8 @@ class LLVMEmitter:
                     operand_val = self._builder.icmp_signed("!=", operand_val, ir.Constant(operand_val.type, 0))
                 return self._builder.not_(operand_val)
             if op_kind == "~":
-                return self._builder.xor(operand_val, ir.Constant(ir.IntType(64), -1))
+                target_type = operand_val.type if isinstance(operand_val.type, ir.IntType) else ir.IntType(64)
+                return self._builder.xor(operand_val, ir.Constant(target_type, -1))
 
             return operand_val
 

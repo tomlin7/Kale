@@ -1,0 +1,263 @@
+// os/drivers/audio.kl
+// Audio Subsystem Driver for Kale OS
+// Supports Sound Blaster 16 (SB16) DSP architecture, Intel AC97 controller,
+// DMA buffer descriptor lists, and software PCM waveform synthesis.
+
+// SB16 Default Ports
+uint16 SB16_DEFAULT_BASE         = 0x0220 as uint16;
+uint16 SB16_PORT_MIXER_ADDR      = 0x0224 as uint16;
+uint16 SB16_PORT_MIXER_DATA      = 0x0225 as uint16;
+uint16 SB16_PORT_RESET           = 0x0226 as uint16;
+uint16 SB16_PORT_READ            = 0x022A as uint16;
+uint16 SB16_PORT_WRITE           = 0x022C as uint16;
+uint16 SB16_PORT_READ_STATUS     = 0x022E as uint16;
+uint16 SB16_PORT_INT16_ACK       = 0x022F as uint16;
+
+// DSP Commands
+uint8 SB16_CMD_SET_TIME_CONSTANT = 0x40 as uint8;
+uint8 SB16_CMD_SET_OUTPUT_RATE   = 0x41 as uint8;
+uint8 SB16_CMD_SPEAKER_ON        = 0xD1 as uint8;
+uint8 SB16_CMD_SPEAKER_OFF       = 0xD3 as uint8;
+uint8 SB16_CMD_GET_VERSION       = 0xE1 as uint8;
+uint8 SB16_CMD_DMA_8BIT_OUT      = 0xC0 as uint8;
+uint8 SB16_CMD_DMA_16BIT_OUT     = 0xB0 as uint8;
+
+// Mixer Registers
+uint8 SB16_MIXER_MASTER          = 0x22 as uint8;
+uint8 SB16_MIXER_VOICE           = 0x04 as uint8;
+uint8 SB16_MIXER_MIDI            = 0x26 as uint8;
+uint8 SB16_MIXER_CD              = 0x28 as uint8;
+uint8 SB16_MIXER_LINE            = 0x2E as uint8;
+
+// Alert Sound IDs
+int AUDIO_ALERT_BELL   = 1;
+int AUDIO_ALERT_CHIME1 = 2;
+int AUDIO_ALERT_CHIME2 = 3;
+int AUDIO_ALERT_CLICK  = 4;
+
+// ==============================================================================
+// Data Structures
+// ==============================================================================
+
+struct SB16Device {
+    uint16 base_port;
+    uint8 major_version;
+    uint8 minor_version;
+    uint8 irq;
+    uint8 dma8_channel;
+    uint8 dma16_channel;
+    uint8 master_vol_left;
+    uint8 master_vol_right;
+    bool is_active;
+    bool speaker_enabled;
+}
+
+struct AC97BDLEntry {
+    uint32 buffer_phys;
+    uint16 sample_count;
+    uint16 flags;
+}
+
+struct AC97Device {
+    uint16 mixer_base;       // NAMBAR
+    uint16 bus_master_base;  // NABMBAR
+    uint8 irq;
+    uint32 bdl_phys_addr;
+    uint8 current_index;
+    bool is_active;
+}
+
+struct AudioSynth {
+    uint32 sample_rate;
+    uint8 channels;
+    uint8 bits_per_sample;
+}
+
+// ==============================================================================
+// SB16 Driver Operations
+// ==============================================================================
+
+fn void sb16_init(
+    SB16Device* dev,
+    uint16 base_port,
+    uint8 irq,
+    uint8 dma8,
+    uint8 dma16
+) {
+    if (dev == null) {
+        return;
+    }
+    dev->base_port = base_port;
+    dev->major_version = 4 as uint8; // SB16
+    dev->minor_version = 5 as uint8;
+    dev->irq = irq;
+    dev->dma8_channel = dma8;
+    dev->dma16_channel = dma16;
+    // Default 80% volume (12 / 15)
+    dev->master_vol_left = 12 as uint8;
+    dev->master_vol_right = 12 as uint8;
+    dev->is_active = true;
+    dev->speaker_enabled = true;
+}
+
+fn void sb16_set_version(SB16Device* dev, uint8 major, uint8 minor) {
+    if (dev != null) {
+        dev->major_version = major;
+        dev->minor_version = minor;
+    }
+}
+
+// Packs left and right volume (0..15) into an 8-bit mixer register byte
+fn uint8 sb16_set_master_volume(SB16Device* dev, uint8 left, uint8 right) {
+    uint8 l = left;
+    if (l > (15 as uint8)) {
+        l = 15 as uint8;
+    }
+    uint8 r = right;
+    if (r > (15 as uint8)) {
+        r = 15 as uint8;
+    }
+    if (dev != null) {
+        dev->master_vol_left = l;
+        dev->master_vol_right = r;
+    }
+    uint8 packed_vol = (l << 4) | (r & (0x0F as uint8));
+    return packed_vol;
+}
+
+// Calculates DSP time constant: 256 - (1000000 / sample_rate) for mono 8-bit
+fn uint8 sb16_calc_time_constant(uint32 sample_rate, uint8 channels) {
+    if (sample_rate == (0 as uint32)) {
+        return 0 as uint8;
+    }
+    uint32 rate = sample_rate * (channels as uint32);
+    if (rate >= (1000000 as uint32)) {
+        return 255 as uint8;
+    }
+    uint32 div = (1000000 as uint32) / rate;
+    if (div >= (256 as uint32)) {
+        return 0 as uint8;
+    }
+    uint8 tc = ((256 as uint32) - div) as uint8;
+    return tc;
+}
+
+// ==============================================================================
+// AC97 Driver Operations
+// ==============================================================================
+
+fn void ac97_init(
+    AC97Device* dev,
+    uint16 mixer_base,
+    uint16 bus_master_base,
+    uint8 irq
+) {
+    if (dev == null) {
+        return;
+    }
+    dev->mixer_base = mixer_base;
+    dev->bus_master_base = bus_master_base;
+    dev->irq = irq;
+    dev->bdl_phys_addr = 0 as uint32;
+    dev->current_index = 0 as uint8;
+    dev->is_active = true;
+}
+
+fn void ac97_bdl_entry_init(
+    AC97BDLEntry* entry,
+    uint32 phys_addr,
+    uint16 samples,
+    bool interrupt_on_completion
+) {
+    if (entry == null) {
+        return;
+    }
+    entry->buffer_phys = phys_addr;
+    entry->sample_count = samples;
+    // Bit 15: IOC (Interrupt On Completion)
+    if (interrupt_on_completion) {
+        entry->flags = 0x8000 as uint16;
+    } else {
+        entry->flags = 0 as uint16;
+    }
+}
+
+// ==============================================================================
+// Software PCM Synthesis & Alerts
+// ==============================================================================
+
+fn void audio_synth_init(AudioSynth* synth, uint32 sample_rate, uint8 channels, uint8 bits) {
+    if (synth == null) {
+        return;
+    }
+    synth->sample_rate = sample_rate;
+    synth->channels = channels;
+    synth->bits_per_sample = bits;
+}
+
+// Synthesizes a square wave into an 8-bit unsigned PCM buffer (midpoint 128)
+fn int audio_synth_square_wave(
+    AudioSynth* synth,
+    uint32 freq_hz,
+    uint32 duration_ms,
+    uint8* out_buf,
+    int max_len
+) {
+    if (synth == null || out_buf == null || max_len <= 0 || freq_hz == (0 as uint32)) {
+        return 0;
+    }
+
+    // Total samples = (sample_rate * duration_ms) / 1000
+    uint32 total_samples = (synth->sample_rate * duration_ms) / (1000 as uint32);
+    int num_samples = total_samples as int;
+    if (num_samples > max_len) {
+        num_samples = max_len;
+    }
+
+    // Period in samples
+    uint32 period_samples = synth->sample_rate / freq_hz;
+    if (period_samples == (0 as uint32)) {
+        period_samples = 1 as uint32;
+    }
+    uint32 half_period = period_samples / (2 as uint32);
+
+    int i = 0;
+    while (i < num_samples) {
+        uint32 phase = (i as uint32) % period_samples;
+        if (phase < half_period) {
+            out_buf[i] = 200 as uint8; // High amplitude
+        } else {
+            out_buf[i] = 56 as uint8;  // Low amplitude
+        }
+        i = i + 1;
+    }
+
+    return num_samples;
+}
+
+// Maps system alert type to frequency and duration parameters
+fn void audio_alert_params(int alert_type, uint32* out_freq, uint32* out_dur_ms) {
+    if (out_freq == null || out_dur_ms == null) {
+        return;
+    }
+    if (alert_type == AUDIO_ALERT_BELL) {
+        // Terminal bell: 800 Hz, 100 ms
+        *out_freq = 800 as uint32;
+        *out_dur_ms = 100 as uint32;
+    } else if (alert_type == AUDIO_ALERT_CHIME1) {
+        // Chime Note 1 (C5): 523 Hz, 120 ms
+        *out_freq = 523 as uint32;
+        *out_dur_ms = 120 as uint32;
+    } else if (alert_type == AUDIO_ALERT_CHIME2) {
+        // Chime Note 2 (E5): 659 Hz, 180 ms
+        *out_freq = 659 as uint32;
+        *out_dur_ms = 180 as uint32;
+    } else if (alert_type == AUDIO_ALERT_CLICK) {
+        // Mouse click impulse: 1200 Hz, 15 ms
+        *out_freq = 1200 as uint32;
+        *out_dur_ms = 15 as uint32;
+    } else {
+        *out_freq = 440 as uint32;
+        *out_dur_ms = 50 as uint32;
+    }
+}

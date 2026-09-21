@@ -1,0 +1,240 @@
+// os/kernel/acpi.kl
+// Advanced Configuration and Power Interface (ACPI) Subsystem for Kale OS
+// Supports RSDP discovery, RSDT table parsing, FADT power registers,
+// clean poweroff/reboot sequences, and MADT CPU core topology.
+
+// ACPI Constants
+uint16 ACPI_SLP_EN                = 0x2000 as uint16; // Bit 13
+uint16 ACPI_PM1_CNT_SCI_EN        = 0x0001 as uint16; // Bit 0
+uint16 ACPI_QEMU_SHUTDOWN_PORT    = 0x0604 as uint16;
+uint16 ACPI_QEMU_SHUTDOWN_VAL     = 0x2000 as uint16;
+uint16 ACPI_BOCHS_SHUTDOWN_PORT   = 0xB004 as uint16;
+uint16 ACPI_BOCHS_SHUTDOWN_VAL    = 0x2000 as uint16;
+uint16 ACPI_KBD_RESET_PORT        = 0x0064 as uint16;
+uint8  ACPI_KBD_RESET_VAL         = 0xFE as uint8;
+
+// ==============================================================================
+// Data Structures
+// ==============================================================================
+
+struct RSDPDescriptor {
+    uint8[8] signature; // "RSD PTR "
+    uint8 checksum;
+    uint8[6] oem_id;
+    uint8 revision;
+    uint32 rsdt_address;
+    bool is_valid;
+}
+
+struct ACPISDTHeader {
+    uint8[4] signature; // "RSDT", "FACP", "APIC", etc.
+    uint32 length;
+    uint8 revision;
+    uint8 checksum;
+    uint8[6] oem_id;
+    uint8[8] oem_table_id;
+    uint32 oem_revision;
+    uint32 creator_id;
+    uint32 creator_revision;
+}
+
+struct FADTInfo {
+    uint32 smi_cmd;
+    uint8 acpi_enable;
+    uint8 acpi_disable;
+    uint32 pm1a_cnt_blk;
+    uint32 pm1b_cnt_blk;
+    uint32 pm1_evt_len;
+    uint32 pm1_cnt_len;
+    uint16 slp_typa;
+    uint16 slp_typb;
+    bool is_valid;
+}
+
+struct MADTInfo {
+    uint32 lapic_addr;
+    uint32 flags;
+    uint32 cpu_count;
+    uint8[16] cpu_apic_ids;
+    bool[16] cpu_enabled;
+    uint32 ioapic_addr;
+    uint8 ioapic_id;
+    bool is_valid;
+}
+
+struct ACPIState {
+    RSDPDescriptor rsdp;
+    FADTInfo fadt;
+    MADTInfo madt;
+    bool acpi_enabled;
+}
+
+// ==============================================================================
+// Checksum Validation & Parsing
+// ==============================================================================
+
+fn bool acpi_validate_checksum(uint8* ptr, int len) {
+    if (ptr == null || len <= 0) {
+        return false;
+    }
+    int sum = 0;
+    int i = 0;
+    while (i < len) {
+        sum = sum + (ptr[i] as int);
+        i = i + 1;
+    }
+    return (sum & 0xFF) == 0;
+}
+
+fn bool acpi_rsdp_init(RSDPDescriptor* rsdp, uint8* bytes) {
+    if (rsdp == null || bytes == null) {
+        return false;
+    }
+    // Check signature "RSD PTR "
+    if (bytes[0] != (0x52 as uint8) || bytes[1] != (0x53 as uint8) ||
+        bytes[2] != (0x44 as uint8) || bytes[3] != (0x20 as uint8) ||
+        bytes[4] != (0x50 as uint8) || bytes[5] != (0x54 as uint8) ||
+        bytes[6] != (0x52 as uint8) || bytes[7] != (0x20 as uint8)) {
+        rsdp->is_valid = false;
+        return false;
+    }
+
+    // Verify 20-byte checksum
+    if (!acpi_validate_checksum(bytes, 20)) {
+        rsdp->is_valid = false;
+        return false;
+    }
+
+    // Copy fields
+    int i = 0;
+    while (i < 8) {
+        rsdp->signature[i] = bytes[i];
+        i = i + 1;
+    }
+    rsdp->checksum = bytes[8];
+
+    i = 0;
+    while (i < 6) {
+        rsdp->oem_id[i] = bytes[9 + i];
+        i = i + 1;
+    }
+
+    rsdp->revision = bytes[15];
+
+    // rsdt_address is at offset 16 (little-endian 32-bit dword)
+    uint32 b0 = bytes[16] as uint32;
+    uint32 b1 = bytes[17] as uint32;
+    uint32 b2 = bytes[18] as uint32;
+    uint32 b3 = bytes[19] as uint32;
+    rsdp->rsdt_address = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
+    rsdp->is_valid = true;
+
+    return true;
+}
+
+// ==============================================================================
+// FADT & Power Management Operations
+// ==============================================================================
+
+fn void acpi_fadt_init(
+    FADTInfo* fadt,
+    uint32 smi_cmd,
+    uint8 enable,
+    uint8 disable,
+    uint32 pm1a,
+    uint32 pm1b
+) {
+    if (fadt == null) {
+        return;
+    }
+    fadt->smi_cmd = smi_cmd;
+    fadt->acpi_enable = enable;
+    fadt->acpi_disable = disable;
+    fadt->pm1a_cnt_blk = pm1a;
+    fadt->pm1b_cnt_blk = pm1b;
+    fadt->pm1_evt_len = 4 as uint32;
+    fadt->pm1_cnt_len = 2 as uint32;
+    // Default S5 sleep type: (5 << 10)
+    fadt->slp_typa = 5 as uint16;
+    fadt->slp_typb = 5 as uint16;
+    fadt->is_valid = true;
+}
+
+// Generates the 16-bit PM1_CNT register command for entering a sleep state
+fn uint16 acpi_make_sleep_command(uint16 slp_typ) {
+    uint16 cmd = ((slp_typ & (7 as uint16)) << 10) | ACPI_SLP_EN;
+    return cmd;
+}
+
+// Determines the I/O port and word value required to shut down the machine
+fn bool acpi_poweroff_plan(FADTInfo* fadt, uint16* out_port, uint16* out_val) {
+    if (out_port == null || out_val == null) {
+        return false;
+    }
+
+    if (fadt != null && fadt->is_valid && fadt->pm1a_cnt_blk != (0 as uint32)) {
+        *out_port = fadt->pm1a_cnt_blk as uint16;
+        *out_val = acpi_make_sleep_command(fadt->slp_typa);
+        return true;
+    }
+
+    // Fallback: QEMU modern ACPI shutdown port 0x0604
+    *out_port = ACPI_QEMU_SHUTDOWN_PORT;
+    *out_val = ACPI_QEMU_SHUTDOWN_VAL;
+    return true;
+}
+
+// Determines the I/O port and byte value required to reset/reboot the machine
+fn void acpi_reboot_plan(uint16* out_port, uint8* out_val) {
+    if (out_port == null || out_val == null) {
+        return;
+    }
+    // Standard PC / 8042 Keyboard Controller reset port
+    *out_port = ACPI_KBD_RESET_PORT;
+    *out_val = ACPI_KBD_RESET_VAL;
+}
+
+// ==============================================================================
+// MADT & CPU Core Topology
+// ==============================================================================
+
+fn void acpi_madt_init(MADTInfo* madt, uint32 lapic_addr) {
+    if (madt == null) {
+        return;
+    }
+    madt->lapic_addr = lapic_addr;
+    madt->flags = 1 as uint32; // PC-AT dual 8259 PIC compatible
+    madt->cpu_count = 0 as uint32;
+    madt->ioapic_addr = 0xFEC00000 as uint32;
+    madt->ioapic_id = 0 as uint8;
+    madt->is_valid = true;
+
+    int i = 0;
+    while (i < 16) {
+        madt->cpu_apic_ids[i] = 0 as uint8;
+        madt->cpu_enabled[i] = false;
+        i = i + 1;
+    }
+}
+
+fn bool acpi_madt_add_cpu(MADTInfo* madt, uint8 apic_id, bool enabled) {
+    if (madt == null || !madt->is_valid) {
+        return false;
+    }
+    if (madt->cpu_count >= (16 as uint32)) {
+        return false;
+    }
+    uint32 idx = madt->cpu_count;
+    madt->cpu_apic_ids[idx] = apic_id;
+    madt->cpu_enabled[idx] = enabled;
+    madt->cpu_count = madt->cpu_count + (1 as uint32);
+    return true;
+}
+
+fn void acpi_madt_set_ioapic(MADTInfo* madt, uint8 id, uint32 addr) {
+    if (madt == null) {
+        return;
+    }
+    madt->ioapic_id = id;
+    madt->ioapic_addr = addr;
+}
