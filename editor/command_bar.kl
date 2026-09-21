@@ -18,6 +18,12 @@ struct CommandBar {
     bool is_visible;
     int selected_index;
     int items_count;
+    int filtered_count;
+    int* filtered_indices;
+
+    char* query_buf;
+    int query_len;
+
     rmath.Color bg_color;
     rmath.Color panel_bg;
     rmath.Color selected_bg;
@@ -29,7 +35,19 @@ struct CommandBar {
 fn void CommandBar.init() {
     this->is_visible = false;
     this->selected_index = 0;
-    this->items_count = 6;
+    this->items_count = 9;
+    this->filtered_count = 9;
+
+    this->query_buf = alloc(char, 128);
+    this->query_buf[0] = (char)0;
+    this->query_len = 0;
+
+    this->filtered_indices = alloc(int, 16);
+    int i = 0;
+    while (i < 16) {
+        this->filtered_indices[i] = i;
+        i = i + 1;
+    }
 
     this->bg_color = rmath.color_rgba(0.0f, 0.0f, 0.0f, 0.45f);
     this->panel_bg = rmath.color_rgba(0.16f, 0.17f, 0.20f, 1.0f);
@@ -39,29 +57,13 @@ fn void CommandBar.init() {
     this->border_color = rmath.color_rgba(0.28f, 0.30f, 0.36f, 1.0f);
 }
 
-fn void CommandBar.toggle() {
-    this->is_visible = !this->is_visible;
-    this->selected_index = 0;
-}
-
-fn void CommandBar.select_prev() {
-    if (this->selected_index > 0) {
-        this->selected_index = this->selected_index - 1;
-    } else {
-        this->selected_index = this->items_count - 1;
+fn void CommandBar.destroy() {
+    if (this->query_buf != (char*)0) {
+        free(this->query_buf);
     }
-}
-
-fn void CommandBar.select_next() {
-    if (this->selected_index + 1 < this->items_count) {
-        this->selected_index = this->selected_index + 1;
-    } else {
-        this->selected_index = 0;
+    if (this->filtered_indices != (int*)0) {
+        free(this->filtered_indices);
     }
-}
-
-fn int CommandBar.get_selected_id() {
-    return this->selected_index + 1;
 }
 
 fn string CommandBar.get_item_title(int idx) {
@@ -70,7 +72,10 @@ fn string CommandBar.get_item_title(int idx) {
     if (idx == 2) { return "Format: Format Kale Source Document"; }
     if (idx == 3) { return "View: Toggle Embedded Terminal"; }
     if (idx == 4) { return "Build: Compile with Kale LLVM Backend"; }
-    return "Help: About Kale GPU IDE";
+    if (idx == 5) { return "Help: About Kale GPU IDE"; }
+    if (idx == 6) { return "Switch Buffer: editor_main.kl"; }
+    if (idx == 7) { return "Switch Buffer: engine.kl"; }
+    return "Switch Buffer: shader.kl";
 }
 
 fn string CommandBar.get_item_shortcut(int idx) {
@@ -79,7 +84,115 @@ fn string CommandBar.get_item_shortcut(int idx) {
     if (idx == 2) { return "Shift+Alt+F"; }
     if (idx == 3) { return "Ctrl+`"; }
     if (idx == 4) { return "F5"; }
-    return "F1";
+    if (idx == 5) { return "F1"; }
+    if (idx == 6) { return "Tab 1"; }
+    if (idx == 7) { return "Tab 2"; }
+    return "Tab 3";
+}
+
+fn bool str_contains_case_insensitive(string haystack, string needle) {
+    int h_len = strlen(haystack);
+    int n_len = strlen(needle);
+    if (n_len == 0) {
+        return true;
+    }
+    if (h_len < n_len) {
+        return false;
+    }
+
+    int i = 0;
+    while (i <= (h_len - n_len)) {
+        bool match = true;
+        int j = 0;
+        while (j < n_len) {
+            char hc = haystack[i + j];
+            char nc = needle[j];
+            // lowercase conversion
+            if (hc >= 'A' && hc <= 'Z') {
+                hc = (char)((int)hc + 32);
+            }
+            if (nc >= 'A' && nc <= 'Z') {
+                nc = (char)((int)nc + 32);
+            }
+            if (hc != nc) {
+                match = false;
+                break;
+            }
+            j = j + 1;
+        }
+        if (match) {
+            return true;
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
+fn void CommandBar.filter_items() {
+    this->filtered_count = 0;
+    string q = (string)this->query_buf;
+    int i = 0;
+    while (i < this->items_count && this->filtered_count < 16) {
+        string t = this->get_item_title(i);
+        if (this->query_len == 0 || str_contains_case_insensitive(t, q)) {
+            this->filtered_indices[this->filtered_count] = i;
+            this->filtered_count = this->filtered_count + 1;
+        }
+        i = i + 1;
+    }
+    if (this->selected_index >= this->filtered_count) {
+        this->selected_index = 0;
+    }
+}
+
+fn void CommandBar.toggle() {
+    this->is_visible = !this->is_visible;
+    this->selected_index = 0;
+    this->query_len = 0;
+    this->query_buf[0] = (char)0;
+    this->filter_items();
+}
+
+fn void CommandBar.append_char(string ch) {
+    if (this->query_len < 120 && ch[0] != (char)0) {
+        this->query_buf[this->query_len] = ch[0];
+        this->query_len = this->query_len + 1;
+        this->query_buf[this->query_len] = (char)0;
+        this->filter_items();
+    }
+}
+
+fn void CommandBar.backspace() {
+    if (this->query_len > 0) {
+        this->query_len = this->query_len - 1;
+        this->query_buf[this->query_len] = (char)0;
+        this->filter_items();
+    }
+}
+
+fn void CommandBar.select_prev() {
+    if (this->filtered_count == 0) { return; }
+    if (this->selected_index > 0) {
+        this->selected_index = this->selected_index - 1;
+    } else {
+        this->selected_index = this->filtered_count - 1;
+    }
+}
+
+fn void CommandBar.select_next() {
+    if (this->filtered_count == 0) { return; }
+    if (this->selected_index + 1 < this->filtered_count) {
+        this->selected_index = this->selected_index + 1;
+    } else {
+        this->selected_index = 0;
+    }
+}
+
+fn int CommandBar.get_selected_id() {
+    if (this->filtered_count > 0 && this->selected_index < this->filtered_count) {
+        return this->filtered_indices[this->selected_index] + 1;
+    }
+    return 0;
 }
 
 fn void CommandBar.render(
@@ -100,7 +213,11 @@ fn void CommandBar.render(
     float modal_w = 580.0f;
     float row_h = 32.0f;
     float header_h = 44.0f;
-    float modal_h = header_h + ((float)this->items_count * row_h) + 12.0f;
+    int display_count = this->filtered_count;
+    if (display_count > 7) { display_count = 7; }
+    if (display_count == 0) { display_count = 1; }
+
+    float modal_h = header_h + ((float)display_count * row_h) + 12.0f;
     float modal_x = (app_w - modal_w) * 0.5f;
     float modal_y = 60.0f;
 
@@ -108,24 +225,37 @@ fn void CommandBar.render(
     renderer->push_quad(gl_ctx, modal_x - 1.0f, modal_y - 1.0f, modal_w + 2.0f, modal_h + 2.0f, this->border_color);
     renderer->push_quad(gl_ctx, modal_x, modal_y, modal_w, modal_h, this->panel_bg);
 
-    // Header search prompt
-    font->draw_text(renderer, gl_ctx, "> Type a command or search actions...", modal_x + 18.0f, modal_y + 12.0f, this->fg_title);
+    // Header search prompt & current typed query
+    if (this->query_len == 0) {
+        font->draw_text(renderer, gl_ctx, "> Type a command or buffer name...", modal_x + 18.0f, modal_y + 12.0f, this->fg_shortcut);
+    } else {
+        font->draw_text(renderer, gl_ctx, "> ", modal_x + 18.0f, modal_y + 12.0f, this->selected_bg);
+        font->draw_text(renderer, gl_ctx, (string)this->query_buf, modal_x + 36.0f, modal_y + 12.0f, this->fg_title);
+        float q_w = font->measure_text((string)this->query_buf);
+        renderer->push_quad(gl_ctx, modal_x + 38.0f + q_w, modal_y + 12.0f, 2.0f, 18.0f, this->fg_title);
+    }
 
     // Divider
     renderer->push_quad(gl_ctx, modal_x, modal_y + header_h, modal_w, 1.0f, this->border_color);
 
     // Items list
     float item_y = modal_y + header_h + 6.0f;
+    if (this->filtered_count == 0) {
+        font->draw_text(renderer, gl_ctx, "No matching commands or buffers found.", modal_x + 20.0f, item_y + 4.0f, this->fg_shortcut);
+        return;
+    }
+
     int i = 0;
-    while (i < this->items_count) {
+    while (i < display_count) {
+        int raw_idx = this->filtered_indices[i];
         if (i == this->selected_index) {
             renderer->push_quad(gl_ctx, modal_x + 6.0f, item_y - 2.0f, modal_w - 12.0f, row_h, this->selected_bg);
         }
 
-        string title = this->get_item_title(i);
+        string title = this->get_item_title(raw_idx);
         font->draw_text(renderer, gl_ctx, title, modal_x + 20.0f, item_y + 4.0f, this->fg_title);
 
-        string sc = this->get_item_shortcut(i);
+        string sc = this->get_item_shortcut(raw_idx);
         int sc_len = strlen(sc);
         float sc_x = modal_x + modal_w - ((float)sc_len * 11.0f) - 24.0f;
         font->draw_text(renderer, gl_ctx, sc, sc_x, item_y + 4.0f, this->fg_shortcut);

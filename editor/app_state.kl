@@ -22,6 +22,11 @@ struct EditorState {
     string file_path;
     bool is_dirty;
 
+    // Selection range (anchor to cursor)
+    bool has_selection;
+    int sel_anchor_row;
+    int sel_anchor_col;
+
     // Undo / Redo history
     EditAction* undo_stack;
     int undo_count;
@@ -39,6 +44,10 @@ fn void EditorState.init(string initial_code, string file_path) {
     this->scroll_col = 0;
     this->file_path = file_path;
     this->is_dirty = false;
+
+    this->has_selection = false;
+    this->sel_anchor_row = 0;
+    this->sel_anchor_col = 0;
 
     this->undo_cap = 32;
     this->undo_count = 0;
@@ -91,16 +100,127 @@ fn void EditorState.move_cursor(int d_row, int d_col, int visible_rows) {
     }
 }
 
-fn int EditorState.get_cursor_byte_offset() {
+fn void EditorState.start_selection() {
+    this->has_selection = true;
+    this->sel_anchor_row = this->cursor_row;
+    this->sel_anchor_col = this->cursor_col;
+}
+
+fn void EditorState.clear_selection() {
+    this->has_selection = false;
+    this->sel_anchor_row = this->cursor_row;
+    this->sel_anchor_col = this->cursor_col;
+}
+
+fn void EditorState.select_all() {
+    this->has_selection = true;
+    this->sel_anchor_row = 0;
+    this->sel_anchor_col = 0;
+    int lines = this->buffer.line_count();
+    if (lines > 0) {
+        this->cursor_row = lines - 1;
+        string last_line = this->buffer.get_line(this->cursor_row);
+        this->cursor_col = strlen(last_line);
+    } else {
+        this->cursor_row = 0;
+        this->cursor_col = 0;
+    }
+}
+
+fn void EditorState.move_cursor_select(int d_row, int d_col, int visible_rows) {
+    if (!this->has_selection) {
+        this->start_selection();
+    }
+    this->move_cursor(d_row, d_col, visible_rows);
+}
+
+fn void EditorState.update_drag_selection(int row, int col) {
+    if (!this->has_selection) {
+        this->start_selection();
+    }
+    int lines = this->buffer.line_count();
+    if (row < 0) { row = 0; }
+    if (row >= lines && lines > 0) { row = lines - 1; }
+    string cur_line = this->buffer.get_line(row);
+    int line_len = strlen(cur_line);
+    if (col < 0) { col = 0; }
+    if (col > line_len) { col = line_len; }
+
+    this->cursor_row = row;
+    this->cursor_col = col;
+}
+
+fn int EditorState.pos_to_byte_offset(int row, int col) {
     int lines = this->buffer.line_count();
     int byte_offset = 0;
-    int row = 0;
-    while (row < this->cursor_row && row < lines) {
-        string l = this->buffer.get_line(row);
+    int r = 0;
+    while (r < row && r < lines) {
+        string l = this->buffer.get_line(r);
         byte_offset = byte_offset + strlen(l) + 1; // +1 for \n
-        row = row + 1;
+        r = r + 1;
     }
-    return byte_offset + this->cursor_col;
+    return byte_offset + col;
+}
+
+fn int EditorState.get_cursor_byte_offset() {
+    return this->pos_to_byte_offset(this->cursor_row, this->cursor_col);
+}
+
+fn int EditorState.get_sel_start_row() {
+    if (this->sel_anchor_row < this->cursor_row) { return this->sel_anchor_row; }
+    if (this->sel_anchor_row > this->cursor_row) { return this->cursor_row; }
+    return this->cursor_row;
+}
+
+fn int EditorState.get_sel_start_col() {
+    if (this->sel_anchor_row < this->cursor_row) { return this->sel_anchor_col; }
+    if (this->sel_anchor_row > this->cursor_row) { return this->cursor_col; }
+    if (this->sel_anchor_col < this->cursor_col) { return this->sel_anchor_col; }
+    return this->cursor_col;
+}
+
+fn int EditorState.get_sel_end_row() {
+    if (this->sel_anchor_row > this->cursor_row) { return this->sel_anchor_row; }
+    if (this->sel_anchor_row < this->cursor_row) { return this->cursor_row; }
+    return this->cursor_row;
+}
+
+fn int EditorState.get_sel_end_col() {
+    if (this->sel_anchor_row > this->cursor_row) { return this->sel_anchor_col; }
+    if (this->sel_anchor_row < this->cursor_row) { return this->cursor_col; }
+    if (this->sel_anchor_col > this->cursor_col) { return this->sel_anchor_col; }
+    return this->cursor_col;
+}
+
+fn bool EditorState.delete_selection() {
+    if (!this->has_selection) {
+        return false;
+    }
+    int sr = this->get_sel_start_row();
+    int sc = this->get_sel_start_col();
+    int er = this->get_sel_end_row();
+    int ec = this->get_sel_end_col();
+
+    if (sr == er && sc == ec) {
+        this->clear_selection();
+        return false;
+    }
+
+    int start_off = this->pos_to_byte_offset(sr, sc);
+    int end_off = this->pos_to_byte_offset(er, ec);
+    int del_len = end_off - start_off;
+
+    if (del_len > 0) {
+        string deleted_text = this->buffer.get_slice(start_off, del_len);
+        this->push_undo(2, start_off, deleted_text, sr, sc);
+        this->buffer.delete(start_off, del_len);
+        this->cursor_row = sr;
+        this->cursor_col = sc;
+        this->is_dirty = true;
+    }
+
+    this->clear_selection();
+    return true;
 }
 
 fn void EditorState.insert_char(string ch) {
@@ -121,7 +241,8 @@ fn void EditorState.insert_newline() {
 fn void EditorState.backspace() {
     if (this->cursor_col > 0) {
         int byte_offset = this->get_cursor_byte_offset() - 1;
-        this->push_undo(2, byte_offset, " ", this->cursor_row, this->cursor_col);
+        string deleted_ch = this->buffer.get_slice(byte_offset, 1);
+        this->push_undo(2, byte_offset, deleted_ch, this->cursor_row, this->cursor_col);
 
         this->buffer.delete(byte_offset, 1);
         this->cursor_col = this->cursor_col - 1;

@@ -346,3 +346,25 @@ fn string PieceTable.get_line(int line_idx) {
     free((void*)full_text);
     return res;
 }
+
+fn string PieceTable.get_slice(int start, int length) {
+    if (length <= 0) {
+        return "";
+    }
+    int total_len = this->total_length();
+    if (start < 0 || start >= total_len) {
+        return "";
+    }
+    if (start + length > total_len) {
+        length = total_len - start;
+    }
+    string res = (string)malloc(length + 1);
+    char* dst = (char*)res;
+    int i = 0;
+    while (i < length) {
+        dst[i] = this->char_at(start + i);
+        i = i + 1;
+    }
+    dst[length] = (char)0;
+    return res;
+}

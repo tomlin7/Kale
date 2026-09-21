@@ -1,12 +1,19 @@
 // editor/find_bar.kl
 // Find & Replace Floating Toolbar for Kale IDE
 
+import "packages/std/text/piece_table.kl" as pt;
 import "libs/render/math.kl" as rmath;
 import "libs/render/batch.kl" as rbatch;
 import "libs/render/font.kl" as rfont;
 import "libs/gl/loader.kl" as glloader;
 
 extern int strlen(string s);
+
+struct FindMatch {
+    int row;
+    int col;
+    int len;
+}
 
 struct FindBar {
     bool is_visible;
@@ -23,6 +30,11 @@ struct FindBar {
     rmath.Color border;
     rmath.Color text_color;
     rmath.Color highlight_color;
+
+    // Matches cache (up to 64 matches)
+    int* match_rows;
+    int* match_cols;
+    int* match_lens;
 }
 
 fn void FindBar.init(float x, float y, float w, float h) {
@@ -37,6 +49,10 @@ fn void FindBar.init(float x, float y, float w, float h) {
     this->match_count = 0;
     this->current_match = 0;
 
+    this->match_rows = alloc(int, 64);
+    this->match_cols = alloc(int, 64);
+    this->match_lens = alloc(int, 64);
+
     this->bg = rmath.color_rgba(0.18f, 0.20f, 0.25f, 0.95f);
     this->border = rmath.color_rgba(0.35f, 0.40f, 0.50f, 1.0f);
     this->text_color = rmath.color_rgba(0.90f, 0.92f, 0.95f, 1.0f);
@@ -46,6 +62,15 @@ fn void FindBar.init(float x, float y, float w, float h) {
 fn void FindBar.destroy() {
     if (this->query_buf != (char*)0) {
         free(this->query_buf);
+    }
+    if (this->match_rows != (int*)0) {
+        free(this->match_rows);
+    }
+    if (this->match_cols != (int*)0) {
+        free(this->match_cols);
+    }
+    if (this->match_lens != (int*)0) {
+        free(this->match_lens);
     }
 }
 
@@ -79,6 +104,85 @@ fn string FindBar.get_query() {
     return (string)this->query_buf;
 }
 
+fn void FindBar.find_all(pt.PieceTable* buffer) {
+    this->match_count = 0;
+    this->current_match = 0;
+
+    if (this->query_len <= 0) {
+        return;
+    }
+
+    int lines = buffer->line_count();
+    int r = 0;
+    while (r < lines && this->match_count < 64) {
+        string l = buffer->get_line(r);
+        int l_len = strlen(l);
+        int q_len = this->query_len;
+
+        if (l_len >= q_len) {
+            int c = 0;
+            while (c <= (l_len - q_len) && this->match_count < 64) {
+                bool match = true;
+                int k = 0;
+                while (k < q_len) {
+                    if (l[c + k] != this->query_buf[k]) {
+                        match = false;
+                        break;
+                    }
+                    k = k + 1;
+                }
+                if (match) {
+                    int m_idx = this->match_count;
+                    this->match_rows[m_idx] = r;
+                    this->match_cols[m_idx] = c;
+                    this->match_lens[m_idx] = q_len;
+                    this->match_count = this->match_count + 1;
+                    c = c + q_len - 1;
+                }
+                c = c + 1;
+            }
+        }
+        r = r + 1;
+    }
+}
+
+fn void FindBar.next_match() {
+    if (this->match_count > 0) {
+        this->current_match = (this->current_match + 1) % this->match_count;
+    }
+}
+
+fn void FindBar.prev_match() {
+    if (this->match_count > 0) {
+        if (this->current_match <= 0) {
+            this->current_match = this->match_count - 1;
+        } else {
+            this->current_match = this->current_match - 1;
+        }
+    }
+}
+
+fn int FindBar.get_current_row() {
+    if (this->match_count > 0 && this->current_match < this->match_count) {
+        return this->match_rows[this->current_match];
+    }
+    return -1;
+}
+
+fn int FindBar.get_current_col() {
+    if (this->match_count > 0 && this->current_match < this->match_count) {
+        return this->match_cols[this->current_match];
+    }
+    return -1;
+}
+
+fn int FindBar.get_current_len() {
+    if (this->match_count > 0 && this->current_match < this->match_count) {
+        return this->match_lens[this->current_match];
+    }
+    return 0;
+}
+
 fn void FindBar.render(
     rbatch.BatchRenderer* renderer,
     glloader.GLContext* gl_ctx,
@@ -91,7 +195,7 @@ fn void FindBar.render(
     }
 
     // Anchor near top-right of editor view
-    float bar_w = 320.0f;
+    float bar_w = 340.0f;
     float bar_h = 36.0f;
     float bar_x = win_w - bar_w - 20.0f;
     float bar_y = 50.0f;
@@ -111,7 +215,7 @@ fn void FindBar.render(
 
     // Query text box background
     float input_x = bar_x + 55.0f;
-    float input_w = 170.0f;
+    float input_w = 160.0f;
     float input_h = 24.0f;
     float input_y = bar_y + 6.0f;
     rmath.Color input_bg = rmath.color_rgba(0.12f, 0.13f, 0.16f, 1.0f);
@@ -126,8 +230,32 @@ fn void FindBar.render(
 
     // Match count or status
     if (this->query_len > 0) {
-        font->draw_text(renderer, gl_ctx, "Matches", bar_x + 235.0f, bar_y + 8.0f, label_color);
+        if (this->match_count > 0) {
+            char* counter_buf = alloc(char, 32);
+            counter_buf[0] = (char)(48 + ((this->current_match + 1) / 10));
+            counter_buf[1] = (char)(48 + ((this->current_match + 1) % 10));
+            counter_buf[2] = '/';
+            counter_buf[3] = (char)(48 + (this->match_count / 10));
+            counter_buf[4] = (char)(48 + (this->match_count % 10));
+            counter_buf[5] = (char)0;
+
+            // Prettier formatting if < 10
+            if (this->match_count < 10) {
+                counter_buf[0] = (char)(48 + (this->current_match + 1));
+                counter_buf[1] = ' ';
+                counter_buf[2] = 'o';
+                counter_buf[3] = 'f';
+                counter_buf[4] = ' ';
+                counter_buf[5] = (char)(48 + this->match_count);
+                counter_buf[6] = (char)0;
+            }
+            font->draw_text(renderer, gl_ctx, (string)counter_buf, bar_x + 225.0f, bar_y + 8.0f, this->text_color);
+            free(counter_buf);
+        } else {
+            rmath.Color no_match_color = rmath.color_rgba(0.95f, 0.40f, 0.40f, 1.0f);
+            font->draw_text(renderer, gl_ctx, "No match", bar_x + 225.0f, bar_y + 8.0f, no_match_color);
+        }
     } else {
-        font->draw_text(renderer, gl_ctx, "[Esc] close", bar_x + 235.0f, bar_y + 8.0f, label_color);
+        font->draw_text(renderer, gl_ctx, "[Esc] close", bar_x + 225.0f, bar_y + 8.0f, label_color);
     }
 }

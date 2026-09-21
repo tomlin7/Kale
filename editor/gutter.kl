@@ -41,7 +41,8 @@ fn void Gutter.render(
     rfont.FontAtlas* font,
     int scroll_row,
     int cursor_row,
-    int total_lines
+    int total_lines,
+    int diag_err_line
 ) {
     // Fill gutter background
     renderer->push_quad(gl_ctx, this->x, this->y, this->width, this->height, this->bg);
@@ -54,12 +55,18 @@ fn void Gutter.render(
 
     int visible_lines = (int)(this->height / this->line_height);
     int idx = 0;
+    rmath.Color error_dot_color = rmath.color_rgba(0.95f, 0.25f, 0.25f, 1.0f);
 
     while (idx < visible_lines) {
         int line_num = scroll_row + idx;
         float cur_y = this->y + ((float)idx * this->line_height);
 
         if (line_num < total_lines) {
+            // Draw diagnostic error dot on this line if applicable
+            if (line_num == diag_err_line) {
+                renderer->push_quad(gl_ctx, this->x + 4.0f, cur_y + 7.0f, 6.0f, 6.0f, error_dot_color);
+            }
+
             sb.StringBuilder num_sb;
             num_sb.init(8);
             num_sb.append_int(line_num + 1);

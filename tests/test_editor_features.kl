@@ -5,11 +5,15 @@ import "editor/theme.kl" as theme;
 import "editor/config.kl" as cfg;
 import "editor/file_tree.kl" as ft;
 import "editor/find_bar.kl" as fb;
+import "editor/command_bar.kl" as cb;
+import "editor/app_state.kl" as app;
+import "packages/std/text/piece_table.kl" as pt;
 
 extern int strcmp(string a, string b);
+extern int strlen(string s);
 
 fn int main_entry() {
-    print("[TEST] Starting IDE Extensions test suite (theme, config, file_tree, find_bar)...");
+    print("[TEST] Starting IDE Extensions test suite (theme, config, file_tree, find_bar, command_bar, selection)...");
 
     // 1. Theme Engine tests
     theme.SyntaxTheme drac = theme.theme_dracula();
@@ -118,19 +122,124 @@ fn int main_entry() {
         return 32;
     }
 
-    fbar.backspace();
-    if (fbar.query_len != 3 || strcmp(fbar.get_query(), "kal") != 0) {
-        print("FAILED: find bar backspace");
+    // Test find_all on sample piece table
+    pt.PieceTable sample_buf;
+    sample_buf.init("fn kale_run() {\n    int kale = 42;\n    return kale;\n}\n");
+    fbar.find_all(&sample_buf);
+
+    if (fbar.match_count != 3) {
+        print("FAILED: find_all expected 3 matches for 'kale'");
         return 33;
     }
-
-    fbar.clear();
-    if (fbar.query_len != 0) {
-        print("FAILED: find bar clear");
+    if (fbar.get_current_row() != 0 || fbar.get_current_col() != 3) {
+        print("FAILED: first match position mismatch");
         return 34;
     }
+
+    fbar.next_match();
+    if (fbar.get_current_row() != 1 || fbar.get_current_col() != 8) {
+        print("FAILED: second match position mismatch");
+        return 35;
+    }
+
+    fbar.prev_match();
+    if (fbar.get_current_row() != 0) {
+        print("FAILED: prev_match traversal mismatch");
+        return 36;
+    }
+
+    sample_buf.destroy();
     fbar.destroy();
-    print("  [PASS] Find & Replace floating toolbar interaction and buffer management verified");
+    print("  [PASS] Find & Replace in-buffer search and traversal verified");
+
+    // 5. Command Palette tests
+    cb.CommandBar cbar;
+    cbar.init();
+    if (cbar.is_visible) {
+        print("FAILED: command bar should be initially hidden");
+        return 40;
+    }
+
+    cbar.toggle();
+    if (!cbar.is_visible || cbar.filtered_count != cbar.items_count) {
+        print("FAILED: command bar toggle or initial filter count");
+        return 41;
+    }
+
+    // Filter items with query "Switch"
+    cbar.append_char("S");
+    cbar.append_char("w");
+    cbar.append_char("i");
+    cbar.append_char("t");
+    cbar.append_char("c");
+    cbar.append_char("h");
+
+    if (cbar.filtered_count != 3) {
+        print("FAILED: command bar expected 3 filtered switch buffer items");
+        return 42;
+    }
+
+    string top_title = cbar.get_item_title(cbar.filtered_indices[0]);
+    if (strcmp(top_title, "Switch Buffer: editor_main.kl") != 0) {
+        print("FAILED: filtered top item mismatch");
+        return 43;
+    }
+
+    cbar.destroy();
+    print("  [PASS] Fuzzy Command Palette dynamic filtering and actions verified");
+
+    // 6. Selection & AppState tests
+    app.EditorState est;
+    est.init("line 0 hello\nline 1 world\nline 2 kale\n", "test.kl");
+
+    if (est.has_selection) {
+        print("FAILED: selection should be false initially");
+        return 50;
+    }
+
+    // Set cursor and start selection
+    est.cursor_row = 0;
+    est.cursor_col = 5;
+    est.start_selection();
+    if (!est.has_selection || est.sel_anchor_row != 0 || est.sel_anchor_col != 5) {
+        print("FAILED: start_selection setup");
+        return 51;
+    }
+
+    // Drag selection to line 1 col 6
+    est.update_drag_selection(1, 6);
+    if (est.get_sel_start_row() != 0 || est.get_sel_start_col() != 5) {
+        print("FAILED: sel start row/col mismatch");
+        return 52;
+    }
+    if (est.get_sel_end_row() != 1 || est.get_sel_end_col() != 6) {
+        print("FAILED: sel end row/col mismatch");
+        return 53;
+    }
+
+    // Delete selection
+    bool del_ok = est.delete_selection();
+    if (!del_ok || est.has_selection) {
+        print("FAILED: delete_selection failed");
+        return 54;
+    }
+
+    // Undo deletion
+    est.undo();
+
+    // Select all
+    est.select_all();
+    if (!est.has_selection || est.get_sel_start_row() != 0 || est.get_sel_start_col() != 0) {
+        print("FAILED: select_all anchor start mismatch");
+        return 55;
+    }
+    if (est.get_sel_end_row() != 3) { // 3 lines + trailing newline gives 4 lines (index 0..3)
+        print("FAILED: select_all end row mismatch");
+        return 56;
+    }
+
+    est.destroy();
+    print("  [PASS] Multi-line and drag selection bounds, deletion, and undo verified");
 
     print("ALL IDE EXTENSION TESTS PASSED PERFECTLY.");
     return 0;

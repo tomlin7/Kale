@@ -40,7 +40,9 @@ fn void StatusBar.render(
     int cursor_row,
     int cursor_col,
     int total_lines,
-    bool is_dirty
+    bool is_dirty,
+    bool has_selection,
+    string diag_msg
 ) {
     // Fill status bar background
     renderer->push_quad(gl_ctx, this->x, this->y, this->width, this->height, this->bg);
@@ -55,13 +57,22 @@ fn void StatusBar.render(
     }
     font->draw_text(renderer, gl_ctx, status_tag, this->x + 12.0f, text_y, this->fg);
 
-    // Center help
-    string help_msg = " [Arrows] Navigate   [Type] Edit   [Enter] Newline   [Bksp] Delete   [Ctrl+P] Command";
-    font->draw_text(renderer, gl_ctx, help_msg, this->x + 220.0f, text_y, this->accent_fg);
+    // Center help or Diagnostics error warning
+    int diag_len = strlen(diag_msg);
+    if (diag_len > 0) {
+        rmath.Color err_badge = rmath.color_rgba(1.0f, 0.40f, 0.40f, 1.0f);
+        font->draw_text(renderer, gl_ctx, diag_msg, this->x + 200.0f, text_y, err_badge);
+    } else {
+        string help_msg = " [Arrows] Navigate   [Type] Edit   [Enter] Newline   [Bksp] Delete   [Ctrl+P] Command";
+        font->draw_text(renderer, gl_ctx, help_msg, this->x + 200.0f, text_y, this->accent_fg);
+    }
 
     // Right info: Ln X, Col Y, UTF-8, Kale
     sb.StringBuilder pos_sb;
-    pos_sb.init(32);
+    pos_sb.init(48);
+    if (has_selection) {
+        pos_sb.append("(Selected)  ");
+    }
     pos_sb.append("Ln ");
     pos_sb.append_int(cursor_row + 1);
     pos_sb.append(", Col ");
