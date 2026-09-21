@@ -1,0 +1,138 @@
+// apps/term/terminal_view.kl
+// GPU Terminal View — renders a CellGrid onto the GPU using libs/render
+// Each cell character is rendered as a colored glyph with optional colored background.
+
+import "libs/render/batch.kl" as rbatch;
+import "libs/render/font.kl" as rfont;
+import "libs/render/math.kl" as rmath;
+import "libs/gl/loader.kl" as glloader;
+import "libs/term/term.kl" as term;
+import "libs/term/grid.kl" as grid;
+import "libs/term/color.kl" as tcolor;
+
+extern int strlen(string s);
+extern void* malloc(int size);
+
+// Mono cell dimensions (matches consola.ttf at 14px)
+float CELL_W() { return 8.4f; }
+float CELL_H() { return 18.0f; }
+
+struct TerminalView {
+    term.Terminal* terminal;
+    int            cols;
+    int            rows;
+    float          scroll_y;   // pixel offset for vertical scroll
+    bool           show_cursor;
+    char*          glyph_buf;
+}
+
+fn void TerminalView.init(int cols, int rows, string title) {
+    this->cols       = cols;
+    this->rows       = rows;
+    this->scroll_y   = 0.0f;
+    this->show_cursor = true;
+    this->terminal   = term.term_new(cols, rows, title);
+    this->glyph_buf  = (char*)malloc(2);
+    this->glyph_buf[0] = (char)32;
+    this->glyph_buf[1] = (char)0;
+}
+
+fn void TerminalView.destroy() {
+    term.term_free(this->terminal);
+    this->terminal = (term.Terminal*)0;
+    if (this->glyph_buf != (char*)0) {
+        free(this->glyph_buf);
+        this->glyph_buf = (char*)0;
+    }
+}
+
+fn void TerminalView.write(string s) {
+    term.term_write(this->terminal, s);
+}
+
+fn void TerminalView.scroll(float dy) {
+    this->scroll_y = this->scroll_y + dy;
+    if (this->scroll_y < 0.0f) { this->scroll_y = 0.0f; }
+    float max_scroll = (float)(this->rows) * CELL_H();
+    if (this->scroll_y > max_scroll) { this->scroll_y = max_scroll; }
+}
+
+// Convert TermColor int (0-255) to float
+fn float tci(int v) {
+    return (float)v / 255.0f;
+}
+
+fn void TerminalView.render(rbatch.BatchRenderer* r, glloader.GLContext* gl_ctx, rfont.FontAtlas* font,
+                             float x, float y, float w, float h) {
+    // Fill terminal background
+    rmath.Color term_bg = rmath.color_rgba(0.059f, 0.090f, 0.165f, 1.0f); // deep navy
+    r->push_quad(gl_ctx, x, y, w, h, term_bg);
+
+    r->set_clip_rect(gl_ctx, x, y, w, h);
+
+    grid.CellGrid* g = this->terminal->g;
+    if (g == (grid.CellGrid*)0) {
+        r->reset_clip(gl_ctx);
+        return;
+    }
+
+    int col_count = g->cols;
+    int row_count = g->rows;
+
+    float cw = CELL_W();
+    float ch = CELL_H();
+
+    int row = 0;
+    while (row < row_count) {
+        float ry = y + (float)(row * (int)ch) - this->scroll_y;
+
+        if (ry + ch < y || ry > y + h) {
+            row = row + 1;
+            continue;
+        }
+
+        int col = 0;
+        while (col < col_count) {
+            float cx = x + (float)(col * (int)cw);
+            if (cx + cw > x + w) { break; }
+
+            int idx = row * col_count + col;
+            grid.Cell* cell = &g->cells[idx];
+
+            int ch_code = cell->ch;
+
+            // Cell background (only draw if non-default bg)
+            if (!cell->bg.is_default) {
+                rmath.Color bg_col = rmath.color_rgba(tci(cell->bg.r), tci(cell->bg.g), tci(cell->bg.b), 1.0f);
+                r->push_quad(gl_ctx, cx, ry, cw, ch, bg_col);
+            }
+
+            // Draw character glyph (skip spaces and control chars)
+            if (ch_code > 32 && ch_code < 128) {
+                rmath.Color fg_col;
+                if (cell->fg.is_default) {
+                    fg_col = rmath.color_rgba(0.86f, 0.87f, 0.90f, 1.0f);
+                } else {
+                    fg_col = rmath.color_rgba(tci(cell->fg.r), tci(cell->fg.g), tci(cell->fg.b), 1.0f);
+                }
+
+                this->glyph_buf[0] = (char)ch_code;
+                font->draw_text(r, gl_ctx, (string)this->glyph_buf, cx, ry + 1.0f, fg_col);
+            }
+
+            col = col + 1;
+        }
+
+        row = row + 1;
+    }
+
+    // Render cursor block
+    if (this->show_cursor) {
+        float cur_x = x + (float)(g->cursor_col * (int)cw);
+        float cur_y = y + (float)(g->cursor_row * (int)ch) - this->scroll_y;
+        rmath.Color cursor_col = rmath.color_rgba(0.30f, 0.65f, 1.0f, 0.80f);
+        r->push_quad(gl_ctx, cur_x, cur_y, cw, ch, cursor_col);
+    }
+
+    r->reset_clip(gl_ctx);
+}

@@ -1,0 +1,115 @@
+// apps/db_studio/table_browser.kl
+// Table Browser Panel — lists all tables in the open SQLite database
+
+import "libs/render/batch.kl" as rbatch;
+import "libs/render/font.kl" as rfont;
+import "libs/render/math.kl" as rmath;
+import "libs/gl/loader.kl" as glloader;
+import "libs/sql/connection.kl" as conn;
+import "libs/sql/statement.kl" as stmt;
+
+extern int strlen(string s);
+extern void* malloc(int size);
+extern int strcmp(string a, string b);
+
+int MAX_TABLES() { return 64; }
+int TABLE_ROW_H() { return 30; }
+
+struct TableBrowser {
+    string* names;
+    int     count;
+    int     capacity;
+    int     selected_idx;
+}
+
+fn void TableBrowser.init() {
+    this->capacity     = MAX_TABLES();
+    this->count        = 0;
+    this->names        = alloc(string, this->capacity);
+    this->selected_idx = 0;
+}
+
+fn void TableBrowser.destroy() {
+    if (this->capacity > 0) {
+        free(this->names);
+        this->capacity = 0;
+        this->count    = 0;
+    }
+}
+
+fn void TableBrowser.load(conn.Database* db) {
+    this->count = 0;
+
+    if (!db->is_open) { return; }
+
+    stmt.Statement s = db->prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;"
+    );
+    if (!s.is_valid) { return; }
+
+    while (s.step() && this->count < this->capacity) {
+        string tname = s.get_string(0);
+        // Duplicate string into heap buffer so it survives statement finalize
+        int tlen = strlen(tname);
+        char* tbuf = (char*)malloc(tlen + 1);
+        char* src  = (char*)tname;
+        int k = 0;
+        while (k < tlen) { tbuf[k] = src[k]; k = k + 1; }
+        tbuf[tlen] = (char)0;
+        this->names[this->count] = (string)tbuf;
+        this->count = this->count + 1;
+    }
+    s.finalize();
+}
+
+fn void TableBrowser.select_at_y(float mouse_y, float panel_y) {
+    float rel_y = mouse_y - panel_y - 32.0f; // skip header row
+    int idx = (int)(rel_y / (float)TABLE_ROW_H());
+    if (idx >= 0 && idx < this->count) {
+        this->selected_idx = idx;
+    }
+}
+
+fn string TableBrowser.selected_name() {
+    if (this->selected_idx >= 0 && this->selected_idx < this->count) {
+        return this->names[this->selected_idx];
+    }
+    return "";
+}
+
+fn void TableBrowser.render(rbatch.BatchRenderer* r, glloader.GLContext* gl_ctx, rfont.FontAtlas* font,
+                             float x, float y, float w, float h) {
+    rmath.Color panel_bg  = rmath.color_rgba(0.15f, 0.16f, 0.19f, 1.0f);
+    rmath.Color header_bg = rmath.color_rgba(0.20f, 0.21f, 0.25f, 1.0f);
+    rmath.Color sel_bg    = rmath.color_rgba(0.18f, 0.45f, 0.75f, 0.35f);
+    rmath.Color text_col  = rmath.color_rgba(0.88f, 0.90f, 0.94f, 1.0f);
+    rmath.Color muted_col = rmath.color_rgba(0.50f, 0.53f, 0.60f, 1.0f);
+    rmath.Color sep_col   = rmath.color_rgba(0.20f, 0.21f, 0.25f, 1.0f);
+    rmath.Color border_r  = rmath.color_rgba(0.22f, 0.23f, 0.27f, 1.0f);
+    rmath.Color tbl_icon  = rmath.color_rgba(0.25f, 0.65f, 0.85f, 1.0f);
+
+    r->push_quad(gl_ctx, x, y, w, h, panel_bg);
+    r->push_quad(gl_ctx, x + w - 1.0f, y, 1.0f, h, border_r);
+
+    // Header
+    r->push_quad(gl_ctx, x, y, w, 32.0f, header_bg);
+    font->draw_text(r, gl_ctx, "TABLES", x + 12.0f, y + 8.0f, muted_col);
+
+    float row_y = y + 32.0f;
+    int i = 0;
+    while (i < this->count) {
+        float ry = row_y + (float)(i * TABLE_ROW_H());
+        if (i == this->selected_idx) {
+            r->push_quad(gl_ctx, x, ry, w, (float)TABLE_ROW_H(), sel_bg);
+        }
+        // Table icon square
+        r->push_quad(gl_ctx, x + 10.0f, ry + 8.0f, 10.0f, 10.0f, tbl_icon);
+        font->draw_text(r, gl_ctx, this->names[i], x + 28.0f, ry + 7.0f, text_col);
+        r->push_quad(gl_ctx, x, ry + (float)TABLE_ROW_H() - 1.0f, w, 1.0f, sep_col);
+        i = i + 1;
+    }
+
+    if (this->count == 0) {
+        font->draw_text(r, gl_ctx, "No tables found.", x + 12.0f, row_y + 8.0f, muted_col);
+    }
+}

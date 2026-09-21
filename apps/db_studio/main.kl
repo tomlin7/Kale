@@ -1,0 +1,344 @@
+// apps/db_studio/main.kl
+// Kale DB Studio — GPU SQLite Database Browser, Inspector & SQL Workbench
+//
+// Usage: kale run apps/db_studio/main.kl
+// Opens a file-open dialog (type path in header bar) then displays tables + query editor
+//
+// Layout:
+//   [Table Browser | Result Grid                      ]
+//   [               Query Editor bar + Run button     ]
+//   [               Status bar                        ]
+
+import "libs/framework/app.kl" as fw;
+import "libs/glfw/glfw.kl" as glfw;
+import "libs/glfw/constants.kl" as glc;
+import "libs/glfw/input.kl" as ginput;
+import "libs/render/math.kl" as rmath;
+
+import "libs/sql/connection.kl" as conn;
+
+import "apps/db_studio/table_browser.kl" as tb;
+import "apps/db_studio/result_grid.kl"   as rg;
+import "apps/db_studio/query_editor.kl"  as qe;
+
+extern int strlen(string s);
+extern int printf(string fmt, ...);
+
+// Poll A-Z keys for typing into query editor or path bar
+fn void poll_typing_into_qe(void* window, qe.QueryEditor* editor, bool shift) {
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_A()) == glc.GLFW_PRESS()) { if (shift) { editor->append_char("A"); } else { editor->append_char("a"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_B()) == glc.GLFW_PRESS()) { if (shift) { editor->append_char("B"); } else { editor->append_char("b"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_C()) == glc.GLFW_PRESS()) { if (shift) { editor->append_char("C"); } else { editor->append_char("c"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_D()) == glc.GLFW_PRESS()) { if (shift) { editor->append_char("D"); } else { editor->append_char("d"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_E()) == glc.GLFW_PRESS()) { if (shift) { editor->append_char("E"); } else { editor->append_char("e"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_F()) == glc.GLFW_PRESS()) { if (shift) { editor->append_char("F"); } else { editor->append_char("f"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_G()) == glc.GLFW_PRESS()) { if (shift) { editor->append_char("G"); } else { editor->append_char("g"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_H()) == glc.GLFW_PRESS()) { if (shift) { editor->append_char("H"); } else { editor->append_char("h"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_I()) == glc.GLFW_PRESS()) { if (shift) { editor->append_char("I"); } else { editor->append_char("i"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_J()) == glc.GLFW_PRESS()) { if (shift) { editor->append_char("J"); } else { editor->append_char("j"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_K()) == glc.GLFW_PRESS()) { if (shift) { editor->append_char("K"); } else { editor->append_char("k"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_L()) == glc.GLFW_PRESS()) { if (shift) { editor->append_char("L"); } else { editor->append_char("l"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_M()) == glc.GLFW_PRESS()) { if (shift) { editor->append_char("M"); } else { editor->append_char("m"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_N()) == glc.GLFW_PRESS()) { if (shift) { editor->append_char("N"); } else { editor->append_char("n"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_O()) == glc.GLFW_PRESS()) { if (shift) { editor->append_char("O"); } else { editor->append_char("o"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_P()) == glc.GLFW_PRESS()) { if (shift) { editor->append_char("P"); } else { editor->append_char("p"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_Q()) == glc.GLFW_PRESS()) { if (shift) { editor->append_char("Q"); } else { editor->append_char("q"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_R()) == glc.GLFW_PRESS()) { if (shift) { editor->append_char("R"); } else { editor->append_char("r"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_S()) == glc.GLFW_PRESS()) { if (shift) { editor->append_char("S"); } else { editor->append_char("s"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_T()) == glc.GLFW_PRESS()) { if (shift) { editor->append_char("T"); } else { editor->append_char("t"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_U()) == glc.GLFW_PRESS()) { if (shift) { editor->append_char("U"); } else { editor->append_char("u"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_V()) == glc.GLFW_PRESS()) { if (shift) { editor->append_char("V"); } else { editor->append_char("v"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_W()) == glc.GLFW_PRESS()) { if (shift) { editor->append_char("W"); } else { editor->append_char("w"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_X()) == glc.GLFW_PRESS()) { if (shift) { editor->append_char("X"); } else { editor->append_char("x"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_Y()) == glc.GLFW_PRESS()) { if (shift) { editor->append_char("Y"); } else { editor->append_char("y"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_Z()) == glc.GLFW_PRESS()) { if (shift) { editor->append_char("Z"); } else { editor->append_char("z"); } return; }
+
+    // Numbers & symbols
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_0()) == glc.GLFW_PRESS()) { editor->append_char("0"); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_1()) == glc.GLFW_PRESS()) { editor->append_char("1"); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_2()) == glc.GLFW_PRESS()) { editor->append_char("2"); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_3()) == glc.GLFW_PRESS()) { editor->append_char("3"); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_4()) == glc.GLFW_PRESS()) { editor->append_char("4"); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_5()) == glc.GLFW_PRESS()) { editor->append_char("5"); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_6()) == glc.GLFW_PRESS()) { editor->append_char("6"); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_7()) == glc.GLFW_PRESS()) { editor->append_char("7"); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_8()) == glc.GLFW_PRESS()) { editor->append_char("8"); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_9()) == glc.GLFW_PRESS()) { editor->append_char("9"); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_SPACE()) == glc.GLFW_PRESS()) { editor->append_char(" "); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_SEMICOLON()) == glc.GLFW_PRESS()) { editor->append_char(";"); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_COMMA()) == glc.GLFW_PRESS()) { editor->append_char(","); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_PERIOD()) == glc.GLFW_PRESS()) { editor->append_char("."); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_EQUAL()) == glc.GLFW_PRESS()) { editor->append_char("="); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_MINUS()) == glc.GLFW_PRESS()) { editor->append_char("-"); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_SLASH()) == glc.GLFW_PRESS()) { editor->append_char("/"); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_APOSTROPHE()) == glc.GLFW_PRESS()) { editor->append_char("'"); return; }
+}
+
+fn void run_db_studio() {
+    fw.AppConfig config;
+    config.init("Kale DB Studio", 1280, 800);
+
+    fw.App app;
+    int ok = app.init(config);
+    if (ok == 0) {
+        printf("Fatal: could not open DB Studio window\n");
+        return;
+    }
+
+    // ── State ─────────────────────────────────────────────────────────────
+    conn.Database db;
+    db.init();
+    bool db_loaded = false;
+
+    tb.TableBrowser table_browser;
+    table_browser.init();
+
+    rg.ResultGrid result_grid;
+    result_grid.init();
+
+    qe.QueryEditor query_editor;
+    query_editor.init();
+
+    // DB path input (in header bar)
+    qe.QueryEditor path_bar;
+    path_bar.init();
+    path_bar.is_focused = false;
+    path_bar.set_text("test.db");
+
+    // Focus mode: 0 = path bar, 1 = query editor
+    int focus_mode = 0;
+
+    // Key delay
+    int key_delay = 0;
+
+    // Layout constants
+    float sidebar_w = 190.0f;
+    float header_h  = 40.0f;
+    float qe_h      = 42.0f;
+
+    while (app.begin_frame() != 0) {
+        float cur_w = (float)app.width;
+        float cur_h = (float)app.height;
+
+        float main_x  = sidebar_w;
+        float main_w  = cur_w - sidebar_w;
+        float grid_h  = cur_h - header_h - qe_h;
+
+        bool ctrl_down  = (ginput.glfwGetKey(app.window, glc.GLFW_KEY_LEFT_CONTROL()) == glc.GLFW_PRESS());
+        bool shift_down = (ginput.glfwGetKey(app.window, glc.GLFW_KEY_LEFT_SHIFT())   == glc.GLFW_PRESS());
+
+        // ── Header bar ────────────────────────────────────────────────────
+        rmath.Color hdr_bg   = rmath.color_rgba(0.14f, 0.15f, 0.19f, 1.0f);
+        rmath.Color hdr_fg   = rmath.color_rgba(0.92f, 0.94f, 0.96f, 1.0f);
+        rmath.Color muted_c  = rmath.color_rgba(0.50f, 0.53f, 0.60f, 1.0f);
+        rmath.Color accent_c = rmath.color_rgba(0.25f, 0.65f, 0.85f, 1.0f);
+
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, 0.0f, cur_w, header_h, hdr_bg);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, header_h - 2.0f, cur_w, 2.0f, accent_c);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "DB Studio", 12.0f, 10.0f, hdr_fg);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Path:", 110.0f, 11.0f, muted_c);
+
+        // Path bar (text input in header)
+        path_bar.is_focused = (focus_mode == 0);
+        path_bar.render(&app.ui_ctx.renderer, &app.gl_ctx, &app.ui_ctx.font, 155.0f, 7.0f, 350.0f, 26.0f);
+
+        // Open button
+        rmath.Color open_btn = rmath.color_rgba(0.18f, 0.45f, 0.75f, 1.0f);
+        rmath.Color open_fg  = rmath.color_rgba(1.0f, 1.0f, 1.0f, 1.0f);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 512.0f, 7.0f, 70.0f, 26.0f, open_btn);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Open", 526.0f, 11.0f, open_fg);
+
+        // Keyboard hints
+        rmath.Color hint_c = rmath.color_rgba(0.35f, 0.38f, 0.45f, 1.0f);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "[Tab] Focus  [F5] Run  [Ctrl+L] Clear  [ESC] Quit", cur_w - 440.0f, 11.0f, hint_c);
+
+        // ── Sidebar: Table browser ─────────────────────────────────────────
+        table_browser.render(&app.ui_ctx.renderer, &app.gl_ctx, &app.ui_ctx.font,
+                              0.0f, header_h, sidebar_w, cur_h - header_h);
+
+        // ── Main: Query editor ─────────────────────────────────────────────
+        rmath.Color qe_bg  = rmath.color_rgba(0.15f, 0.16f, 0.19f, 1.0f);
+        rmath.Color qe_sep = rmath.color_rgba(0.20f, 0.21f, 0.25f, 1.0f);
+        float qe_y = header_h + grid_h;
+
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, main_x, qe_y, main_w, qe_h, qe_bg);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, main_x, qe_y, main_w, 1.0f, qe_sep);
+
+        // Label
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "SQL", main_x + 6.0f, qe_y + 12.0f, muted_c);
+
+        // Editor
+        query_editor.is_focused = (focus_mode == 1);
+        float qe_input_x = main_x + 40.0f;
+        float qe_input_w = main_w - 120.0f;
+        query_editor.render(&app.ui_ctx.renderer, &app.gl_ctx, &app.ui_ctx.font,
+                             qe_input_x, qe_y + 6.0f, qe_input_w, 30.0f);
+
+        // Run button
+        float run_btn_x = main_x + main_w - 72.0f;
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, run_btn_x, qe_y + 6.0f, 64.0f, 30.0f, open_btn);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Run [F5]", run_btn_x + 6.0f, qe_y + 12.0f, open_fg);
+
+        // ── Main: Result grid ──────────────────────────────────────────────
+        result_grid.render(&app.ui_ctx.renderer, &app.gl_ctx, &app.ui_ctx.font,
+                            main_x, header_h, main_w, grid_h);
+
+        // ── Input handling ─────────────────────────────────────────────────
+        // ESC: quit
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_ESCAPE()) == glc.GLFW_PRESS()) {
+            app.close();
+        }
+
+        // Tab: cycle focus between path bar and query editor
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_TAB()) == glc.GLFW_PRESS() && key_delay == 0) {
+            if (focus_mode == 0) { focus_mode = 1; } else { focus_mode = 0; }
+            key_delay = 15;
+        }
+
+        // Mouse click: focus routing
+        if (app.ui_ctx.mouse_pressed != 0) {
+            float mx = app.ui_ctx.mouse_x;
+            float my = app.ui_ctx.mouse_y;
+
+            // Click Open button
+            if (mx >= 512.0f && mx <= 582.0f && my >= 7.0f && my <= 33.0f) {
+                if (db.is_open) { db.close(); }
+                string path = path_bar.text();
+                db = conn.open_database(path);
+                if (db.is_open) {
+                    db_loaded = true;
+                    table_browser.load(&db);
+                    result_grid.clear();
+                    result_grid.status_msg = "Database opened.";
+                } else {
+                    result_grid.status_msg = "Failed to open database.";
+                    result_grid.has_error  = true;
+                }
+            }
+
+            // Click path bar area
+            if (mx >= 155.0f && mx <= 505.0f && my >= 7.0f && my <= 33.0f) {
+                focus_mode = 0;
+            }
+
+            // Click query editor area
+            if (mx >= qe_input_x && mx < qe_input_x + qe_input_w && my >= qe_y + 6.0f && my <= qe_y + 36.0f) {
+                focus_mode = 1;
+            }
+
+            // Click Run button
+            if (mx >= run_btn_x && mx <= run_btn_x + 64.0f && my >= qe_y + 6.0f && my <= qe_y + 36.0f) {
+                if (db_loaded) {
+                    result_grid.run_query(&db, query_editor.text());
+                }
+            }
+
+            // Click table in browser → populate SELECT query
+            if (mx >= 0.0f && mx < sidebar_w && my >= header_h) {
+                table_browser.select_at_y(my, header_h);
+                string tname = table_browser.selected_name();
+                if (strlen(tname) > 0) {
+                    // Build "SELECT * FROM <name> LIMIT 100;"
+                    query_editor.set_text("SELECT * FROM sqlite_master;");
+                    focus_mode = 1;
+                    // Auto-run
+                    if (db_loaded) {
+                        result_grid.run_query(&db, query_editor.text());
+                    }
+                }
+            }
+
+            // Click result grid — select row
+            if (mx >= main_x && my >= header_h && my < header_h + grid_h) {
+                result_grid.select_at_y(my, header_h);
+            }
+        }
+
+        // F5: run query
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_F5()) == glc.GLFW_PRESS() && key_delay == 0) {
+            if (db_loaded) {
+                result_grid.run_query(&db, query_editor.text());
+            }
+            key_delay = 20;
+        }
+
+        // Ctrl+L: clear query
+        if (ctrl_down && ginput.glfwGetKey(app.window, glc.GLFW_KEY_L()) == glc.GLFW_PRESS() && key_delay == 0) {
+            query_editor.clear();
+            key_delay = 15;
+        }
+
+        // Backspace in focused input
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_BACKSPACE()) == glc.GLFW_PRESS() && key_delay == 0) {
+            if (focus_mode == 0) { path_bar.backspace(); }
+            else { query_editor.backspace(); }
+            key_delay = 5;
+        }
+
+        // Enter in path bar → open database
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_ENTER()) == glc.GLFW_PRESS() && key_delay == 0) {
+            if (focus_mode == 0) {
+                if (db.is_open) { db.close(); }
+                db = conn.open_database(path_bar.text());
+                if (db.is_open) {
+                    db_loaded = true;
+                    table_browser.load(&db);
+                    result_grid.clear();
+                    result_grid.status_msg = "Database opened.";
+                } else {
+                    result_grid.status_msg = "Failed to open database.";
+                    result_grid.has_error  = true;
+                }
+            } else if (focus_mode == 1 && db_loaded) {
+                result_grid.run_query(&db, query_editor.text());
+            }
+            key_delay = 15;
+        }
+
+        // Typing
+        if (key_delay == 0) {
+            if (focus_mode == 0) {
+                poll_typing_into_qe(app.window, &path_bar, shift_down);
+            } else {
+                poll_typing_into_qe(app.window, &query_editor, shift_down);
+            }
+            key_delay = 6;
+        }
+
+        // Scroll result grid
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_PAGE_DOWN()) == glc.GLFW_PRESS() && key_delay == 0) {
+            result_grid.scroll(0.0f, 200.0f);
+            key_delay = 8;
+        }
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_PAGE_UP()) == glc.GLFW_PRESS() && key_delay == 0) {
+            result_grid.scroll(0.0f, -200.0f);
+            key_delay = 8;
+        }
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_RIGHT()) == glc.GLFW_PRESS() && key_delay == 0) {
+            result_grid.scroll(160.0f, 0.0f);
+            key_delay = 8;
+        }
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_LEFT()) == glc.GLFW_PRESS() && key_delay == 0) {
+            result_grid.scroll(-160.0f, 0.0f);
+            key_delay = 8;
+        }
+
+        if (key_delay > 0) { key_delay = key_delay - 1; }
+
+        app.end_frame();
+    }
+
+    query_editor.destroy();
+    path_bar.destroy();
+    table_browser.destroy();
+    result_grid.destroy();
+    if (db.is_open) { db.close(); }
+    app.close();
+}
+
+fn int main_entry() {
+    run_db_studio();
+    return 0;
+}
+
+main_entry();

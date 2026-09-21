@@ -1,0 +1,225 @@
+// apps/git_lens/commit_graph.kl
+// Commit History Graph Panel — scrollable list of commits with hash, author, message
+
+import "libs/render/batch.kl" as rbatch;
+import "libs/render/font.kl" as rfont;
+import "libs/render/math.kl" as rmath;
+import "libs/gl/loader.kl" as glloader;
+import "vcs/object.kl" as obj;
+import "vcs/repo.kl" as repo;
+import "packages/std/text/string_builder.kl" as sb;
+
+extern int strlen(string s);
+extern void* malloc(int size);
+extern int sprintf(string buf, string fmt, ...);
+
+// Maximum commits shown in the graph
+int MAX_COMMITS() { return 64; }
+int COMMIT_ROW_H() { return 48; }
+
+struct CommitEntry {
+    string hash;          // full 40-char SHA-1
+    string hash_short;    // first 7 chars
+    string author;
+    string message;
+    int    timestamp;
+    int    depth;         // DAG depth for branch line drawing
+}
+
+struct CommitGraph {
+    CommitEntry* entries;
+    int          count;
+    int          capacity;
+    int          selected_idx;
+    float        scroll_y;
+    string       repo_root;
+}
+
+fn void CommitGraph.init(string repo_root) {
+    this->capacity = MAX_COMMITS();
+    this->count    = 0;
+    this->entries  = alloc(CommitEntry, this->capacity);
+    this->selected_idx = 0;
+    this->scroll_y = 0.0f;
+    this->repo_root = repo_root;
+}
+
+fn void CommitGraph.destroy() {
+    if (this->capacity > 0) {
+        free(this->entries);
+        this->capacity = 0;
+        this->count = 0;
+    }
+}
+
+// Slices first `n` chars of `s` into a fresh malloc buffer
+fn string slice_str(string s, int n) {
+    int len = strlen(s);
+    if (n > len) { n = len; }
+    char* buf = (char*)malloc(n + 1);
+    char* src = (char*)s;
+    int i = 0;
+    while (i < n) {
+        buf[i] = src[i];
+        i = i + 1;
+    }
+    buf[n] = (char)0;
+    return (string)buf;
+}
+
+// Walk the commit DAG from HEAD and load up to MAX_COMMITS entries
+fn void CommitGraph.load() {
+    this->count = 0;
+
+    string current = repo.get_head_ref(this->repo_root);
+    int depth = 0;
+
+    while (strlen(current) > 0 && this->count < MAX_COMMITS()) {
+        string raw = obj.read_object(this->repo_root, current);
+        if (strlen(raw) == 0) { break; }
+
+        CommitEntry e;
+        e.hash       = current;
+        e.hash_short = slice_str(current, 7);
+        e.author     = "Unknown";
+        e.message    = "No message";
+        e.timestamp  = 0;
+        e.depth      = depth;
+
+        // Simple linear scan of commit body for "author" line and message
+        char* b   = (char*)raw;
+        int   len = strlen(raw);
+        string next_parent = "";
+
+        int i = 0;
+        while (i < len - 6) {
+            // "author "
+            if (b[i]==(char)97 && b[i+1]==(char)117 && b[i+2]==(char)116 &&
+                b[i+3]==(char)104 && b[i+4]==(char)111 && b[i+5]==(char)114 &&
+                b[i+6]==(char)32) {
+                int start = i + 7;
+                int end   = start;
+                while (end < len && b[end] != (char)10 && b[end] != (char)13) { end = end + 1; }
+                e.author = slice_str((string)(b + start), end - start);
+            }
+            // "parent "
+            if (b[i]==(char)112 && b[i+1]==(char)97 && b[i+2]==(char)114 &&
+                b[i+3]==(char)101 && b[i+4]==(char)110 && b[i+5]==(char)116 &&
+                b[i+6]==(char)32) {
+                int start = i + 7;
+                int end   = start;
+                while (end < len && b[end] != (char)10 && b[end] != (char)13 && b[end] != (char)32) { end = end + 1; }
+                next_parent = slice_str((string)(b + start), end - start);
+            }
+            i = i + 1;
+        }
+
+        // Message is after the first double-newline
+        int msg_start = 0;
+        int j = 0;
+        while (j < len - 1) {
+            if (b[j] == (char)10 && b[j+1] == (char)10) {
+                msg_start = j + 2;
+                break;
+            }
+            j = j + 1;
+        }
+        if (msg_start > 0) {
+            int msg_end = msg_start;
+            while (msg_end < len && b[msg_end] != (char)10 && b[msg_end] != (char)13) { msg_end = msg_end + 1; }
+            e.message = slice_str((string)(b + msg_start), msg_end - msg_start);
+        }
+
+        this->entries[this->count] = e;
+        this->count = this->count + 1;
+        current = next_parent;
+        depth = depth + 1;
+    }
+}
+
+// Scroll the view
+fn void CommitGraph.scroll(float delta) {
+    this->scroll_y = this->scroll_y + delta;
+    float max_scroll = (float)(this->count * COMMIT_ROW_H());
+    if (this->scroll_y < 0.0f) { this->scroll_y = 0.0f; }
+    if (this->scroll_y > max_scroll) { this->scroll_y = max_scroll; }
+}
+
+// Select commit at mouse y
+fn void CommitGraph.select_at_y(float mouse_y, float panel_y) {
+    float rel_y = mouse_y - panel_y + this->scroll_y;
+    int idx = (int)(rel_y / (float)COMMIT_ROW_H());
+    if (idx >= 0 && idx < this->count) {
+        this->selected_idx = idx;
+    }
+}
+
+fn string CommitGraph.selected_hash() {
+    if (this->selected_idx >= 0 && this->selected_idx < this->count) {
+        return this->entries[this->selected_idx].hash;
+    }
+    return "";
+}
+
+fn void CommitGraph.render(rbatch.BatchRenderer* r, glloader.GLContext* gl_ctx, rfont.FontAtlas* font,
+                            float x, float y, float w, float h) {
+    // Panel background
+    rmath.Color panel_bg = rmath.color_rgba(0.13f, 0.14f, 0.17f, 1.0f);
+    r->push_quad(gl_ctx, x, y, w, h, panel_bg);
+
+    // Clip to panel
+    r->set_clip_rect(gl_ctx, x, y, w, h);
+
+    float row_h = (float)COMMIT_ROW_H();
+    rmath.Color sel_bg     = rmath.color_rgba(0.18f, 0.45f, 0.75f, 0.35f);
+    rmath.Color dot_col    = rmath.color_rgba(0.20f, 0.65f, 0.50f, 1.0f);
+    rmath.Color line_col   = rmath.color_rgba(0.25f, 0.30f, 0.38f, 1.0f);
+    rmath.Color hash_col   = rmath.color_rgba(0.55f, 0.80f, 0.55f, 1.0f);
+    rmath.Color author_col = rmath.color_rgba(0.60f, 0.63f, 0.68f, 1.0f);
+    rmath.Color msg_col    = rmath.color_rgba(0.92f, 0.94f, 0.96f, 1.0f);
+    rmath.Color sep_col    = rmath.color_rgba(0.20f, 0.21f, 0.25f, 1.0f);
+
+    float graph_x = x + 14.0f;
+    float text_x  = graph_x + 26.0f;
+
+    int i = 0;
+    while (i < this->count) {
+        float row_y = y + (float)(i * COMMIT_ROW_H()) - this->scroll_y;
+
+        // Skip rows outside clip
+        if (row_y + row_h < y || row_y > y + h) {
+            i = i + 1;
+            continue;
+        }
+
+        // Selection highlight
+        if (i == this->selected_idx) {
+            r->push_quad(gl_ctx, x, row_y, w, row_h, sel_bg);
+        }
+
+        // DAG vertical line (connecting commits)
+        if (i < this->count - 1) {
+            float line_x = graph_x + 4.0f;
+            r->push_quad(gl_ctx, line_x, row_y + 14.0f, 2.0f, row_h - 14.0f, line_col);
+        }
+
+        // Commit dot (filled circle approximation via quads)
+        r->push_quad(gl_ctx, graph_x, row_y + 10.0f, 10.0f, 10.0f, dot_col);
+
+        // Hash (short)
+        font->draw_text(r, gl_ctx, this->entries[i].hash_short, text_x, row_y + 6.0f, hash_col);
+
+        // Author
+        font->draw_text(r, gl_ctx, this->entries[i].author, text_x + 80.0f, row_y + 6.0f, author_col);
+
+        // Message
+        font->draw_text(r, gl_ctx, this->entries[i].message, text_x, row_y + 24.0f, msg_col);
+
+        // Separator
+        r->push_quad(gl_ctx, x, row_y + row_h - 1.0f, w, 1.0f, sep_col);
+
+        i = i + 1;
+    }
+
+    r->reset_clip(gl_ctx);
+}

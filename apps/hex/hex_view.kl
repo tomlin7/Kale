@@ -1,0 +1,193 @@
+// apps/hex/hex_view.kl
+// Hex View — renders binary file as three-column display: offset | hex bytes | ASCII
+
+import "libs/render/batch.kl" as rbatch;
+import "libs/render/font.kl" as rfont;
+import "libs/render/math.kl" as rmath;
+import "libs/gl/loader.kl" as glloader;
+
+extern int strlen(string s);
+extern void* malloc(int size);
+
+// Bytes per row in the hex view
+int BYTES_PER_ROW() { return 16; }
+int HEX_ROW_H()     { return 20; }
+
+// Hex nibble lookup
+string HEX_CHARS() { return "0123456789ABCDEF"; }
+
+fn char nibble_to_char(int n) {
+    string h = HEX_CHARS();
+    char* b = (char*)h;
+    n = n & 0xF;
+    return b[n];
+}
+
+struct HexView {
+    char*  data;
+    int    data_size;
+    float  scroll_y;
+    int    selected_byte;   // byte offset of cursor
+    bool   data_owned;      // true = we should free data on destroy
+    char*  off_buf;
+    char*  hex_buf;
+    char*  asc_buf;
+}
+
+fn void HexView.init() {
+    this->data          = (char*)0;
+    this->data_size     = 0;
+    this->scroll_y      = 0.0f;
+    this->selected_byte = 0;
+    this->data_owned    = false;
+    this->off_buf       = (char*)malloc(10);
+    this->hex_buf       = (char*)malloc(3);
+    this->asc_buf       = (char*)malloc(2);
+}
+
+fn void HexView.load_data(char* data, int size, bool owns) {
+    this->data       = data;
+    this->data_size  = size;
+    this->data_owned = owns;
+    this->scroll_y   = 0.0f;
+    this->selected_byte = 0;
+}
+
+fn void HexView.destroy() {
+    if (this->data_owned && this->data != (char*)0) {
+        free(this->data);
+        this->data = (char*)0;
+    }
+    if (this->off_buf != (char*)0) { free(this->off_buf); this->off_buf = (char*)0; }
+    if (this->hex_buf != (char*)0) { free(this->hex_buf); this->hex_buf = (char*)0; }
+    if (this->asc_buf != (char*)0) { free(this->asc_buf); this->asc_buf = (char*)0; }
+}
+
+fn void HexView.scroll(float dy) {
+    this->scroll_y = this->scroll_y + dy;
+    int total_rows = (this->data_size + BYTES_PER_ROW() - 1) / BYTES_PER_ROW();
+    float max_scroll = (float)(total_rows * HEX_ROW_H());
+    if (this->scroll_y < 0.0f)       { this->scroll_y = 0.0f; }
+    if (this->scroll_y > max_scroll) { this->scroll_y = max_scroll; }
+}
+
+fn void HexView.select_at(float mouse_x, float mouse_y, float panel_x, float panel_y) {
+    float rel_y = mouse_y - panel_y + this->scroll_y;
+    int row = (int)(rel_y / (float)HEX_ROW_H());
+    // Estimate column from hex area (starts at ~70px from panel_x)
+    float hex_area_x = panel_x + 72.0f;
+    float rel_x = mouse_x - hex_area_x;
+    int col = (int)(rel_x / 26.0f); // approx 26px per "XX " token
+    if (col < 0) { col = 0; }
+    if (col >= BYTES_PER_ROW()) { col = BYTES_PER_ROW() - 1; }
+    int byte_idx = row * BYTES_PER_ROW() + col;
+    if (byte_idx >= 0 && byte_idx < this->data_size) {
+        this->selected_byte = byte_idx;
+    }
+}
+
+fn void HexView.render(rbatch.BatchRenderer* r, glloader.GLContext* gl_ctx, rfont.FontAtlas* font,
+                        float x, float y, float w, float h) {
+    rmath.Color panel_bg = rmath.color_rgba(0.11f, 0.12f, 0.14f, 1.0f);
+    rmath.Color hdr_bg   = rmath.color_rgba(0.18f, 0.19f, 0.23f, 1.0f);
+    rmath.Color offset_c = rmath.color_rgba(0.55f, 0.58f, 0.65f, 1.0f);
+    rmath.Color hex_c    = rmath.color_rgba(0.88f, 0.90f, 0.94f, 1.0f);
+    rmath.Color ascii_c  = rmath.color_rgba(0.55f, 0.80f, 0.55f, 1.0f);
+    rmath.Color sel_bg   = rmath.color_rgba(0.18f, 0.45f, 0.75f, 0.40f);
+    rmath.Color sep_col  = rmath.color_rgba(0.22f, 0.23f, 0.27f, 1.0f);
+    rmath.Color null_c   = rmath.color_rgba(0.30f, 0.33f, 0.40f, 1.0f);
+    rmath.Color hi_c     = rmath.color_rgba(1.0f, 0.80f, 0.35f, 1.0f);  // printable bytes highlight
+
+    r->push_quad(gl_ctx, x, y, w, h, panel_bg);
+
+    // Column header
+    float hdr_h = 22.0f;
+    r->push_quad(gl_ctx, x, y, w, hdr_h, hdr_bg);
+    font->draw_text(r, gl_ctx, "Offset", x + 4.0f, y + 3.0f, offset_c);
+    font->draw_text(r, gl_ctx, "00 01 02 03 04 05 06 07  08 09 0A 0B 0C 0D 0E 0F", x + 72.0f, y + 3.0f, offset_c);
+    font->draw_text(r, gl_ctx, "ASCII", x + 572.0f, y + 3.0f, offset_c);
+    r->push_quad(gl_ctx, x, y + hdr_h - 1.0f, w, 1.0f, sep_col);
+
+    r->set_clip_rect(gl_ctx, x, y + hdr_h, w, h - hdr_h);
+
+    int total_rows = (this->data_size + BYTES_PER_ROW() - 1) / BYTES_PER_ROW();
+    int row = 0;
+    float row_h = (float)HEX_ROW_H();
+
+    while (row < total_rows) {
+        float ry = y + hdr_h + (float)(row * HEX_ROW_H()) - this->scroll_y;
+        if (ry + row_h < y + hdr_h || ry > y + h) {
+            row = row + 1;
+            continue;
+        }
+
+        int base_offset = row * BYTES_PER_ROW();
+
+        // Offset column (8-char hex offset)
+        int ov = base_offset;
+        int oi = 7;
+        while (oi >= 0) {
+            this->off_buf[oi] = nibble_to_char(ov & 0xF);
+            ov = ov >> 4;
+            oi = oi - 1;
+        }
+        this->off_buf[8] = (char)0;
+        font->draw_text(r, gl_ctx, (string)this->off_buf, x + 4.0f, ry + 2.0f, offset_c);
+
+        // Hex bytes and ASCII
+        float hex_x  = x + 72.0f;
+        float asc_x  = x + 572.0f;
+
+        int col = 0;
+        while (col < BYTES_PER_ROW()) {
+            int byte_idx = base_offset + col;
+            bool is_selected = (byte_idx == this->selected_byte);
+
+            // Extra gap after 8th byte (visual grouping)
+            float col_x = hex_x + (float)(col * 26.0f);
+            if (col >= 8) { col_x = col_x + 8.0f; }
+
+            if (byte_idx < this->data_size) {
+                int bval = (int)this->data[byte_idx] & 0xFF;
+
+                // Selection highlight
+                if (is_selected) {
+                    r->push_quad(gl_ctx, col_x - 2.0f, ry, 22.0f, row_h, sel_bg);
+                }
+
+                // Hex pair "XX"
+                this->hex_buf[0] = nibble_to_char(bval >> 4);
+                this->hex_buf[1] = nibble_to_char(bval & 0xF);
+                this->hex_buf[2] = (char)0;
+
+                rmath.Color hcol = hex_c;
+                if (bval == 0) { hcol = null_c; }
+                font->draw_text(r, gl_ctx, (string)this->hex_buf, col_x, ry + 2.0f, hcol);
+
+                // ASCII column
+                float acol_x = asc_x + (float)(col * 10.0f);
+                rmath.Color ac = ascii_c;
+                if (bval >= 32 && bval < 127) {
+                    this->asc_buf[0] = (char)bval;
+                    ac = hi_c;
+                } else {
+                    this->asc_buf[0] = (char)46; // '.'
+                    ac = ascii_c;
+                }
+                this->asc_buf[1] = (char)0;
+                font->draw_text(r, gl_ctx, (string)this->asc_buf, acol_x, ry + 2.0f, ac);
+            } else {
+                // Padding beyond file end
+                font->draw_text(r, gl_ctx, "  ", col_x, ry + 2.0f, null_c);
+            }
+
+            col = col + 1;
+        }
+
+        // Row separator
+        r->push_quad(gl_ctx, x, ry + row_h - 1.0f, w, 1.0f, rmath.color_rgba(0.16f, 0.17f, 0.20f, 1.0f));
+        row = row + 1;
+    }
+
+    r->reset_clip(gl_ctx);
+}

@@ -1,0 +1,303 @@
+// apps/hex/main.kl
+// Kale Hex — GPU Binary Hex Editor
+//
+// Layout:
+//   ┌────────────────────────────────────────────────────┐
+//   │  Header: filename  [path input]  [Open]  hints     │
+//   ├────────────────────────────────────────────────────┤
+//   │  Offset     Hex bytes (16/row)            ASCII    │
+//   │  00000000   XX XX XX XX XX XX XX XX   ... .......  │
+//   │  ...                                               │
+//   ├────────────────────────────────────────────────────┤
+//   │  Byte info strip: selected offset / hex / dec /chr │
+//   └────────────────────────────────────────────────────┘
+//
+// Keybindings:
+//   PgUp/Dn  — scroll
+//   ↑↓←→     — move selection by 1 / 16 bytes
+//   ESC      — quit
+
+import "libs/framework/app.kl" as fw;
+import "libs/glfw/glfw.kl" as glfw;
+import "libs/glfw/constants.kl" as glc;
+import "libs/glfw/input.kl" as ginput;
+import "libs/render/math.kl" as rmath;
+import "packages/std/fs/file_util.kl" as fu;
+
+import "apps/hex/hex_view.kl" as hv;
+
+extern int strlen(string s);
+extern int printf(string fmt, ...);
+extern void* malloc(int size);
+
+// Convert int to 10-char decimal string (right-aligned)
+fn string int_to_str(int n) {
+    char* buf = (char*)malloc(16);
+    if (n == 0) {
+        buf[0] = (char)48;
+        buf[1] = (char)0;
+        return (string)buf;
+    }
+    char* digits = (char*)malloc(12);
+    int di = 0;
+    int v = n;
+    if (v < 0) { v = -v; }
+    while (v > 0) {
+        digits[di] = (char)(48 + v % 10);
+        v = v / 10;
+        di = di + 1;
+    }
+    int bi = 0;
+    int dj = di - 1;
+    while (dj >= 0) { buf[bi] = digits[dj]; bi = bi + 1; dj = dj - 1; }
+    buf[bi] = (char)0;
+    free(digits);
+    return (string)buf;
+}
+
+// Simple path input buffer
+char* g_path_buf;
+int   g_path_len = 0;
+
+fn void append_path_char(int ch) {
+    if (g_path_len < 510) {
+        g_path_buf[g_path_len] = (char)ch;
+        g_path_len = g_path_len + 1;
+        g_path_buf[g_path_len] = (char)0;
+    }
+}
+
+fn void poll_path_typing(void* window, bool shift) {
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_BACKSPACE()) == glc.GLFW_PRESS()) {
+        if (g_path_len > 0) {
+            g_path_len = g_path_len - 1;
+            g_path_buf[g_path_len] = (char)0;
+        }
+        return;
+    }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_PERIOD()) == glc.GLFW_PRESS()) { append_path_char(46); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_SLASH()) == glc.GLFW_PRESS()) { append_path_char(47); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_MINUS()) == glc.GLFW_PRESS()) { append_path_char(45); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_SPACE()) == glc.GLFW_PRESS()) { append_path_char(32); return; }
+}
+
+fn void run_hex_editor() {
+    fw.AppConfig config;
+    config.init("Kale Hex", 1200, 750);
+    config.font_size = 14.0f;
+
+    fw.App app;
+    int ok = app.init(config);
+    if (ok == 0) {
+        printf("Fatal: could not open Hex window\n");
+        return;
+    }
+
+    hv.HexView hex;
+    hex.init();
+
+    // Initialize path buffer
+    g_path_buf = (char*)malloc(512);
+    g_path_len = 0;
+    g_path_buf[0] = (char)0;
+
+    char* info_hpair = (char*)malloc(3);
+    char* info_achar = (char*)malloc(2);
+
+    bool file_loaded = false;
+    int  file_size   = 0;
+    char* file_data  = (char*)0;
+
+    int key_delay = 0;
+
+    while (app.begin_frame() != 0) {
+        float cur_w = (float)app.width;
+        float cur_h = (float)app.height;
+        float hdr_h  = 38.0f;
+        float info_h = 26.0f;
+        float view_h = cur_h - hdr_h - info_h;
+
+        bool shift_down = (ginput.glfwGetKey(app.window, glc.GLFW_KEY_LEFT_SHIFT()) == glc.GLFW_PRESS());
+
+        // ── Header ────────────────────────────────────────────────────
+        rmath.Color hdr_bg  = rmath.color_rgba(0.14f, 0.15f, 0.19f, 1.0f);
+        rmath.Color hdr_fg  = rmath.color_rgba(0.92f, 0.94f, 0.96f, 1.0f);
+        rmath.Color acc_c   = rmath.color_rgba(0.80f, 0.55f, 0.20f, 1.0f);
+        rmath.Color hint_c  = rmath.color_rgba(0.40f, 0.43f, 0.50f, 1.0f);
+        rmath.Color muted_c = rmath.color_rgba(0.50f, 0.53f, 0.60f, 1.0f);
+        rmath.Color in_bg   = rmath.color_rgba(0.11f, 0.12f, 0.14f, 1.0f);
+        rmath.Color in_brd  = rmath.color_rgba(0.25f, 0.55f, 0.95f, 1.0f);
+        rmath.Color btn_bg  = rmath.color_rgba(0.80f, 0.55f, 0.20f, 1.0f);
+        rmath.Color btn_fg  = rmath.color_rgba(1.0f, 1.0f, 1.0f, 1.0f);
+
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, 0.0f, cur_w, hdr_h, hdr_bg);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, hdr_h - 2.0f, cur_w, 2.0f, acc_c);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Hex", 12.0f, 9.0f, hdr_fg);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "File:", 55.0f, 9.0f, muted_c);
+
+        // Path input
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 95.0f, 6.0f, 380.0f, 26.0f, in_brd);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 96.0f, 7.0f, 378.0f, 24.0f, in_bg);
+        if (g_path_len == 0) {
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "path/to/file.bin", 102.0f, 12.0f, hint_c);
+        } else {
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, (string)g_path_buf, 102.0f, 12.0f, hdr_fg);
+        }
+
+        // Open button
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 483.0f, 6.0f, 56.0f, 26.0f, btn_bg);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Open", 491.0f, 12.0f, btn_fg);
+
+        // File size info
+        if (file_loaded) {
+            string sz = int_to_str(file_size);
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, sz, 555.0f, 12.0f, acc_c);
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, " bytes", 575.0f, 12.0f, muted_c);
+        }
+
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "[↑↓←→] Navigate  [PgUp/Dn] Scroll  [ESC] Quit", cur_w - 430.0f, 10.0f, hint_c);
+
+        // ── Hex view ──────────────────────────────────────────────────
+        hex.render(&app.ui_ctx.renderer, &app.gl_ctx, &app.ui_ctx.font, 0.0f, hdr_h, cur_w, view_h);
+
+        // ── Info strip (selected byte details) ────────────────────────
+        float info_y = hdr_h + view_h;
+        rmath.Color info_bg = rmath.color_rgba(0.16f, 0.17f, 0.20f, 1.0f);
+        rmath.Color info_fg = rmath.color_rgba(0.55f, 0.58f, 0.65f, 1.0f);
+        rmath.Color val_fg  = rmath.color_rgba(0.92f, 0.94f, 0.96f, 1.0f);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, info_y, cur_w, info_h, info_bg);
+
+        if (file_loaded && hex.selected_byte < hex.data_size) {
+            int bval = (int)hex.data[hex.selected_byte] & 0xFF;
+
+            // Offset
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Offset:", 8.0f, info_y + 5.0f, info_fg);
+            string off_s = int_to_str(hex.selected_byte);
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, off_s, 60.0f, info_y + 5.0f, val_fg);
+
+            // Hex value
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Hex:", 130.0f, info_y + 5.0f, info_fg);
+            info_hpair[0] = hv.nibble_to_char(bval >> 4);
+            info_hpair[1] = hv.nibble_to_char(bval & 0xF);
+            info_hpair[2] = (char)0;
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, (string)info_hpair, 160.0f, info_y + 5.0f, val_fg);
+
+            // Decimal
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Dec:", 200.0f, info_y + 5.0f, info_fg);
+            string dec_s = int_to_str(bval);
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, dec_s, 230.0f, info_y + 5.0f, val_fg);
+
+            // ASCII
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Chr:", 280.0f, info_y + 5.0f, info_fg);
+            if (bval >= 32 && bval < 127) { info_achar[0] = (char)bval; } else { info_achar[0] = (char)46; }
+            info_achar[1] = (char)0;
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, (string)info_achar, 310.0f, info_y + 5.0f, val_fg);
+        } else {
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Open a file to inspect bytes.", 8.0f, info_y + 5.0f, info_fg);
+        }
+
+        // ── Input ──────────────────────────────────────────────────────
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_ESCAPE()) == glc.GLFW_PRESS()) {
+            app.close();
+        }
+
+        // Mouse: Open button
+        if (app.ui_ctx.mouse_pressed != 0) {
+            float mx = app.ui_ctx.mouse_x;
+            float my = app.ui_ctx.mouse_y;
+            if (mx >= 483.0f && mx <= 539.0f && my >= 6.0f && my <= 32.0f) {
+                // Load file
+                string path_str = (string)g_path_buf;
+                if (g_path_len > 0 && fu.exists(path_str)) {
+                    if (file_data != (char*)0) { free(file_data); }
+                    string content = fu.read_to_string(path_str);
+                    int clen = strlen(content);
+                    file_data = (char*)malloc(clen + 1);
+                    char* csrc = (char*)content;
+                    int ci = 0;
+                    while (ci < clen) { file_data[ci] = csrc[ci]; ci = ci + 1; }
+                    file_data[clen] = (char)0;
+                    file_size = clen;
+                    hex.load_data(file_data, file_size, false);
+                    file_loaded = true;
+                }
+            }
+            // Click in hex view: select byte
+            if (my >= hdr_h && my < hdr_h + view_h && file_loaded) {
+                hex.select_at(mx, my, 0.0f, hdr_h);
+            }
+        }
+
+        // Enter: load file
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_ENTER()) == glc.GLFW_PRESS() && key_delay == 0 && g_path_len > 0) {
+            string path_str = (string)g_path_buf;
+            if (fu.exists(path_str)) {
+                if (file_data != (char*)0) { free(file_data); }
+                string content = fu.read_to_string(path_str);
+                int clen = strlen(content);
+                file_data = (char*)malloc(clen + 1);
+                char* csrc = (char*)content;
+                int ci = 0;
+                while (ci < clen) { file_data[ci] = csrc[ci]; ci = ci + 1; }
+                file_data[clen] = (char)0;
+                file_size = clen;
+                hex.load_data(file_data, file_size, false);
+                file_loaded = true;
+            }
+            key_delay = 20;
+        }
+
+        // Navigation arrows
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_RIGHT()) == glc.GLFW_PRESS() && key_delay == 0) {
+            if (hex.selected_byte < hex.data_size - 1) { hex.selected_byte++; }
+            key_delay = 6;
+        }
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_LEFT()) == glc.GLFW_PRESS() && key_delay == 0) {
+            if (hex.selected_byte > 0) { hex.selected_byte--; }
+            key_delay = 6;
+        }
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_DOWN()) == glc.GLFW_PRESS() && key_delay == 0) {
+            int nidx = hex.selected_byte + hv.BYTES_PER_ROW();
+            if (nidx < hex.data_size) { hex.selected_byte = nidx; }
+            key_delay = 6;
+        }
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_UP()) == glc.GLFW_PRESS() && key_delay == 0) {
+            int nidx = hex.selected_byte - hv.BYTES_PER_ROW();
+            if (nidx >= 0) { hex.selected_byte = nidx; }
+            key_delay = 6;
+        }
+
+        // Scroll
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_PAGE_DOWN()) == glc.GLFW_PRESS() && key_delay == 0) {
+            hex.scroll(300.0f);
+            key_delay = 8;
+        }
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_PAGE_UP()) == glc.GLFW_PRESS() && key_delay == 0) {
+            hex.scroll(-300.0f);
+            key_delay = 8;
+        }
+
+        // Path typing
+        if (key_delay == 0) {
+            poll_path_typing(app.window, shift_down);
+            key_delay = 6;
+        }
+
+        if (key_delay > 0) { key_delay = key_delay - 1; }
+        app.end_frame();
+    }
+
+    hex.destroy();
+    if (file_data != (char*)0) { free(file_data); }
+    free(info_hpair);
+    free(info_achar);
+    free(g_path_buf);
+    app.close();
+}
+
+fn int main_entry() {
+    run_hex_editor();
+    return 0;
+}
+
+main_entry();

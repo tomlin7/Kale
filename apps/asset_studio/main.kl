@@ -1,0 +1,242 @@
+// apps/asset_studio/main.kl
+// Kale Asset Studio — GPU Pixel-Art & Sprite Editor
+//
+// Layout:
+//   ┌──────────┬──────────────────────────────────┬───────────────┐
+//   │ Toolbox  │  Pixel Canvas (64×64, zoomable)  │ Color Palette │
+//   │ Draw     │                                  │ 16-color grid │
+//   │ Erase    │                                  │               │
+//   │ Fill     │                                  │               │
+//   │ Zoom+/-  │                                  │               │
+//   └──────────┴──────────────────────────────────┴───────────────┘
+//
+// Mouse: hold LMB on canvas to draw/erase/fill
+// Keys: D=draw, E=erase, +=zoom in, -=zoom out, ESC=quit
+
+import "libs/framework/app.kl" as fw;
+import "libs/glfw/glfw.kl" as glfw;
+import "libs/glfw/constants.kl" as glc;
+import "libs/glfw/input.kl" as ginput;
+import "libs/render/math.kl" as rmath;
+
+import "apps/asset_studio/canvas_view.kl" as cv;
+
+extern int printf(string fmt, ...);
+
+fn void run_asset_studio() {
+    fw.AppConfig config;
+    config.init("Kale Asset Studio", 1100, 700);
+
+    fw.App app;
+    int ok = app.init(config);
+    if (ok == 0) {
+        printf("Fatal: could not open Asset Studio\n");
+        return;
+    }
+
+    cv.CanvasView canvas;
+    canvas.init();
+    // Start with a nice teal foreground color
+    canvas.fg_color = cv.pc_rgba(52, 211, 153, 255);
+
+    // 16-color palette (flat UI colors)
+    cv.PixelColor palette[16];
+    palette[0]  = cv.pc_rgba(239, 68,  68,  255); // red
+    palette[1]  = cv.pc_rgba(249, 115, 22,  255); // orange
+    palette[2]  = cv.pc_rgba(234, 179, 8,   255); // yellow
+    palette[3]  = cv.pc_rgba(34,  197, 94,  255); // green
+    palette[4]  = cv.pc_rgba(20,  184, 166, 255); // teal
+    palette[5]  = cv.pc_rgba(59,  130, 246, 255); // blue
+    palette[6]  = cv.pc_rgba(139, 92,  246, 255); // purple
+    palette[7]  = cv.pc_rgba(236, 72,  153, 255); // pink
+    palette[8]  = cv.pc_rgba(255, 255, 255, 255); // white
+    palette[9]  = cv.pc_rgba(209, 213, 219, 255); // light gray
+    palette[10] = cv.pc_rgba(107, 114, 128, 255); // gray
+    palette[11] = cv.pc_rgba(55,  65,  81,  255); // dark gray
+    palette[12] = cv.pc_rgba(17,  24,  39,  255); // near black
+    palette[13] = cv.pc_rgba(254, 243, 199, 255); // cream
+    palette[14] = cv.pc_rgba(187, 247, 208, 255); // mint
+    palette[15] = cv.pc_rgba(20,  22,  26,  255); // eraser / transparent
+
+    int key_delay = 0;
+
+    while (app.begin_frame() != 0) {
+        float cur_w = (float)app.width;
+        float cur_h = (float)app.height;
+        float hdr_h    = 34.0f;
+        float tools_w  = 80.0f;
+        float palette_w = 110.0f;
+        float canvas_x = tools_w;
+        float canvas_w = cur_w - tools_w - palette_w;
+        float canvas_y = hdr_h;
+        float canvas_h = cur_h - hdr_h;
+
+        bool shift_down = (ginput.glfwGetKey(app.window, glc.GLFW_KEY_LEFT_SHIFT()) == glc.GLFW_PRESS());
+
+        // ── Header ────────────────────────────────────────────────────
+        rmath.Color hdr_bg  = rmath.color_rgba(0.14f, 0.15f, 0.19f, 1.0f);
+        rmath.Color hdr_fg  = rmath.color_rgba(0.92f, 0.94f, 0.96f, 1.0f);
+        rmath.Color acc_c   = rmath.color_rgba(0.52f, 0.82f, 0.60f, 1.0f);
+        rmath.Color hint_c  = rmath.color_rgba(0.40f, 0.43f, 0.50f, 1.0f);
+        rmath.Color divider = rmath.color_rgba(0.22f, 0.23f, 0.27f, 1.0f);
+
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, 0.0f, cur_w, hdr_h, hdr_bg);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, hdr_h - 2.0f, cur_w, 2.0f, acc_c);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Asset Studio", 12.0f, 9.0f, hdr_fg);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "64×64 pixels  [D] Draw  [E] Erase  [+/-] Zoom  [ESC] Quit", cur_w - 480.0f, 10.0f, hint_c);
+
+        // ── Left toolbox ──────────────────────────────────────────────
+        rmath.Color tool_bg  = rmath.color_rgba(0.16f, 0.17f, 0.20f, 1.0f);
+        rmath.Color tool_sel = rmath.color_rgba(0.20f, 0.50f, 0.30f, 1.0f);
+        rmath.Color tool_fg  = rmath.color_rgba(0.88f, 0.90f, 0.94f, 1.0f);
+        rmath.Color tool_mut = rmath.color_rgba(0.55f, 0.58f, 0.65f, 1.0f);
+
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, hdr_h, tools_w, canvas_h, tool_bg);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, tools_w - 1.0f, hdr_h, 1.0f, canvas_h, divider);
+
+        // Tool buttons: Draw, Erase, Fill
+        string tool_names[3];
+        tool_names[0] = "Draw";
+        tool_names[1] = "Erase";
+        tool_names[2] = "Fill";
+        int ti = 0;
+        while (ti < 3) {
+            float ty = hdr_h + 12.0f + (float)(ti * 42);
+            rmath.Color tbg = tool_bg;
+            if (canvas.tool == ti) { tbg = tool_sel; }
+            app.ui_ctx.renderer.push_quad(&app.gl_ctx, 8.0f, ty, tools_w - 16.0f, 34.0f, tbg);
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, tool_names[ti], 14.0f, ty + 9.0f, tool_fg);
+            ti = ti + 1;
+        }
+
+        // Zoom buttons
+        float zoom_y = hdr_h + 150.0f;
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 8.0f, zoom_y, 30.0f, 28.0f, tool_bg);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "+", 16.0f, zoom_y + 6.0f, acc_c);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 42.0f, zoom_y, 30.0f, 28.0f, tool_bg);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "-", 50.0f, zoom_y + 6.0f, acc_c);
+
+        // Current foreground color swatch
+        float sw_y = hdr_h + 200.0f;
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Color:", 8.0f, sw_y - 14.0f, tool_mut);
+        rmath.Color fgc = cv.pc_to_render_color(canvas.fg_color);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 8.0f, sw_y, 60.0f, 28.0f, fgc);
+
+        // ── Pixel canvas ──────────────────────────────────────────────
+        canvas.render(&app.ui_ctx.renderer, &app.gl_ctx, &app.ui_ctx.font, canvas_x, canvas_y, canvas_w, canvas_h);
+
+        // ── Right palette ─────────────────────────────────────────────
+        float pal_x = cur_w - palette_w;
+        rmath.Color pal_bg = rmath.color_rgba(0.16f, 0.17f, 0.20f, 1.0f);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, pal_x, hdr_h, palette_w, canvas_h, pal_bg);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, pal_x, hdr_h, 1.0f, canvas_h, divider);
+
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Palette", pal_x + 8.0f, hdr_h + 8.0f, tool_mut);
+
+        float pc_sz = 22.0f;
+        float pc_gap = 4.0f;
+        int pi = 0;
+        while (pi < 16) {
+            int pcol = pi % 4;
+            int prow = pi / 4;
+            float px = pal_x + 8.0f + (float)pcol * (pc_sz + pc_gap);
+            float py = hdr_h + 32.0f + (float)prow * (pc_sz + pc_gap);
+            rmath.Color pcrc = cv.pc_to_render_color(palette[pi]);
+            app.ui_ctx.renderer.push_quad(&app.gl_ctx, px, py, pc_sz, pc_sz, pcrc);
+            pi = pi + 1;
+        }
+
+        // ── Input ──────────────────────────────────────────────────────
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_ESCAPE()) == glc.GLFW_PRESS()) {
+            app.close();
+        }
+
+        // Tool keys
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_D()) == glc.GLFW_PRESS() && key_delay == 0) {
+            canvas.tool = 0; key_delay = 12;
+        }
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_E()) == glc.GLFW_PRESS() && key_delay == 0) {
+            canvas.tool = 1; key_delay = 12;
+        }
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_F()) == glc.GLFW_PRESS() && key_delay == 0) {
+            canvas.tool = 2; key_delay = 12;
+        }
+
+        // Zoom
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_EQUAL()) == glc.GLFW_PRESS() && key_delay == 0) {
+            canvas.zoom = canvas.zoom + 2.0f;
+            if (canvas.zoom > 32.0f) { canvas.zoom = 32.0f; }
+            key_delay = 10;
+        }
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_MINUS()) == glc.GLFW_PRESS() && key_delay == 0) {
+            canvas.zoom = canvas.zoom - 2.0f;
+            if (canvas.zoom < 2.0f) { canvas.zoom = 2.0f; }
+            key_delay = 10;
+        }
+
+        // Mouse paint on canvas (hold LMB)
+        if (app.ui_ctx.mouse_down != 0) {
+            float mx = app.ui_ctx.mouse_x;
+            float my = app.ui_ctx.mouse_y;
+
+            // Click palette → change color
+            if (mx >= pal_x + 8.0f && my >= hdr_h + 32.0f) {
+                int pi2 = 0;
+                while (pi2 < 16) {
+                    int pcol = pi2 % 4;
+                    int prow = pi2 / 4;
+                    float px2 = pal_x + 8.0f + (float)pcol * (pc_sz + pc_gap);
+                    float py2 = hdr_h + 32.0f + (float)prow * (pc_sz + pc_gap);
+                    if (mx >= px2 && mx < px2 + pc_sz && my >= py2 && my < py2 + pc_sz) {
+                        canvas.fg_color = palette[pi2];
+                        canvas.tool = 0; // switch to draw tool on color pick
+                        break;
+                    }
+                    pi2 = pi2 + 1;
+                }
+            }
+
+            // Click tool buttons
+            if (mx < tools_w && my > hdr_h) {
+                int ti2 = 0;
+                while (ti2 < 3) {
+                    float ty2 = hdr_h + 12.0f + (float)(ti2 * 42);
+                    if (my >= ty2 && my < ty2 + 34.0f) {
+                        canvas.tool = ti2;
+                        break;
+                    }
+                    ti2 = ti2 + 1;
+                }
+                // Zoom buttons
+                float zoom_y2 = hdr_h + 150.0f;
+                if (my >= zoom_y2 && my < zoom_y2 + 28.0f) {
+                    if (mx < 42.0f) {
+                        canvas.zoom = canvas.zoom + 2.0f;
+                        if (canvas.zoom > 32.0f) { canvas.zoom = 32.0f; }
+                    } else {
+                        canvas.zoom = canvas.zoom - 2.0f;
+                        if (canvas.zoom < 2.0f) { canvas.zoom = 2.0f; }
+                    }
+                }
+            }
+
+            // Paint on canvas area
+            if (mx >= canvas_x && mx < canvas_x + canvas_w && my >= canvas_y && my < canvas_y + canvas_h) {
+                canvas.paint_at_screen(mx, my, canvas_x, canvas_y);
+            }
+        }
+
+        if (key_delay > 0) { key_delay = key_delay - 1; }
+        app.end_frame();
+    }
+
+    canvas.destroy();
+    app.close();
+}
+
+fn int main_entry() {
+    run_asset_studio();
+    return 0;
+}
+
+main_entry();

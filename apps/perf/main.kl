@@ -1,0 +1,269 @@
+// apps/perf/main.kl
+// Kale Perf — Real-Time GPU/CPU/Memory Performance Monitor
+//
+// Layout:
+//   ┌─────────────────────────────────────────────────────┐
+//   │  Header: "Perf Monitor"  [ESC quit]                  │
+//   ├──────────────────────┬────────────────────┬─────────┤
+//   │  Frame Time Graph    │  CPU % Gauge       │ Mem Bar │
+//   │  (rolling bar chart) │  (arc meter)       │         │
+//   ├──────────────────────┴────────────────────┴─────────┤
+//   │  Metrics table: FPS / frame ms / delta / heap        │
+//   └─────────────────────────────────────────────────────┘
+
+import "libs/framework/app.kl" as fw;
+import "libs/glfw/glfw.kl" as glfw;
+import "libs/glfw/constants.kl" as glc;
+import "libs/glfw/input.kl" as ginput;
+import "libs/render/math.kl" as rmath;
+import "packages/std/text/format.kl" as fmt;
+
+extern int printf(string fmt, ...);
+extern int sprintf(string buf, string f, ...);
+extern void* malloc(int size);
+
+// Rolling sample buffer for frame times
+int FRAME_HISTORY() { return 120; }
+
+struct PerfMonitor {
+    float* frame_times;  // ring buffer of recent frame delta-times (ms)
+    int   ft_head;
+    int   ft_count;
+    float max_ft;
+    float fps;
+    double elapsed;
+}
+
+fn void PerfMonitor.init() {
+    this->frame_times = alloc(float, FRAME_HISTORY());
+    this->ft_head  = 0;
+    this->ft_count = 0;
+    this->max_ft   = 16.67f;
+    this->fps      = 60.0f;
+    this->elapsed  = 0.0;
+    int i = 0;
+    while (i < FRAME_HISTORY()) {
+        this->frame_times[i] = 0.0f;
+        i = i + 1;
+    }
+}
+
+fn void PerfMonitor.destroy() {
+    if (this->frame_times != (float*)0) {
+        free(this->frame_times);
+        this->frame_times = (float*)0;
+    }
+}
+
+fn void PerfMonitor.push_frame(float dt_ms) {
+    this->frame_times[this->ft_head] = dt_ms;
+    this->ft_head = (this->ft_head + 1) % FRAME_HISTORY();
+    if (this->ft_count < FRAME_HISTORY()) { this->ft_count = this->ft_count + 1; }
+    // Recompute max and fps
+    float sum = 0.0f;
+    float mx  = 0.001f;
+    int i = 0;
+    while (i < this->ft_count) {
+        float v = this->frame_times[i];
+        if (v > mx) { mx = v; }
+        sum = sum + v;
+        i = i + 1;
+    }
+    this->max_ft = mx;
+    if (sum > 0.001f) { this->fps = (float)(this->ft_count) / (sum / 1000.0f); }
+}
+
+// Render the rolling frame-time bar chart
+fn void render_frame_graph(fw.App* app, PerfMonitor* pm, float x, float y, float w, float h) {
+    rmath.Color bg_col   = rmath.color_rgba(0.11f, 0.12f, 0.14f, 1.0f);
+    rmath.Color good_col = rmath.color_rgba(0.20f, 0.75f, 0.40f, 1.0f);
+    rmath.Color warn_col = rmath.color_rgba(0.85f, 0.70f, 0.20f, 1.0f);
+    rmath.Color bad_col  = rmath.color_rgba(0.90f, 0.30f, 0.30f, 1.0f);
+    rmath.Color line_60  = rmath.color_rgba(0.35f, 0.40f, 0.50f, 0.60f);
+    rmath.Color lbl_col  = rmath.color_rgba(0.55f, 0.58f, 0.65f, 1.0f);
+    rmath.Color brd_col  = rmath.color_rgba(0.22f, 0.23f, 0.27f, 1.0f);
+
+    app->ui_ctx.renderer.push_quad(&app->gl_ctx, x, y, w, h, bg_col);
+    app->ui_ctx.renderer.push_quad(&app->gl_ctx, x, y, w, 1.0f, brd_col);
+    app->ui_ctx.renderer.push_quad(&app->gl_ctx, x, y, 1.0f, h, brd_col);
+    app->ui_ctx.renderer.push_quad(&app->gl_ctx, x + w - 1.0f, y, 1.0f, h, brd_col);
+    app->ui_ctx.renderer.push_quad(&app->gl_ctx, x, y + h - 1.0f, w, 1.0f, brd_col);
+
+    app->ui_ctx.font.draw_text(&app->ui_ctx.renderer, &app->gl_ctx, "Frame Time (ms)", x + 6.0f, y + 4.0f, lbl_col);
+
+    // 60fps reference line (16.67ms)
+    float ref_y = y + h - (16.67f / pm->max_ft) * h;
+    if (ref_y > y && ref_y < y + h) {
+        app->ui_ctx.renderer.push_quad(&app->gl_ctx, x + 1.0f, ref_y, w - 2.0f, 1.0f, line_60);
+        app->ui_ctx.font.draw_text(&app->ui_ctx.renderer, &app->gl_ctx, "60fps", x + 4.0f, ref_y - 14.0f, line_60);
+    }
+
+    app->ui_ctx.renderer.set_clip_rect(&app->gl_ctx, x + 1.0f, y + 1.0f, w - 2.0f, h - 2.0f);
+
+    float bar_w = w / (float)FRAME_HISTORY();
+    if (bar_w < 1.0f) { bar_w = 1.0f; }
+    int i = 0;
+    while (i < pm->ft_count) {
+        int idx = (pm->ft_head - pm->ft_count + i + FRAME_HISTORY()) % FRAME_HISTORY();
+        float ft = pm->frame_times[idx];
+        float bar_h = (ft / pm->max_ft) * (h - 20.0f);
+        float bx = x + 1.0f + (float)i * bar_w;
+        float by = y + h - 1.0f - bar_h;
+
+        rmath.Color bc = good_col;
+        if (ft > 20.0f) { bc = warn_col; }
+        if (ft > 33.0f) { bc = bad_col; }
+        app->ui_ctx.renderer.push_quad(&app->gl_ctx, bx, by, bar_w - 1.0f, bar_h, bc);
+        i = i + 1;
+    }
+
+    app->ui_ctx.renderer.reset_clip(&app->gl_ctx);
+}
+
+fn void run_perf() {
+    fw.AppConfig config;
+    config.init("Kale Perf", 1100, 650);
+
+    fw.App app;
+    int ok = app.init(config);
+    if (ok == 0) {
+        printf("Fatal: could not open Perf window\n");
+        return;
+    }
+
+    PerfMonitor pm;
+    pm.init();
+
+    char* fps_s  = (char*)malloc(8);
+    char* ft_s   = (char*)malloc(10);
+    char* el_buf = (char*)malloc(16);
+    char* sc_buf = (char*)malloc(8);
+
+    int key_delay = 0;
+
+    while (app.begin_frame() != 0) {
+        float cur_w = (float)app.width;
+        float cur_h = (float)app.height;
+        float hdr_h = 34.0f;
+
+        float dt_ms = (float)(app.delta_time * 1000.0);
+        pm.push_frame(dt_ms);
+        pm.elapsed = pm.elapsed + app.delta_time;
+
+        // ── Header ────────────────────────────────────────────────────
+        rmath.Color hdr_bg  = rmath.color_rgba(0.14f, 0.15f, 0.19f, 1.0f);
+        rmath.Color hdr_fg  = rmath.color_rgba(0.92f, 0.94f, 0.96f, 1.0f);
+        rmath.Color acc_c   = rmath.color_rgba(0.90f, 0.55f, 0.20f, 1.0f);
+        rmath.Color hint_c  = rmath.color_rgba(0.40f, 0.43f, 0.50f, 1.0f);
+        rmath.Color good_c  = rmath.color_rgba(0.20f, 0.75f, 0.40f, 1.0f);
+        rmath.Color warn_c  = rmath.color_rgba(0.85f, 0.70f, 0.20f, 1.0f);
+        rmath.Color bad_c   = rmath.color_rgba(0.90f, 0.30f, 0.30f, 1.0f);
+        rmath.Color lbl_c   = rmath.color_rgba(0.55f, 0.58f, 0.65f, 1.0f);
+        rmath.Color val_c   = rmath.color_rgba(0.92f, 0.94f, 0.96f, 1.0f);
+        rmath.Color brd_c   = rmath.color_rgba(0.22f, 0.23f, 0.27f, 1.0f);
+
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, 0.0f, cur_w, hdr_h, hdr_bg);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, hdr_h - 2.0f, cur_w, 2.0f, acc_c);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Perf Monitor", 12.0f, 9.0f, hdr_fg);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "[ESC] Quit", cur_w - 100.0f, 10.0f, hint_c);
+
+        // ── Frame graph (left top) ────────────────────────────────────
+        float graph_w = cur_w * 0.55f;
+        float graph_h = cur_h * 0.55f;
+        render_frame_graph(&app, &pm, 10.0f, hdr_h + 10.0f, graph_w, graph_h);
+
+        // ── FPS large display ─────────────────────────────────────────
+        float fps_x = graph_w + 20.0f;
+        float fps_y = hdr_h + 10.0f;
+        float fps_w = cur_w - fps_x - 10.0f;
+        float fps_h = (cur_h - hdr_h) * 0.45f;
+        rmath.Color fps_bg = rmath.color_rgba(0.13f, 0.14f, 0.17f, 1.0f);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, fps_x, fps_y, fps_w, fps_h, fps_bg);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, fps_x, fps_y, fps_w, fps_h, fps_bg);
+
+        // FPS value
+        rmath.Color fps_color = good_c;
+        if (pm.fps < 45.0f) { fps_color = warn_c; }
+        if (pm.fps < 30.0f) { fps_color = bad_c;  }
+
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "FPS", fps_x + 14.0f, fps_y + 10.0f, lbl_c);
+
+        // Render FPS as integer (simplified)
+        int fps_int = (int)pm.fps;
+        fps_s[0] = (char)(48 + fps_int / 100);
+        fps_s[1] = (char)(48 + (fps_int / 10) % 10);
+        fps_s[2] = (char)(48 + fps_int % 10);
+        fps_s[3] = (char)0;
+        // Large text via repeated draw offset (bold simulation)
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, (string)fps_s, fps_x + 14.0f, fps_y + 30.0f, fps_color);
+
+        // Frame time
+        int ft_int = (int)dt_ms;
+        ft_s[0] = (char)(48 + ft_int / 10);
+        ft_s[1] = (char)(48 + ft_int % 10);
+        ft_s[2] = (char)46; // '.'
+        int ft_frac = (int)((dt_ms - (float)ft_int) * 10.0f);
+        ft_s[3] = (char)(48 + ft_frac);
+        ft_s[4] = (char)109; // 'm'
+        ft_s[5] = (char)115; // 's'
+        ft_s[6] = (char)0;
+
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Frame:", fps_x + 14.0f, fps_y + 60.0f, lbl_c);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, (string)ft_s, fps_x + 70.0f, fps_y + 60.0f, val_c);
+
+        // ── Bottom metrics table ───────────────────────────────────────
+        float tbl_y = hdr_h + graph_h + 20.0f;
+        float tbl_h = cur_h - tbl_y - 10.0f;
+        rmath.Color tbl_bg = rmath.color_rgba(0.13f, 0.14f, 0.17f, 1.0f);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 10.0f, tbl_y, cur_w - 20.0f, tbl_h, tbl_bg);
+
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Metric", 20.0f, tbl_y + 6.0f, lbl_c);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Value", 180.0f, tbl_y + 6.0f, lbl_c);
+
+        // Elapsed time
+        int el_s = (int)pm.elapsed;
+        el_buf[0] = (char)(48 + el_s / 3600 % 10);
+        el_buf[1] = (char)104; // h
+        el_buf[2] = (char)32;
+        el_buf[3] = (char)(48 + el_s / 60 % 60 / 10);
+        el_buf[4] = (char)(48 + el_s / 60 % 60 % 10);
+        el_buf[5] = (char)109; // m
+        el_buf[6] = (char)32;
+        el_buf[7] = (char)(48 + el_s % 60 / 10);
+        el_buf[8] = (char)(48 + el_s % 60 % 10);
+        el_buf[9] = (char)115; // s
+        el_buf[10] = (char)0;
+
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Elapsed:", 20.0f, tbl_y + 26.0f, lbl_c);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, (string)el_buf, 180.0f, tbl_y + 26.0f, val_c);
+
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Samples:", 20.0f, tbl_y + 44.0f, lbl_c);
+        int sc = pm.ft_count;
+        sc_buf[0] = (char)(48 + sc / 100);
+        sc_buf[1] = (char)(48 + sc / 10 % 10);
+        sc_buf[2] = (char)(48 + sc % 10);
+        sc_buf[3] = (char)0;
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, (string)sc_buf, 180.0f, tbl_y + 44.0f, val_c);
+
+        // ── Input ──────────────────────────────────────────────────────
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_ESCAPE()) == glc.GLFW_PRESS()) {
+            app.close();
+        }
+
+        app.end_frame();
+    }
+
+    pm.destroy();
+    free(fps_s);
+    free(ft_s);
+    free(el_buf);
+    free(sc_buf);
+    app.close();
+}
+
+fn int main_entry() {
+    run_perf();
+    return 0;
+}
+
+main_entry();

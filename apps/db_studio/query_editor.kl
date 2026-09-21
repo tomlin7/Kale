@@ -1,0 +1,108 @@
+// apps/db_studio/query_editor.kl
+// SQL Query Editor — multi-line input with Run button
+
+import "libs/render/batch.kl" as rbatch;
+import "libs/render/font.kl" as rfont;
+import "libs/render/math.kl" as rmath;
+import "libs/gl/loader.kl" as glloader;
+
+extern int strlen(string s);
+extern void* malloc(int size);
+
+int QE_MAX_LEN() { return 2048; }
+
+struct QueryEditor {
+    char* buf;
+    int   len;
+    int   capacity;
+    bool  is_focused;
+    bool  run_requested;
+}
+
+fn void QueryEditor.init() {
+    this->capacity     = QE_MAX_LEN();
+    this->len          = 0;
+    this->buf          = (char*)malloc(this->capacity + 1);
+    this->buf[0]       = (char)0;
+    this->is_focused   = true;
+    this->run_requested = false;
+}
+
+fn void QueryEditor.destroy() {
+    if (this->capacity > 0) {
+        free(this->buf);
+        this->capacity = 0;
+    }
+}
+
+fn string QueryEditor.text() {
+    return (string)this->buf;
+}
+
+fn void QueryEditor.set_text(string sql) {
+    int slen = strlen(sql);
+    if (slen > this->capacity) { slen = this->capacity; }
+    char* src = (char*)sql;
+    int k = 0;
+    while (k < slen) { this->buf[k] = src[k]; k = k + 1; }
+    this->buf[slen] = (char)0;
+    this->len = slen;
+}
+
+fn void QueryEditor.append_char(string ch) {
+    if (this->len >= this->capacity) { return; }
+    if (strlen(ch) == 0) { return; }
+    char* src = (char*)ch;
+    this->buf[this->len] = src[0];
+    this->len = this->len + 1;
+    this->buf[this->len] = (char)0;
+}
+
+fn void QueryEditor.backspace() {
+    if (this->len > 0) {
+        this->len = this->len - 1;
+        this->buf[this->len] = (char)0;
+    }
+}
+
+fn void QueryEditor.clear() {
+    this->len    = 0;
+    this->buf[0] = (char)0;
+}
+
+fn void QueryEditor.render(rbatch.BatchRenderer* r, glloader.GLContext* gl_ctx, rfont.FontAtlas* font,
+                            float x, float y, float w, float h) {
+    rmath.Color bg_col     = rmath.color_rgba(0.13f, 0.14f, 0.16f, 1.0f);
+    rmath.Color border_col = rmath.color_rgba(0.25f, 0.55f, 0.95f, 1.0f);
+    rmath.Color muted_brd  = rmath.color_rgba(0.25f, 0.27f, 0.32f, 1.0f);
+    rmath.Color text_col   = rmath.color_rgba(0.92f, 0.94f, 0.96f, 1.0f);
+    rmath.Color cursor_col = rmath.color_rgba(0.30f, 0.65f, 1.0f, 1.0f);
+    rmath.Color hint_col   = rmath.color_rgba(0.40f, 0.43f, 0.50f, 1.0f);
+    rmath.Color btn_col    = rmath.color_rgba(0.18f, 0.45f, 0.75f, 1.0f);
+    rmath.Color btn_txt    = rmath.color_rgba(1.0f, 1.0f, 1.0f, 1.0f);
+
+    // Outer border
+    rmath.Color brd = muted_brd;
+    if (this->is_focused) { brd = border_col; }
+    r->push_quad(gl_ctx, x, y, w, h, brd);
+    r->push_quad(gl_ctx, x + 1.0f, y + 1.0f, w - 2.0f, h - 2.0f, bg_col);
+
+    // Placeholder hint if empty
+    if (this->len == 0) {
+        font->draw_text(r, gl_ctx, "SELECT * FROM ...", x + 8.0f, y + 8.0f, hint_col);
+    } else {
+        // Render text (single line display for now; text wraps visually)
+        float text_w_avail = w - 16.0f;
+        r->set_clip_rect(gl_ctx, x + 2.0f, y + 2.0f, text_w_avail, h - 4.0f);
+        font->draw_text(r, gl_ctx, (string)this->buf, x + 8.0f, y + 8.0f, text_col);
+        r->reset_clip(gl_ctx);
+    }
+
+    // Blinking cursor
+    if (this->is_focused) {
+        float tw = font->measure_text((string)this->buf);
+        float cx = x + 8.0f + tw;
+        if (cx > x + w - 18.0f) { cx = x + w - 18.0f; }
+        r->push_quad(gl_ctx, cx, y + 6.0f, 2.0f, h - 12.0f, cursor_col);
+    }
+}

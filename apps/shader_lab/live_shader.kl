@@ -1,0 +1,162 @@
+// apps/shader_lab/live_shader.kl
+// Live GLSL Shader Preview — compiles user fragment shader in real time
+// and renders it over a fullscreen quad with time + mouse uniforms
+
+import "libs/gl/gl.kl" as gl;
+import "libs/gl/loader.kl" as glloader;
+import "libs/gl/constants.kl" as kgl;
+
+extern int strlen(string s);
+extern void* malloc(int size);
+extern int printf(string fmt, ...);
+
+// Default fragment shader — Shadertoy-compatible minimal template
+string DEFAULT_FRAG_SRC() {
+    return "void main() { gl_FragColor = vec4(0.1, 0.4, 0.8, 1.0); }";
+}
+
+// Standard vertex shader — positions a fullscreen quad
+string FULLSCREEN_VERT_SRC() {
+    return
+        "attribute vec2 a_pos;"
+        "varying vec2 v_uv;"
+        "void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }";
+}
+
+struct LiveShader {
+    int  program;       // compiled program handle, 0 = none
+    int  vao;
+    int  vbo;
+    bool is_valid;
+
+    // Uniform locations
+    int u_time;
+    int u_resolution;
+    int u_mouse;
+
+    // Error message from last compile attempt
+    string last_error;
+}
+
+fn void LiveShader.init(glloader.GLContext* gl_ctx) {
+    this->program   = 0;
+    this->vao       = 0;
+    this->vbo       = 0;
+    this->is_valid  = false;
+    this->last_error = "";
+    this->u_time       = -1;
+    this->u_resolution = -1;
+    this->u_mouse      = -1;
+
+    // Create fullscreen quad VAO/VBO: two triangles covering NDC [-1,+1]
+    float verts[12];
+    verts[0]  = -1.0f; verts[1]  = -1.0f;
+    verts[2]  =  1.0f; verts[3]  = -1.0f;
+    verts[4]  =  1.0f; verts[5]  =  1.0f;
+    verts[6]  = -1.0f; verts[7]  = -1.0f;
+    verts[8]  =  1.0f; verts[9]  =  1.0f;
+    verts[10] = -1.0f; verts[11] =  1.0f;
+
+    int va = 0;
+    int vb = 0;
+    gl_ctx->GenVertexArrays(1, &va);
+    gl_ctx->GenBuffers(1, &vb);
+    this->vao = va;
+    this->vbo = vb;
+
+    gl_ctx->BindVertexArray(va);
+    gl_ctx->BindBuffer(kgl.GL_ARRAY_BUFFER(), vb);
+    gl_ctx->BufferData(kgl.GL_ARRAY_BUFFER(), 48, (void*)verts, kgl.GL_STATIC_DRAW());
+    gl_ctx->EnableVertexAttribArray(0);
+    gl_ctx->VertexAttribPointer(0, 2, kgl.GL_FLOAT(), 0, 8, (void*)0);
+    gl_ctx->BindVertexArray(0);
+}
+
+fn void LiveShader.destroy(glloader.GLContext* gl_ctx) {
+    if (this->program != 0) {
+        gl_ctx->DeleteProgram(this->program);
+        this->program = 0;
+    }
+}
+
+// Compile a new fragment shader source and link it with the fullscreen vert shader
+// Returns true on success; false on error (check last_error)
+fn bool LiveShader.compile(glloader.GLContext* gl_ctx, string frag_src) {
+    // Compile vertex shader
+    int vert = gl_ctx->CreateShader(kgl.GL_VERTEX_SHADER());
+    string vert_src = FULLSCREEN_VERT_SRC();
+    gl_ctx->ShaderSource(vert, 1, &vert_src, (void*)0);
+    gl_ctx->CompileShader(vert);
+
+    int vert_ok = 0;
+    gl_ctx->GetShaderiv(vert, kgl.GL_COMPILE_STATUS(), &vert_ok);
+    if (vert_ok == 0) {
+        gl_ctx->DeleteShader(vert);
+        this->last_error = "Vertex shader error.";
+        this->is_valid   = false;
+        return false;
+    }
+
+    // Compile fragment shader
+    int frag = gl_ctx->CreateShader(kgl.GL_FRAGMENT_SHADER());
+    gl_ctx->ShaderSource(frag, 1, &frag_src, (void*)0);
+    gl_ctx->CompileShader(frag);
+
+    int frag_ok = 0;
+    gl_ctx->GetShaderiv(frag, kgl.GL_COMPILE_STATUS(), &frag_ok);
+    if (frag_ok == 0) {
+        gl_ctx->DeleteShader(vert);
+        gl_ctx->DeleteShader(frag);
+        this->last_error = "Fragment shader compile error.";
+        this->is_valid   = false;
+        return false;
+    }
+
+    // Link
+    int prog = gl_ctx->CreateProgram();
+    gl_ctx->AttachShader(prog, vert);
+    gl_ctx->AttachShader(prog, frag);
+    gl_ctx->LinkProgram(prog);
+
+    int link_ok = 0;
+    gl_ctx->GetProgramiv(prog, kgl.GL_LINK_STATUS(), &link_ok);
+    gl_ctx->DeleteShader(vert);
+    gl_ctx->DeleteShader(frag);
+
+    if (link_ok == 0) {
+        gl_ctx->DeleteProgram(prog);
+        this->last_error = "Shader link error.";
+        this->is_valid   = false;
+        return false;
+    }
+
+    // Replace previous program
+    if (this->program != 0) {
+        gl_ctx->DeleteProgram(this->program);
+    }
+    this->program   = prog;
+    this->is_valid  = true;
+    this->last_error = "OK";
+
+    // Cache uniform locations
+    this->u_time       = gl_ctx->GetUniformLocation(prog, "iTime");
+    this->u_resolution = gl_ctx->GetUniformLocation(prog, "iResolution");
+    this->u_mouse      = gl_ctx->GetUniformLocation(prog, "iMouse");
+
+    return true;
+}
+
+fn void LiveShader.render(glloader.GLContext* gl_ctx, float time, float w, float h, float mx, float my) {
+    if (!this->is_valid || this->program == 0) { return; }
+
+    gl_ctx->UseProgram(this->program);
+
+    if (this->u_time >= 0)       { gl_ctx->Uniform1f(this->u_time, time); }
+    if (this->u_resolution >= 0) { gl_ctx->Uniform2f(this->u_resolution, w, h); }
+    if (this->u_mouse >= 0)      { gl_ctx->Uniform2f(this->u_mouse, mx, my); }
+
+    gl_ctx->BindVertexArray(this->vao);
+    gl.glDrawArrays(kgl.GL_TRIANGLES(), 0, 6);
+    gl_ctx->BindVertexArray(0);
+    gl_ctx->UseProgram(0);
+}

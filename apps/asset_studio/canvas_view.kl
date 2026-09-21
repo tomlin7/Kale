@@ -1,0 +1,131 @@
+// apps/asset_studio/canvas_view.kl
+// Pixel Canvas — GPU-rendered editable pixel art canvas (up to 64×64 pixels)
+
+import "libs/render/batch.kl" as rbatch;
+import "libs/render/font.kl" as rfont;
+import "libs/render/math.kl" as rmath;
+import "libs/gl/loader.kl" as glloader;
+
+extern void* malloc(int size);
+
+int CANVAS_W() { return 64; }
+int CANVAS_H() { return 64; }
+int PIXEL_CELL_SZ() { return 10; }   // screen pixels per canvas pixel
+
+// RGBA color packed as int (0xRRGGBBAA)
+struct PixelColor {
+    int r; int g; int b; int a;
+}
+
+fn PixelColor pc_rgba(int r, int g, int b, int a) {
+    PixelColor c;
+    c.r = r; c.g = g; c.b = b; c.a = a;
+    return c;
+}
+
+fn rmath.Color pc_to_render_color(PixelColor pc) {
+    return rmath.color_rgba(
+        (float)pc.r / 255.0f,
+        (float)pc.g / 255.0f,
+        (float)pc.b / 255.0f,
+        (float)pc.a / 255.0f
+    );
+}
+
+struct CanvasView {
+    PixelColor* pixels;   // CANVAS_W * CANVAS_H
+    float zoom;           // pixels per cell (default 10)
+    float pan_x;
+    float pan_y;
+    PixelColor fg_color;
+    int   tool;           // 0=draw, 1=erase, 2=fill (bucket)
+}
+
+fn void CanvasView.init() {
+    int total = CANVAS_W() * CANVAS_H();
+    this->pixels  = alloc(PixelColor, total);
+    this->zoom    = (float)PIXEL_CELL_SZ();
+    this->pan_x   = 0.0f;
+    this->pan_y   = 0.0f;
+    this->fg_color = pc_rgba(255, 255, 255, 255);
+    this->tool     = 0;
+
+    // Fill canvas with transparent black
+    int i = 0;
+    while (i < total) {
+        this->pixels[i] = pc_rgba(20, 22, 26, 255);
+        i = i + 1;
+    }
+}
+
+fn void CanvasView.destroy() {
+    free(this->pixels);
+}
+
+fn void CanvasView.set_pixel(int cx, int cy, PixelColor col) {
+    if (cx < 0 || cx >= CANVAS_W() || cy < 0 || cy >= CANVAS_H()) { return; }
+    this->pixels[cy * CANVAS_W() + cx] = col;
+}
+
+fn PixelColor CanvasView.get_pixel(int cx, int cy) {
+    if (cx < 0 || cx >= CANVAS_W() || cy < 0 || cy >= CANVAS_H()) { return pc_rgba(0,0,0,0); }
+    return this->pixels[cy * CANVAS_W() + cx];
+}
+
+// Convert screen coords to canvas pixel coords
+fn void CanvasView.screen_to_canvas(float sx, float sy, float panel_x, float panel_y, int* out_cx, int* out_cy) {
+    float rx = sx - panel_x - this->pan_x;
+    float ry = sy - panel_y - this->pan_y;
+    *out_cx = (int)(rx / this->zoom);
+    *out_cy = (int)(ry / this->zoom);
+}
+
+fn void CanvasView.paint_at_screen(float sx, float sy, float panel_x, float panel_y) {
+    int cx = 0; int cy = 0;
+    this->screen_to_canvas(sx, sy, panel_x, panel_y, &cx, &cy);
+    if (this->tool == 1) {
+        this->set_pixel(cx, cy, pc_rgba(20, 22, 26, 255));
+    } else {
+        this->set_pixel(cx, cy, this->fg_color);
+    }
+}
+
+fn void CanvasView.render(rbatch.BatchRenderer* r, glloader.GLContext* gl_ctx, rfont.FontAtlas* font,
+                           float x, float y, float w, float h) {
+    rmath.Color bg_col   = rmath.color_rgba(0.12f, 0.13f, 0.16f, 1.0f);
+    rmath.Color grid_col = rmath.color_rgba(0.18f, 0.19f, 0.23f, 1.0f);
+    rmath.Color brd_col  = rmath.color_rgba(0.22f, 0.23f, 0.27f, 1.0f);
+
+    r->push_quad(gl_ctx, x, y, w, h, bg_col);
+    r->set_clip_rect(gl_ctx, x, y, w, h);
+
+    float cell = this->zoom;
+    float ox = x + this->pan_x;
+    float oy = y + this->pan_y;
+
+    // Draw canvas pixels
+    int cy = 0;
+    while (cy < CANVAS_H()) {
+        int cx = 0;
+        while (cx < CANVAS_W()) {
+            PixelColor pc = this->get_pixel(cx, cy);
+            float px = ox + (float)cx * cell;
+            float py = oy + (float)cy * cell;
+            if (px + cell < x || px > x + w || py + cell < y || py > y + h) {
+                cx = cx + 1;
+                continue;
+            }
+            rmath.Color col = pc_to_render_color(pc);
+            r->push_quad(gl_ctx, px, py, cell - 1.0f, cell - 1.0f, col);
+            cx = cx + 1;
+        }
+        cy = cy + 1;
+    }
+
+    // Canvas border
+    float bw = (float)CANVAS_W() * cell;
+    float bh = (float)CANVAS_H() * cell;
+    r->push_rect_outline(gl_ctx, ox, oy, bw, bh, 1.0f, brd_col);
+
+    r->reset_clip(gl_ctx);
+}

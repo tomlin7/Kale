@@ -1,0 +1,237 @@
+// apps/api_client/main.kl
+// Kale API Client — GPU HTTP/REST Request Builder & Response Viewer
+//
+// Layout:
+//   ┌────────────────────┬──────────────────────────┐
+//   │  Request Panel     │  Response Viewer          │
+//   │  Method + URL      │  Status badge             │
+//   │  Content-Type      │  Response body            │
+//   │  Body editor       │  (scrollable)             │
+//   └────────────────────┴──────────────────────────┘
+//
+// Keybindings:
+//   Tab          — cycle focus between URL / body / content-type fields
+//   M            — cycle HTTP method
+//   F5 / Enter   — send request
+//   PgUp/Dn      — scroll response body
+//   ESC          — quit
+
+import "libs/framework/app.kl" as fw;
+import "libs/glfw/glfw.kl" as glfw;
+import "libs/glfw/constants.kl" as glc;
+import "libs/glfw/input.kl" as ginput;
+import "libs/render/math.kl" as rmath;
+import "libs/net/http.kl" as http;
+
+import "apps/api_client/request_panel.kl"  as rp;
+import "apps/api_client/response_viewer.kl" as rv;
+
+extern int strlen(string s);
+extern int printf(string fmt, ...);
+
+// Poll keys for typing into the focused field of the request panel
+fn void poll_typing_api(void* window, rp.RequestPanel* panel, bool shift) {
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_A()) == glc.GLFW_PRESS()) { if (shift) { panel->append_char_to_focused("A"); } else { panel->append_char_to_focused("a"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_B()) == glc.GLFW_PRESS()) { if (shift) { panel->append_char_to_focused("B"); } else { panel->append_char_to_focused("b"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_C()) == glc.GLFW_PRESS()) { if (shift) { panel->append_char_to_focused("C"); } else { panel->append_char_to_focused("c"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_D()) == glc.GLFW_PRESS()) { if (shift) { panel->append_char_to_focused("D"); } else { panel->append_char_to_focused("d"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_E()) == glc.GLFW_PRESS()) { if (shift) { panel->append_char_to_focused("E"); } else { panel->append_char_to_focused("e"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_F()) == glc.GLFW_PRESS()) { if (shift) { panel->append_char_to_focused("F"); } else { panel->append_char_to_focused("f"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_G()) == glc.GLFW_PRESS()) { if (shift) { panel->append_char_to_focused("G"); } else { panel->append_char_to_focused("g"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_H()) == glc.GLFW_PRESS()) { if (shift) { panel->append_char_to_focused("H"); } else { panel->append_char_to_focused("h"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_I()) == glc.GLFW_PRESS()) { if (shift) { panel->append_char_to_focused("I"); } else { panel->append_char_to_focused("i"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_J()) == glc.GLFW_PRESS()) { if (shift) { panel->append_char_to_focused("J"); } else { panel->append_char_to_focused("j"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_K()) == glc.GLFW_PRESS()) { if (shift) { panel->append_char_to_focused("K"); } else { panel->append_char_to_focused("k"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_L()) == glc.GLFW_PRESS()) { if (shift) { panel->append_char_to_focused("L"); } else { panel->append_char_to_focused("l"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_N()) == glc.GLFW_PRESS()) { if (shift) { panel->append_char_to_focused("N"); } else { panel->append_char_to_focused("n"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_O()) == glc.GLFW_PRESS()) { if (shift) { panel->append_char_to_focused("O"); } else { panel->append_char_to_focused("o"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_P()) == glc.GLFW_PRESS()) { if (shift) { panel->append_char_to_focused("P"); } else { panel->append_char_to_focused("p"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_Q()) == glc.GLFW_PRESS()) { if (shift) { panel->append_char_to_focused("Q"); } else { panel->append_char_to_focused("q"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_R()) == glc.GLFW_PRESS()) { if (shift) { panel->append_char_to_focused("R"); } else { panel->append_char_to_focused("r"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_S()) == glc.GLFW_PRESS()) { if (shift) { panel->append_char_to_focused("S"); } else { panel->append_char_to_focused("s"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_T()) == glc.GLFW_PRESS()) { if (shift) { panel->append_char_to_focused("T"); } else { panel->append_char_to_focused("t"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_U()) == glc.GLFW_PRESS()) { if (shift) { panel->append_char_to_focused("U"); } else { panel->append_char_to_focused("u"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_V()) == glc.GLFW_PRESS()) { if (shift) { panel->append_char_to_focused("V"); } else { panel->append_char_to_focused("v"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_W()) == glc.GLFW_PRESS()) { if (shift) { panel->append_char_to_focused("W"); } else { panel->append_char_to_focused("w"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_X()) == glc.GLFW_PRESS()) { if (shift) { panel->append_char_to_focused("X"); } else { panel->append_char_to_focused("x"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_Y()) == glc.GLFW_PRESS()) { if (shift) { panel->append_char_to_focused("Y"); } else { panel->append_char_to_focused("y"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_Z()) == glc.GLFW_PRESS()) { if (shift) { panel->append_char_to_focused("Z"); } else { panel->append_char_to_focused("z"); } return; }
+    // Numbers & common symbols
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_0()) == glc.GLFW_PRESS()) { panel->append_char_to_focused("0"); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_1()) == glc.GLFW_PRESS()) { panel->append_char_to_focused("1"); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_2()) == glc.GLFW_PRESS()) { panel->append_char_to_focused("2"); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_3()) == glc.GLFW_PRESS()) { panel->append_char_to_focused("3"); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_4()) == glc.GLFW_PRESS()) { panel->append_char_to_focused("4"); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_5()) == glc.GLFW_PRESS()) { panel->append_char_to_focused("5"); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_6()) == glc.GLFW_PRESS()) { panel->append_char_to_focused("6"); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_7()) == glc.GLFW_PRESS()) { panel->append_char_to_focused("7"); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_8()) == glc.GLFW_PRESS()) { panel->append_char_to_focused("8"); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_9()) == glc.GLFW_PRESS()) { panel->append_char_to_focused("9"); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_SLASH()) == glc.GLFW_PRESS()) { panel->append_char_to_focused("/"); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_PERIOD()) == glc.GLFW_PRESS()) { panel->append_char_to_focused("."); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_MINUS()) == glc.GLFW_PRESS()) { panel->append_char_to_focused("-"); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_EQUAL()) == glc.GLFW_PRESS()) { if (shift) { panel->append_char_to_focused("+"); } else { panel->append_char_to_focused("="); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_SEMICOLON()) == glc.GLFW_PRESS()) { if (shift) { panel->append_char_to_focused(":"); } else { panel->append_char_to_focused(";"); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_COMMA()) == glc.GLFW_PRESS()) { panel->append_char_to_focused(","); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_SPACE()) == glc.GLFW_PRESS()) { panel->append_char_to_focused(" "); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_APOSTROPHE()) == glc.GLFW_PRESS()) { if (shift) { panel->append_char_to_focused("\""); } else { panel->append_char_to_focused("'"); } return; }
+}
+
+fn void run_api_client() {
+    fw.AppConfig config;
+    config.init("Kale API Client", 1280, 768);
+
+    fw.App app;
+    int ok = app.init(config);
+    if (ok == 0) {
+        printf("Fatal: could not open API Client window\n");
+        return;
+    }
+
+    rp.RequestPanel  req_panel;
+    req_panel.init();
+
+    rv.ResponseViewer resp_view;
+    resp_view.init();
+
+    int key_delay = 0;
+
+    while (app.begin_frame() != 0) {
+        float cur_w = (float)app.width;
+        float cur_h = (float)app.height;
+
+        float header_h = 36.0f;
+        float req_w    = cur_w * 0.42f;
+        float resp_w   = cur_w - req_w;
+        float panel_h  = cur_h - header_h;
+
+        bool shift_down = (ginput.glfwGetKey(app.window, glc.GLFW_KEY_LEFT_SHIFT()) == glc.GLFW_PRESS());
+
+        // ── Header ────────────────────────────────────────────────────
+        rmath.Color hdr_bg   = rmath.color_rgba(0.14f, 0.15f, 0.19f, 1.0f);
+        rmath.Color hdr_fg   = rmath.color_rgba(0.92f, 0.94f, 0.96f, 1.0f);
+        rmath.Color accent_c = rmath.color_rgba(0.18f, 0.50f, 0.25f, 1.0f);
+        rmath.Color hint_c   = rmath.color_rgba(0.35f, 0.38f, 0.45f, 1.0f);
+        rmath.Color divider  = rmath.color_rgba(0.22f, 0.23f, 0.27f, 1.0f);
+
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, 0.0f, cur_w, header_h, hdr_bg);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, header_h - 2.0f, cur_w, 2.0f, accent_c);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "API Client", 14.0f, 9.0f, hdr_fg);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "[Tab] Focus  [M] Method  [F5] Send  [PgUp/Dn] Scroll  [ESC] Quit", cur_w - 570.0f, 10.0f, hint_c);
+
+        // ── Request panel (left) ───────────────────────────────────────
+        req_panel.render(&app.ui_ctx.renderer, &app.gl_ctx, &app.ui_ctx.font,
+                          0.0f, header_h, req_w, panel_h);
+
+        // Divider
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, req_w, header_h, 1.0f, panel_h, divider);
+
+        // ── Response viewer (right) ────────────────────────────────────
+        resp_view.render(&app.ui_ctx.renderer, &app.gl_ctx, &app.ui_ctx.font,
+                          req_w + 1.0f, header_h, resp_w - 1.0f, panel_h);
+
+        // ── Input ──────────────────────────────────────────────────────
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_ESCAPE()) == glc.GLFW_PRESS()) {
+            app.close();
+        }
+
+        // Tab: cycle focus field (0→1→2→0)
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_TAB()) == glc.GLFW_PRESS() && key_delay == 0) {
+            req_panel.focus_field = (req_panel.focus_field + 1) % 3;
+            key_delay = 15;
+        }
+
+        // M: cycle method
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_M()) == glc.GLFW_PRESS() && key_delay == 0
+            && req_panel.focus_field != 1 && req_panel.focus_field != 2) {
+            req_panel.cycle_method();
+            key_delay = 12;
+        }
+
+        // F5 or Enter (when URL is focused): send request
+        bool should_send = false;
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_F5()) == glc.GLFW_PRESS() && key_delay == 0) {
+            should_send = true;
+        }
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_ENTER()) == glc.GLFW_PRESS() && key_delay == 0
+            && req_panel.focus_field == 0) {
+            should_send = true;
+        }
+
+        if (should_send) {
+            string url = req_panel.url();
+            if (strlen(url) > 0) {
+                resp_view.is_loading  = true;
+                resp_view.has_response = false;
+                string method = req_panel.method_name();
+                string body   = req_panel.body();
+                string ct     = req_panel.ct();
+                http.HttpResponse resp = http.http_request(method, url, body, ct);
+                resp_view.load_response(resp);
+            }
+            key_delay = 20;
+        }
+
+        // Backspace
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_BACKSPACE()) == glc.GLFW_PRESS() && key_delay == 0) {
+            req_panel.backspace();
+            key_delay = 5;
+        }
+
+        // Scroll response
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_PAGE_DOWN()) == glc.GLFW_PRESS() && key_delay == 0) {
+            resp_view.scroll(200.0f);
+            key_delay = 8;
+        }
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_PAGE_UP()) == glc.GLFW_PRESS() && key_delay == 0) {
+            resp_view.scroll(-200.0f);
+            key_delay = 8;
+        }
+
+        // Mouse: focus routing
+        if (app.ui_ctx.mouse_pressed != 0) {
+            float mx = app.ui_ctx.mouse_x;
+            float my = app.ui_ctx.mouse_y;
+            // URL bar area (row 1 in request panel)
+            if (mx < req_w && my > header_h && my < header_h + 50.0f) {
+                req_panel.focus_field = 0;
+            }
+            // Body area (lower portion of request panel)
+            if (mx < req_w && my > header_h + 100.0f) {
+                req_panel.focus_field = 1;
+            }
+            // Send button area (right end of URL row)
+            float send_x = req_w - 80.0f;
+            if (mx >= send_x && mx < req_w && my > header_h + 10.0f && my < header_h + 48.0f) {
+                string url = req_panel.url();
+                if (strlen(url) > 0) {
+                    string method = req_panel.method_name();
+                    string body   = req_panel.body();
+                    string ct     = req_panel.ct();
+                    http.HttpResponse resp = http.http_request(method, url, body, ct);
+                    resp_view.load_response(resp);
+                }
+            }
+        }
+
+        // Typing
+        if (key_delay == 0) {
+            poll_typing_api(app.window, &req_panel, shift_down);
+            key_delay = 6;
+        }
+
+        if (key_delay > 0) { key_delay = key_delay - 1; }
+        app.end_frame();
+    }
+
+    req_panel.destroy();
+    resp_view.destroy();
+    app.close();
+}
+
+fn int main_entry() {
+    run_api_client();
+    return 0;
+}
+
+main_entry();

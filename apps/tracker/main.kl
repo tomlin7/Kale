@@ -1,0 +1,391 @@
+// apps/tracker/main.kl
+// Kale Tracker — GPU Project & Issue Tracker (Kanban Board)
+//
+// Layout: Kanban columns — Backlog | In Progress | Review | Done
+// Cards are rendered as colored quads with title + labels
+//
+// Keys:
+//   A    — add new card to Backlog (prompts for name)
+//   →    — move selected card to next column
+//   ←    — move selected card to previous column
+//   ↑↓   — select card within column
+//   Del  — delete selected card
+//   ESC  — quit
+
+import "libs/framework/app.kl" as fw;
+import "libs/glfw/glfw.kl" as glfw;
+import "libs/glfw/constants.kl" as glc;
+import "libs/glfw/input.kl" as ginput;
+import "libs/render/math.kl" as rmath;
+
+extern int strlen(string s);
+extern int printf(string fmt, ...);
+extern void* malloc(int size);
+
+int MAX_CARDS()   { return 64; }
+int MAX_COLS()    { return 4; }
+int CARD_H()      { return 68; }
+int CARD_GAP()    { return 8; }
+
+struct Card {
+    string title;
+    string tag;         // e.g. "bug", "feature", "docs"
+    int    priority;    // 0=low, 1=med, 2=high
+    int    col;         // which kanban column
+    bool   active;
+}
+
+struct KanbanBoard {
+    Card*  cards;
+    int    count;
+    int    selected_col;
+    int    selected_row;
+
+    // Inline new-card input
+    bool   adding;
+    char*  input_buf;
+    int    input_len;
+}
+
+fn void KanbanBoard.init() {
+    this->cards        = alloc(Card, MAX_CARDS());
+    this->count        = 0;
+    this->selected_col = 0;
+    this->selected_row = 0;
+    this->adding       = false;
+    this->input_buf    = (char*)malloc(128);
+    this->input_len    = 0;
+    this->input_buf[0] = (char)0;
+
+    // Seed with sample cards
+    this->cards[0].title = "Setup build system";
+    this->cards[0].tag   = "infra";
+    this->cards[0].priority = 2;
+    this->cards[0].col    = 3;   // Done
+    this->cards[0].active = true;
+
+    this->cards[1].title = "GPU renderer pass";
+    this->cards[1].tag   = "feature";
+    this->cards[1].priority = 2;
+    this->cards[1].col    = 2;   // Review
+    this->cards[1].active = true;
+
+    this->cards[2].title = "Fix VCS diff edge case";
+    this->cards[2].tag   = "bug";
+    this->cards[2].priority = 1;
+    this->cards[2].col    = 1;   // In Progress
+    this->cards[2].active = true;
+
+    this->cards[3].title = "Write API client docs";
+    this->cards[3].tag   = "docs";
+    this->cards[3].priority = 0;
+    this->cards[3].col    = 0;   // Backlog
+    this->cards[3].active = true;
+
+    this->cards[4].title = "Shader Lab live reload";
+    this->cards[4].tag   = "feature";
+    this->cards[4].priority = 1;
+    this->cards[4].col    = 0;
+    this->cards[4].active = true;
+
+    this->count = 5;
+}
+
+fn void KanbanBoard.destroy() {
+    if (this->cards != (Card*)0) {
+        free(this->cards);
+        this->cards = (Card*)0;
+    }
+    if (this->input_buf != (char*)0) {
+        free(this->input_buf);
+        this->input_buf = (char*)0;
+    }
+}
+
+fn void KanbanBoard.add_card(string title) {
+    if (this->count >= MAX_CARDS()) { return; }
+    this->cards[this->count].title    = title;
+    this->cards[this->count].tag      = "new";
+    this->cards[this->count].priority = 0;
+    this->cards[this->count].col      = 0;
+    this->cards[this->count].active   = true;
+    this->count = this->count + 1;
+}
+
+fn void KanbanBoard.move_selected(int dir) {
+    // Find the n-th card in selected_col that matches selected_row
+    int found = 0;
+    int ci = 0;
+    while (ci < this->count) {
+        if (this->cards[ci].active && this->cards[ci].col == this->selected_col) {
+            if (found == this->selected_row) {
+                int new_col = this->cards[ci].col + dir;
+                if (new_col < 0) { new_col = 0; }
+                if (new_col >= MAX_COLS()) { new_col = MAX_COLS() - 1; }
+                this->cards[ci].col = new_col;
+                this->selected_col = new_col;
+                this->selected_row = 0;
+                return;
+            }
+            found = found + 1;
+        }
+        ci = ci + 1;
+    }
+}
+
+fn void KanbanBoard.delete_selected() {
+    int found = 0;
+    int ci = 0;
+    while (ci < this->count) {
+        if (this->cards[ci].active && this->cards[ci].col == this->selected_col) {
+            if (found == this->selected_row) {
+                this->cards[ci].active = false;
+                if (this->selected_row > 0) { this->selected_row--; }
+                return;
+            }
+            found = found + 1;
+        }
+        ci = ci + 1;
+    }
+}
+
+fn int KanbanBoard.count_in_col(int col) {
+    int n = 0;
+    int ci = 0;
+    while (ci < this->count) {
+        if (this->cards[ci].active && this->cards[ci].col == col) { n = n + 1; }
+        ci = ci + 1;
+    }
+    return n;
+}
+
+fn void KanbanBoard.render(fw.App* app, float x, float y, float w, float h) {
+    string col_names[4];
+    col_names[0] = "BACKLOG";
+    col_names[1] = "IN PROGRESS";
+    col_names[2] = "REVIEW";
+    col_names[3] = "DONE";
+
+    rmath.Color col_bg[4];
+    col_bg[0] = rmath.color_rgba(0.13f, 0.14f, 0.17f, 1.0f);
+    col_bg[1] = rmath.color_rgba(0.14f, 0.16f, 0.20f, 1.0f);
+    col_bg[2] = rmath.color_rgba(0.14f, 0.17f, 0.14f, 1.0f);
+    col_bg[3] = rmath.color_rgba(0.12f, 0.15f, 0.12f, 1.0f);
+
+    rmath.Color col_hdr[4];
+    col_hdr[0] = rmath.color_rgba(0.55f, 0.58f, 0.80f, 1.0f);  // blue-grey
+    col_hdr[1] = rmath.color_rgba(0.85f, 0.65f, 0.20f, 1.0f);  // amber
+    col_hdr[2] = rmath.color_rgba(0.55f, 0.80f, 0.95f, 1.0f);  // sky
+    col_hdr[3] = rmath.color_rgba(0.40f, 0.80f, 0.50f, 1.0f);  // green
+
+    rmath.Color card_bg  = rmath.color_rgba(0.18f, 0.19f, 0.23f, 1.0f);
+    rmath.Color card_sel = rmath.color_rgba(0.20f, 0.40f, 0.70f, 0.40f);
+    rmath.Color card_txt = rmath.color_rgba(0.92f, 0.94f, 0.96f, 1.0f);
+    rmath.Color card_lbl = rmath.color_rgba(0.55f, 0.58f, 0.65f, 1.0f);
+    rmath.Color divider  = rmath.color_rgba(0.20f, 0.21f, 0.25f, 1.0f);
+
+    rmath.Color pri_col[3];
+    pri_col[0] = rmath.color_rgba(0.40f, 0.43f, 0.50f, 1.0f);  // low
+    pri_col[1] = rmath.color_rgba(0.85f, 0.65f, 0.20f, 1.0f);  // med
+    pri_col[2] = rmath.color_rgba(0.90f, 0.30f, 0.30f, 1.0f);  // high
+
+    float col_w = w / (float)MAX_COLS();
+    float hdr_h = 32.0f;
+    float card_h = (float)CARD_H();
+    float gap    = (float)CARD_GAP();
+
+    int ci_col = 0;
+    while (ci_col < MAX_COLS()) {
+        float cx = x + (float)ci_col * col_w;
+        bool is_sel_col = (ci_col == this->selected_col);
+
+        // Column background
+        app->ui_ctx.renderer.push_quad(&app->gl_ctx, cx, y, col_w - 1.0f, h, col_bg[ci_col]);
+        if (ci_col < MAX_COLS() - 1) {
+            app->ui_ctx.renderer.push_quad(&app->gl_ctx, cx + col_w - 1.0f, y, 1.0f, h, divider);
+        }
+
+        // Column header
+        app->ui_ctx.renderer.push_quad(&app->gl_ctx, cx, y, col_w - 1.0f, hdr_h, rmath.color_rgba(0.16f, 0.17f, 0.20f, 1.0f));
+        app->ui_ctx.renderer.push_quad(&app->gl_ctx, cx, y + hdr_h - 2.0f, col_w - 1.0f, 2.0f, col_hdr[ci_col]);
+        app->ui_ctx.font.draw_text(&app->ui_ctx.renderer, &app->gl_ctx, col_names[ci_col], cx + 10.0f, y + 8.0f, col_hdr[ci_col]);
+
+        // Card count badge
+        int n_cards = this->count_in_col(ci_col);
+        char* badge = (char*)malloc(4);
+        badge[0] = (char)(48 + n_cards % 10);
+        badge[1] = (char)0;
+        app->ui_ctx.renderer.push_quad(&app->gl_ctx, cx + col_w - 28.0f, y + 7.0f, 18.0f, 18.0f, col_hdr[ci_col]);
+        app->ui_ctx.font.draw_text(&app->ui_ctx.renderer, &app->gl_ctx, (string)badge, cx + col_w - 22.0f, y + 8.0f, rmath.color_rgba(0.08f, 0.09f, 0.11f, 1.0f));
+        free(badge);
+
+        // Cards in this column
+        float card_y = y + hdr_h + gap;
+        int row = 0;
+        int ci = 0;
+        while (ci < this->count) {
+            if (this->cards[ci].active && this->cards[ci].col == ci_col) {
+                bool is_sel = (is_sel_col && row == this->selected_row);
+                rmath.Color cbg = card_bg;
+                if (is_sel) { cbg = card_sel; }
+                float cy = card_y + (float)(row * (int)(card_h + gap));
+
+                app->ui_ctx.renderer.push_quad(&app->gl_ctx, cx + 6.0f, cy, col_w - 14.0f, card_h, cbg);
+
+                // Priority bar
+                app->ui_ctx.renderer.push_quad(&app->gl_ctx, cx + 6.0f, cy, 3.0f, card_h, pri_col[this->cards[ci].priority]);
+
+                // Title
+                app->ui_ctx.font.draw_text(&app->ui_ctx.renderer, &app->gl_ctx, this->cards[ci].title, cx + 16.0f, cy + 10.0f, card_txt);
+
+                // Tag
+                app->ui_ctx.font.draw_text(&app->ui_ctx.renderer, &app->gl_ctx, this->cards[ci].tag, cx + 16.0f, cy + 30.0f, card_lbl);
+
+                row = row + 1;
+            }
+            ci = ci + 1;
+        }
+
+        ci_col = ci_col + 1;
+    }
+}
+
+fn void run_tracker() {
+    fw.AppConfig config;
+    config.init("Kale Tracker", 1200, 750);
+
+    fw.App app;
+    int ok = app.init(config);
+    if (ok == 0) {
+        printf("Fatal: could not open Tracker\n");
+        return;
+    }
+
+    KanbanBoard board;
+    board.init();
+
+    int key_delay = 0;
+
+    while (app.begin_frame() != 0) {
+        float cur_w = (float)app.width;
+        float cur_h = (float)app.height;
+        float hdr_h = 36.0f;
+        float board_h = cur_h - hdr_h;
+
+        bool shift_down = (ginput.glfwGetKey(app.window, glc.GLFW_KEY_LEFT_SHIFT()) == glc.GLFW_PRESS());
+
+        // ── Header ────────────────────────────────────────────────────
+        rmath.Color hdr_bg  = rmath.color_rgba(0.14f, 0.15f, 0.19f, 1.0f);
+        rmath.Color hdr_fg  = rmath.color_rgba(0.92f, 0.94f, 0.96f, 1.0f);
+        rmath.Color acc_c   = rmath.color_rgba(0.55f, 0.58f, 0.80f, 1.0f);
+        rmath.Color hint_c  = rmath.color_rgba(0.40f, 0.43f, 0.50f, 1.0f);
+
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, 0.0f, cur_w, hdr_h, hdr_bg);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, hdr_h - 2.0f, cur_w, 2.0f, acc_c);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Tracker", 12.0f, 9.0f, hdr_fg);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "[A] Add  [→←] Move  [↑↓] Select  [Del] Delete  [ESC] Quit", cur_w - 500.0f, 10.0f, hint_c);
+
+        // Inline input bar when adding
+        if (board.adding) {
+            rmath.Color in_bg  = rmath.color_rgba(0.11f, 0.12f, 0.14f, 1.0f);
+            rmath.Color in_brd = rmath.color_rgba(0.25f, 0.55f, 0.95f, 1.0f);
+            app.ui_ctx.renderer.push_quad(&app.gl_ctx, 120.0f, 5.0f, 400.0f, 26.0f, in_brd);
+            app.ui_ctx.renderer.push_quad(&app.gl_ctx, 121.0f, 6.0f, 398.0f, 24.0f, in_bg);
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, (string)board.input_buf, 128.0f, 10.0f, hdr_fg);
+            rmath.Color cur_c = rmath.color_rgba(0.30f, 0.65f, 1.0f, 1.0f);
+            float tw = app.ui_ctx.font.measure_text((string)board.input_buf);
+            app.ui_ctx.renderer.push_quad(&app.gl_ctx, 128.0f + tw, 8.0f, 2.0f, 18.0f, cur_c);
+        }
+
+        // ── Board ──────────────────────────────────────────────────────
+        board.render(&app, 0.0f, hdr_h, cur_w, board_h);
+
+        // ── Input ──────────────────────────────────────────────────────
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_ESCAPE()) == glc.GLFW_PRESS() && key_delay == 0) {
+            if (board.adding) {
+                board.adding = false;
+                board.input_len = 0;
+                board.input_buf[0] = (char)0;
+            } else {
+                app.close();
+            }
+            key_delay = 15;
+        }
+
+        // A: add card (enter input mode)
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_A()) == glc.GLFW_PRESS() && key_delay == 0 && !board.adding) {
+            board.adding   = true;
+            board.input_len = 0;
+            board.input_buf[0] = (char)0;
+            key_delay = 15;
+        }
+
+        // Enter: confirm add / cancel
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_ENTER()) == glc.GLFW_PRESS() && key_delay == 0) {
+            if (board.adding && board.input_len > 0) {
+                board.add_card((string)board.input_buf);
+            }
+            board.adding   = false;
+            board.input_len = 0;
+            board.input_buf[0] = (char)0;
+            key_delay = 15;
+        }
+
+        // Backspace
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_BACKSPACE()) == glc.GLFW_PRESS() && key_delay == 0 && board.adding) {
+            if (board.input_len > 0) {
+                board.input_len--;
+                board.input_buf[board.input_len] = (char)0;
+            }
+            key_delay = 5;
+        }
+
+        // Navigation
+        if (!board.adding) {
+            if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_RIGHT()) == glc.GLFW_PRESS() && key_delay == 0) {
+                board.move_selected(1); key_delay = 12;
+            }
+            if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_LEFT()) == glc.GLFW_PRESS() && key_delay == 0) {
+                board.move_selected(-1); key_delay = 12;
+            }
+            if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_DOWN()) == glc.GLFW_PRESS() && key_delay == 0) {
+                int n = board.count_in_col(board.selected_col);
+                if (board.selected_row < n - 1) { board.selected_row++; }
+                key_delay = 8;
+            }
+            if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_UP()) == glc.GLFW_PRESS() && key_delay == 0) {
+                if (board.selected_row > 0) { board.selected_row--; }
+                key_delay = 8;
+            }
+            if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_DELETE()) == glc.GLFW_PRESS() && key_delay == 0) {
+                board.delete_selected(); key_delay = 15;
+            }
+            if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_TAB()) == glc.GLFW_PRESS() && key_delay == 0) {
+                board.selected_col = (board.selected_col + 1) % MAX_COLS();
+                board.selected_row = 0;
+                key_delay = 12;
+            }
+        } else {
+            // Typing space into add input
+            if (key_delay == 0 && ginput.glfwGetKey(app.window, glc.GLFW_KEY_SPACE()) == glc.GLFW_PRESS() && board.input_len < 126) {
+                board.input_buf[board.input_len] = (char)32;
+                board.input_len = board.input_len + 1;
+                board.input_buf[board.input_len] = (char)0;
+                key_delay = 6;
+            }
+        }
+
+        if (key_delay > 0) { key_delay = key_delay - 1; }
+        app.end_frame();
+    }
+
+    board.destroy();
+    app.close();
+}
+
+fn int main_entry() {
+    run_tracker();
+    return 0;
+}
+
+main_entry();

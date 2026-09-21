@@ -1,0 +1,183 @@
+// apps/git_lens/main.kl
+// Kale Git Lens — GPU Visual VCS History Viewer
+// Layout: [Branch Panel | Commit Graph | Diff Viewer]
+//
+// Usage: kale run apps/git_lens/main.kl -- <repo_root>
+// Default repo root: current directory (".")
+
+import "libs/framework/app.kl" as fw;
+import "libs/glfw/glfw.kl" as glfw;
+import "libs/glfw/constants.kl" as glc;
+import "libs/glfw/input.kl" as ginput;
+import "libs/render/math.kl" as rmath;
+import "libs/ui/widgets.kl" as widgets;
+
+import "apps/git_lens/branch_view.kl" as bv;
+import "apps/git_lens/commit_graph.kl" as cg;
+import "apps/git_lens/diff_viewer.kl" as dv;
+
+extern int strlen(string s);
+extern int strcmp(string a, string b);
+extern int printf(string fmt, ...);
+
+fn void run_git_lens(string repo_root) {
+    fw.AppConfig config;
+    config.init("Kale Git Lens", 1280, 768);
+
+    fw.App app;
+    int ok = app.init(config);
+    if (ok == 0) {
+        printf("Fatal: could not open Git Lens window\n");
+        return;
+    }
+
+    // Initialize sub-panels
+    bv.BranchView branch_panel;
+    branch_panel.init(repo_root);
+    branch_panel.load();
+
+    cg.CommitGraph commit_graph;
+    commit_graph.init(repo_root);
+    commit_graph.load();
+
+    dv.DiffViewer diff_viewer;
+    diff_viewer.init(repo_root);
+
+    // Load diff for initial selection
+    string initial_hash = commit_graph.selected_hash();
+    diff_viewer.load_commit(initial_hash);
+
+    // Layout proportions
+    float branch_w = 180.0f;
+    float header_h = 36.0f;
+
+    // Key debounce frame counters
+    int key_refresh_delay = 0;
+
+    while (app.begin_frame() != 0) {
+        float cur_w = (float)app.width;
+        float cur_h = (float)app.height;
+
+        float graph_w = (cur_w - branch_w) * 0.45f;
+        float diff_w  = cur_w - branch_w - graph_w;
+        float panel_h = cur_h - header_h;
+
+        // ── Header bar ───────────────────────────────────────────────
+        rmath.Color header_bg  = rmath.color_rgba(0.14f, 0.15f, 0.19f, 1.0f);
+        rmath.Color header_fg  = rmath.color_rgba(0.92f, 0.94f, 0.96f, 1.0f);
+        rmath.Color accent_col = rmath.color_rgba(0.20f, 0.65f, 0.50f, 1.0f);
+        rmath.Color muted_col  = rmath.color_rgba(0.55f, 0.58f, 0.65f, 1.0f);
+
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, 0.0f, cur_w, header_h, header_bg);
+        // Accent underline
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, header_h - 2.0f, cur_w, 2.0f, accent_col);
+
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Git Lens", 14.0f, 9.0f, header_fg);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, repo_root, 110.0f, 9.0f, muted_col);
+
+        // Keyboard shortcut hints
+        rmath.Color hint_col = rmath.color_rgba(0.40f, 0.43f, 0.50f, 1.0f);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "[R] Refresh   [↑↓] Navigate   [ESC] Quit", cur_w - 400.0f, 10.0f, hint_col);
+
+        // ── Left: Branch panel ────────────────────────────────────────
+        branch_panel.render(&app.ui_ctx.renderer, &app.gl_ctx, &app.ui_ctx.font,
+                            0.0f, header_h, branch_w, panel_h);
+
+        // ── Center: Commit graph ──────────────────────────────────────
+        rmath.Color divider = rmath.color_rgba(0.22f, 0.23f, 0.27f, 1.0f);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, branch_w, header_h, 1.0f, panel_h, divider);
+
+        commit_graph.render(&app.ui_ctx.renderer, &app.gl_ctx, &app.ui_ctx.font,
+                            branch_w + 1.0f, header_h, graph_w, panel_h);
+
+        // ── Right: Diff viewer ────────────────────────────────────────
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, branch_w + graph_w, header_h, 1.0f, panel_h, divider);
+
+        diff_viewer.render(&app.ui_ctx.renderer, &app.gl_ctx, &app.ui_ctx.font,
+                           branch_w + graph_w + 1.0f, header_h, diff_w, panel_h);
+
+        // ── Keyboard input ────────────────────────────────────────────
+        // ESC: quit
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_ESCAPE()) == glc.GLFW_PRESS()) {
+            app.close();
+        }
+
+        // R: reload/refresh
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_R()) == glc.GLFW_PRESS() && key_refresh_delay == 0) {
+            commit_graph.load();
+            branch_panel.load();
+            string sel = commit_graph.selected_hash();
+            diff_viewer.load_commit(sel);
+            key_refresh_delay = 20;
+        }
+
+        // Arrow Up: navigate commits up
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_UP()) == glc.GLFW_PRESS() && key_refresh_delay == 0) {
+            if (commit_graph.selected_idx > 0) {
+                commit_graph.selected_idx = commit_graph.selected_idx - 1;
+                string sel = commit_graph.selected_hash();
+                diff_viewer.load_commit(sel);
+            }
+            key_refresh_delay = 8;
+        }
+
+        // Arrow Down: navigate commits down
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_DOWN()) == glc.GLFW_PRESS() && key_refresh_delay == 0) {
+            if (commit_graph.selected_idx < commit_graph.count - 1) {
+                commit_graph.selected_idx = commit_graph.selected_idx + 1;
+                string sel = commit_graph.selected_hash();
+                diff_viewer.load_commit(sel);
+            }
+            key_refresh_delay = 8;
+        }
+
+        // Page Up / Down: scroll graph
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_PAGE_UP()) == glc.GLFW_PRESS() && key_refresh_delay == 0) {
+            commit_graph.scroll(-200.0f);
+            diff_viewer.scroll(-200.0f);
+            key_refresh_delay = 8;
+        }
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_PAGE_DOWN()) == glc.GLFW_PRESS() && key_refresh_delay == 0) {
+            commit_graph.scroll(200.0f);
+            diff_viewer.scroll(200.0f);
+            key_refresh_delay = 8;
+        }
+
+        // Mouse click — select commit in graph
+        if (app.ui_ctx.mouse_pressed != 0) {
+            float mx = app.ui_ctx.mouse_x;
+            float my = app.ui_ctx.mouse_y;
+
+            // Click in commit graph area
+            if (mx > branch_w + 1.0f && mx < branch_w + graph_w) {
+                commit_graph.select_at_y(my, header_h);
+                string sel = commit_graph.selected_hash();
+                diff_viewer.load_commit(sel);
+            }
+
+            // Click in branch area
+            if (mx >= 0.0f && mx < branch_w) {
+                branch_panel.select_at_y(my, header_h);
+            }
+        }
+
+        // Decrement key delay
+        if (key_refresh_delay > 0) {
+            key_refresh_delay = key_refresh_delay - 1;
+        }
+
+        app.end_frame();
+    }
+
+    commit_graph.destroy();
+    branch_panel.destroy();
+    diff_viewer.destroy();
+    app.close();
+}
+
+fn int main_entry() {
+    run_git_lens(".");
+    return 0;
+}
+
+main_entry();

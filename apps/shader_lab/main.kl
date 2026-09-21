@@ -1,0 +1,236 @@
+// apps/shader_lab/main.kl
+// Kale Shader Lab — Live GLSL Shader Sandbox with Side-by-Side Editor + Preview
+//
+// Layout:
+//   ┌──────────────────────────────┬──────────────────────────────┐
+//   │  Code Editor Pane            │  Live GPU Shader Preview      │
+//   │  (GLSL text input)           │  (fullscreen quad render)     │
+//   │  Error strip at bottom       │  iTime / iResolution / iMouse │
+//   └──────────────────────────────┴──────────────────────────────┘
+//
+// Keybindings:
+//   F5      — compile & run shader
+//   Ctrl+R  — compile & run shader
+//   Tab     — focus editor
+//   ESC     — quit
+
+import "libs/framework/app.kl" as fw;
+import "libs/glfw/glfw.kl" as glfw;
+import "libs/glfw/constants.kl" as glc;
+import "libs/glfw/input.kl" as ginput;
+import "libs/render/math.kl" as rmath;
+import "libs/gl/gl.kl" as gl;
+import "libs/gl/constants.kl" as kgl;
+
+import "apps/shader_lab/live_shader.kl" as ls;
+
+extern int strlen(string s);
+extern int printf(string fmt, ...);
+extern void* malloc(int size);
+
+int GLSL_BUF_CAP() { return 4096; }
+
+fn void run_shader_lab() {
+    fw.AppConfig config;
+    config.init("Kale Shader Lab", 1280, 720);
+
+    fw.App app;
+    int ok = app.init(config);
+    if (ok == 0) {
+        printf("Fatal: could not open Shader Lab window\n");
+        return;
+    }
+
+    ls.LiveShader live;
+    live.init(&app.gl_ctx);
+
+    // GLSL editor buffer
+    char* glsl_buf = (char*)malloc(GLSL_BUF_CAP() + 1);
+    int   glsl_len = 0;
+
+    // Load default shader source
+    string default_src =
+        "precision mediump float;\n"
+        "uniform float iTime;\n"
+        "uniform vec2 iResolution;\n"
+        "uniform vec2 iMouse;\n"
+        "void main() {\n"
+        "    vec2 uv = gl_FragCoord.xy / iResolution.xy;\n"
+        "    float t  = iTime * 0.5;\n"
+        "    vec3 col = 0.5 + 0.5 * cos(t + uv.xyx + vec3(0,2,4));\n"
+        "    gl_FragColor = vec4(col, 1.0);\n"
+        "}\n";
+    char* ds = (char*)default_src;
+    int   di = 0;
+    while (ds[di] != (char)0 && di < GLSL_BUF_CAP()) {
+        glsl_buf[di] = ds[di];
+        di = di + 1;
+    }
+    glsl_buf[di] = (char)0;
+    glsl_len = di;
+
+    // Compile initial shader
+    live.compile(&app.gl_ctx, (string)glsl_buf);
+
+    int key_delay = 0;
+    float elapsed = 0.0f;
+
+    while (app.begin_frame() != 0) {
+        float cur_w = (float)app.width;
+        float cur_h = (float)app.height;
+        elapsed = elapsed + (float)app.delta_time;
+
+        bool ctrl_down  = (ginput.glfwGetKey(app.window, glc.GLFW_KEY_LEFT_CONTROL()) == glc.GLFW_PRESS());
+        bool shift_down = (ginput.glfwGetKey(app.window, glc.GLFW_KEY_LEFT_SHIFT())   == glc.GLFW_PRESS());
+
+        float header_h  = 34.0f;
+        float split_x   = cur_w * 0.45f;
+        float editor_w  = split_x;
+        float preview_w = cur_w - split_x - 1.0f;
+        float error_h   = 48.0f;
+        float editor_h  = cur_h - header_h - error_h;
+
+        // ── Render live shader into the right half ────────────────────
+        // Temporarily set the OpenGL scissor to the preview region
+        gl.glEnable(kgl.GL_SCISSOR_TEST());
+        // Compute y-flipped coordinates for OpenGL (origin at bottom-left)
+        int sci_x = (int)(split_x + 1.0f);
+        int sci_y = 0;
+        int sci_w = (int)preview_w;
+        int sci_h = (int)cur_h;
+        gl.glScissor(sci_x, sci_y, sci_w, sci_h);
+        gl.glViewport(sci_x, sci_y, sci_w, sci_h);
+
+        live.render(&app.gl_ctx, elapsed, preview_w, cur_h,
+                    app.ui_ctx.mouse_x - split_x, app.ui_ctx.mouse_y);
+
+        // Reset viewport to full window for UI rendering
+        gl.glDisable(kgl.GL_SCISSOR_TEST());
+        gl.glViewport(0, 0, (int)cur_w, (int)cur_h);
+
+        // ── Header bar ────────────────────────────────────────────────
+        rmath.Color hdr_bg   = rmath.color_rgba(0.13f, 0.14f, 0.17f, 1.0f);
+        rmath.Color hdr_fg   = rmath.color_rgba(0.92f, 0.94f, 0.96f, 1.0f);
+        rmath.Color accent_c = rmath.color_rgba(0.80f, 0.45f, 0.15f, 1.0f);
+        rmath.Color hint_c   = rmath.color_rgba(0.40f, 0.43f, 0.50f, 1.0f);
+        rmath.Color divider  = rmath.color_rgba(0.22f, 0.23f, 0.27f, 1.0f);
+
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, 0.0f, cur_w, header_h, hdr_bg);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, header_h - 2.0f, cur_w, 2.0f, accent_c);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Shader Lab", 12.0f, 8.0f, hdr_fg);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "[F5/Ctrl+R] Compile  [ESC] Quit", cur_w - 310.0f, 9.0f, hint_c);
+
+        // ── Editor background ──────────────────────────────────────────
+        rmath.Color ed_bg    = rmath.color_rgba(0.11f, 0.12f, 0.14f, 1.0f);
+        rmath.Color ed_brd   = rmath.color_rgba(0.22f, 0.23f, 0.27f, 1.0f);
+        rmath.Color ed_text  = rmath.color_rgba(0.88f, 0.90f, 0.94f, 1.0f);
+        rmath.Color err_bg   = rmath.color_rgba(0.20f, 0.08f, 0.08f, 1.0f);
+        rmath.Color err_fg   = rmath.color_rgba(0.95f, 0.55f, 0.55f, 1.0f);
+        rmath.Color ok_fg    = rmath.color_rgba(0.50f, 0.90f, 0.55f, 1.0f);
+        rmath.Color cursor_c = rmath.color_rgba(0.30f, 0.65f, 1.0f, 1.0f);
+        rmath.Color lbl_col  = rmath.color_rgba(0.45f, 0.60f, 0.85f, 1.0f);
+
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, header_h, editor_w, editor_h, ed_bg);
+
+        // Render GLSL source as scrollable text (simplified — single-block render)
+        app.ui_ctx.renderer.set_clip_rect(&app.gl_ctx, 0.0f, header_h, editor_w - 2.0f, editor_h);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, (string)glsl_buf, 10.0f, header_h + 8.0f, ed_text);
+        // Draw cursor
+        float tw = app.ui_ctx.font.measure_text((string)glsl_buf);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 10.0f + tw, header_h + 8.0f, 2.0f, 16.0f, cursor_c);
+        app.ui_ctx.renderer.reset_clip(&app.gl_ctx);
+
+        // Error / status bar below editor
+        float err_y = header_h + editor_h;
+        rmath.Color err_bar_bg = err_bg;
+        rmath.Color err_txt = err_fg;
+        if (live.is_valid) {
+            err_bar_bg = rmath.color_rgba(0.08f, 0.20f, 0.10f, 1.0f);
+            err_txt = ok_fg;
+        }
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, err_y, editor_w, error_h, err_bar_bg);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, live.last_error, 10.0f, err_y + 8.0f, err_txt);
+
+        // iTime display in error bar
+        // (simplified: just label)
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "iTime:", editor_w - 150.0f, err_y + 8.0f, hint_c);
+
+        // Vertical divider
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, split_x, header_h, 1.0f, cur_h - header_h, divider);
+
+        // Preview label overlay in top-right corner
+        rmath.Color preview_lbl = rmath.color_rgba(0.80f, 0.45f, 0.15f, 0.75f);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "PREVIEW", split_x + 8.0f, header_h + 8.0f, preview_lbl);
+
+        // ── Input ──────────────────────────────────────────────────────
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_ESCAPE()) == glc.GLFW_PRESS()) {
+            app.close();
+        }
+
+        // F5 or Ctrl+R: compile
+        bool do_compile = false;
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_F5()) == glc.GLFW_PRESS() && key_delay == 0) {
+            do_compile = true;
+        }
+        if (ctrl_down && ginput.glfwGetKey(app.window, glc.GLFW_KEY_R()) == glc.GLFW_PRESS() && key_delay == 0) {
+            do_compile = true;
+        }
+        if (do_compile) {
+            live.compile(&app.gl_ctx, (string)glsl_buf);
+            key_delay = 20;
+        }
+
+        // Backspace: remove last char from GLSL buffer
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_BACKSPACE()) == glc.GLFW_PRESS() && key_delay == 0) {
+            if (glsl_len > 0) {
+                glsl_len = glsl_len - 1;
+                glsl_buf[glsl_len] = (char)0;
+            }
+            key_delay = 5;
+        }
+
+        // Enter: newline
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_ENTER()) == glc.GLFW_PRESS() && key_delay == 0) {
+            if (glsl_len < GLSL_BUF_CAP()) {
+                glsl_buf[glsl_len] = (char)10;
+                glsl_len = glsl_len + 1;
+                glsl_buf[glsl_len] = (char)0;
+            }
+            key_delay = 8;
+        }
+
+        // Tab: indent
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_TAB()) == glc.GLFW_PRESS() && key_delay == 0) {
+            int ii = 0;
+            while (ii < 4 && glsl_len < GLSL_BUF_CAP()) {
+                glsl_buf[glsl_len] = (char)32;
+                glsl_len = glsl_len + 1;
+                ii = ii + 1;
+            }
+            glsl_buf[glsl_len] = (char)0;
+            key_delay = 8;
+        }
+
+        // Space
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_SPACE()) == glc.GLFW_PRESS() && key_delay == 0 && glsl_len < GLSL_BUF_CAP()) {
+            glsl_buf[glsl_len] = (char)32;
+            glsl_len = glsl_len + 1;
+            glsl_buf[glsl_len] = (char)0;
+            key_delay = 6;
+        }
+
+        if (key_delay > 0) { key_delay = key_delay - 1; }
+        app.end_frame();
+    }
+
+    live.destroy(&app.gl_ctx);
+    free(glsl_buf);
+    app.close();
+}
+
+fn int main_entry() {
+    run_shader_lab();
+    return 0;
+}
+
+main_entry();

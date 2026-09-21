@@ -1,0 +1,185 @@
+// apps/api_client/response_viewer.kl
+// HTTP Response Viewer — status badge, headers, body with syntax highlighting hints
+
+import "libs/render/batch.kl" as rbatch;
+import "libs/render/font.kl" as rfont;
+import "libs/render/math.kl" as rmath;
+import "libs/gl/loader.kl" as glloader;
+import "libs/net/http.kl" as http;
+
+extern int strlen(string s);
+extern void* malloc(int size);
+
+int RESP_MAX_LINES() { return 512; }
+int RESP_LINE_H()    { return 20; }
+
+struct ResponseLine {
+    string text;
+    int    kind;  // 0=body, 1=header-name, 2=header-value, 3=status, 4=error
+}
+
+struct ResponseViewer {
+    ResponseLine* lines;
+    int           count;
+    int           capacity;
+    float         scroll_y;
+    int           status_code;
+    bool          has_response;
+    bool          is_loading;
+    string        status_text;
+}
+
+fn void ResponseViewer.init() {
+    this->capacity     = RESP_MAX_LINES();
+    this->count        = 0;
+    this->lines        = alloc(ResponseLine, this->capacity);
+    this->scroll_y     = 0.0f;
+    this->status_code  = 0;
+    this->has_response = false;
+    this->is_loading   = false;
+    this->status_text  = "Ready";
+}
+
+fn void ResponseViewer.destroy() {
+    if (this->capacity > 0) {
+        free(this->lines);
+        this->capacity = 0;
+    }
+}
+
+fn void ResponseViewer.clear() {
+    this->count       = 0;
+    this->scroll_y    = 0.0f;
+    this->has_response = false;
+    this->is_loading  = false;
+}
+
+fn void ResponseViewer.push_line(string text, int kind) {
+    if (this->count >= this->capacity) { return; }
+    int tlen = strlen(text);
+    char* buf = (char*)malloc(tlen + 1);
+    char* src = (char*)text;
+    int k = 0;
+    while (k < tlen) { buf[k] = src[k]; k = k + 1; }
+    buf[tlen] = (char)0;
+    this->lines[this->count].text = (string)buf;
+    this->lines[this->count].kind = kind;
+    this->count = this->count + 1;
+}
+
+// Split body text into individual lines and push them
+fn void ResponseViewer.push_body(string body) {
+    char* b   = (char*)body;
+    int   len = strlen(body);
+    int   start = 0;
+    int   i = 0;
+    while (i <= len) {
+        bool at_nl = (i == len) || (b[i] == (char)10);
+        if (at_nl) {
+            int ll = i - start;
+            if (ll > 0 && b[start + ll - 1] == (char)13) { ll = ll - 1; }
+            char* lbuf = (char*)malloc(ll + 1);
+            int k = 0;
+            while (k < ll) { lbuf[k] = b[start + k]; k = k + 1; }
+            lbuf[ll] = (char)0;
+            this->push_line((string)lbuf, 0);
+            start = i + 1;
+        }
+        i = i + 1;
+    }
+}
+
+fn void ResponseViewer.load_response(http.HttpResponse resp) {
+    this->clear();
+    this->status_code  = resp.status_code;
+    this->has_response = true;
+    this->is_loading   = false;
+
+    // Status line
+    this->push_line("── Response ──", 3);
+    this->push_body(resp.body);
+}
+
+fn void ResponseViewer.set_error(string msg) {
+    this->clear();
+    this->status_code  = 0;
+    this->has_response = true;
+    this->is_loading   = false;
+    this->push_line(msg, 4);
+}
+
+fn void ResponseViewer.scroll(float dy) {
+    this->scroll_y = this->scroll_y + dy;
+    float max_s = (float)(this->count * RESP_LINE_H());
+    if (this->scroll_y < 0.0f)   { this->scroll_y = 0.0f; }
+    if (this->scroll_y > max_s)  { this->scroll_y = max_s; }
+}
+
+fn void ResponseViewer.render(rbatch.BatchRenderer* r, glloader.GLContext* gl_ctx, rfont.FontAtlas* font,
+                               float x, float y, float w, float h) {
+    rmath.Color panel_bg  = rmath.color_rgba(0.11f, 0.12f, 0.14f, 1.0f);
+    rmath.Color body_col  = rmath.color_rgba(0.88f, 0.90f, 0.94f, 1.0f);
+    rmath.Color hdr_col   = rmath.color_rgba(0.55f, 0.80f, 0.95f, 1.0f);
+    rmath.Color sep_col   = rmath.color_rgba(0.55f, 0.58f, 0.65f, 1.0f);
+    rmath.Color err_col   = rmath.color_rgba(0.95f, 0.45f, 0.45f, 1.0f);
+    rmath.Color info_col  = rmath.color_rgba(0.40f, 0.43f, 0.50f, 1.0f);
+
+    // Status badge colors
+    rmath.Color badge_bg = rmath.color_rgba(0.18f, 0.45f, 0.18f, 1.0f); // green 2xx
+    if (this->status_code >= 300 && this->status_code < 400) { badge_bg = rmath.color_rgba(0.45f, 0.40f, 0.15f, 1.0f); }
+    if (this->status_code >= 400) { badge_bg = rmath.color_rgba(0.45f, 0.18f, 0.18f, 1.0f); }
+    if (this->status_code == 0)   { badge_bg = rmath.color_rgba(0.22f, 0.23f, 0.27f, 1.0f); }
+    rmath.Color badge_fg = rmath.color_rgba(1.0f, 1.0f, 1.0f, 1.0f);
+
+    r->push_quad(gl_ctx, x, y, w, h, panel_bg);
+
+    // Status badge strip at top
+    float badge_h = 30.0f;
+    r->push_quad(gl_ctx, x, y, w, badge_h, rmath.color_rgba(0.16f, 0.17f, 0.20f, 1.0f));
+
+    if (this->is_loading) {
+        font->draw_text(r, gl_ctx, "Sending request...", x + 12.0f, y + 7.0f, info_col);
+    } else if (this->has_response && this->status_code > 0) {
+        // Status code badge
+        r->push_quad(gl_ctx, x + 8.0f, y + 4.0f, 52.0f, 22.0f, badge_bg);
+        // Encode status code as 3 decimal chars
+        char* sc = (char*)malloc(4);
+        int code = this->status_code;
+        sc[0] = (char)(48 + (code / 100));
+        sc[1] = (char)(48 + ((code / 10) % 10));
+        sc[2] = (char)(48 + (code % 10));
+        sc[3] = (char)0;
+        font->draw_text(r, gl_ctx, (string)sc, x + 18.0f, y + 7.0f, badge_fg);
+        free(sc);
+        font->draw_text(r, gl_ctx, this->status_text, x + 68.0f, y + 7.0f, info_col);
+    } else {
+        font->draw_text(r, gl_ctx, "No response yet. Press Send.", x + 12.0f, y + 7.0f, info_col);
+    }
+
+    // Scrollable body area
+    float body_y = y + badge_h;
+    float body_h = h - badge_h;
+    r->set_clip_rect(gl_ctx, x, body_y, w, body_h);
+
+    float line_h = (float)RESP_LINE_H();
+    int i = 0;
+    while (i < this->count) {
+        float ly = body_y + (float)(i * RESP_LINE_H()) - this->scroll_y;
+        if (ly + line_h < body_y || ly > body_y + body_h) {
+            i = i + 1;
+            continue;
+        }
+
+        int kind = this->lines[i].kind;
+        rmath.Color col = body_col;
+        if (kind == 1) { col = hdr_col; }
+        if (kind == 2) { col = body_col; }
+        if (kind == 3) { col = sep_col; }
+        if (kind == 4) { col = err_col; }
+
+        font->draw_text(r, gl_ctx, this->lines[i].text, x + 8.0f, ly + 2.0f, col);
+        i = i + 1;
+    }
+
+    r->reset_clip(gl_ctx);
+}

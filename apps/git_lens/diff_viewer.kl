@@ -1,0 +1,239 @@
+// apps/git_lens/diff_viewer.kl
+// Two-Pane Unified Diff Viewer — renders colored diff lines for a selected commit
+
+import "libs/render/batch.kl" as rbatch;
+import "libs/render/font.kl" as rfont;
+import "libs/render/math.kl" as rmath;
+import "libs/gl/loader.kl" as glloader;
+import "vcs/object.kl" as vobj;
+import "vcs/diff.kl" as vdiff;
+import "vcs/index.kl" as vidx;
+
+extern int strlen(string s);
+extern void* malloc(int size);
+
+int DIFF_LINE_H()  { return 20; }
+int MAX_DIFF_LINES() { return 512; }
+
+// Line kinds: 0 = context, 1 = added, 2 = removed, 3 = header
+struct DiffLine {
+    string text;
+    int    kind;
+}
+
+struct DiffViewer {
+    DiffLine* lines;
+    int       count;
+    int       capacity;
+    float     scroll_y;
+    string    repo_root;
+    string    commit_hash;   // currently displayed commit hash
+}
+
+fn void DiffViewer.init(string repo_root) {
+    this->capacity    = MAX_DIFF_LINES();
+    this->count       = 0;
+    this->lines       = alloc(DiffLine, this->capacity);
+    this->scroll_y    = 0.0f;
+    this->repo_root   = repo_root;
+    this->commit_hash = "";
+}
+
+fn void DiffViewer.destroy() {
+    if (this->capacity > 0) {
+        free(this->lines);
+        this->capacity = 0;
+        this->count = 0;
+    }
+}
+
+fn void DiffViewer.clear() {
+    this->count    = 0;
+    this->scroll_y = 0.0f;
+}
+
+fn void DiffViewer.push_line(string text, int kind) {
+    if (this->count >= this->capacity) { return; }
+    this->lines[this->count].text = text;
+    this->lines[this->count].kind = kind;
+    this->count = this->count + 1;
+}
+
+// Classify a unified-diff output line by its first character
+fn int classify_diff_line(string s) {
+    if (strlen(s) == 0) { return 0; }
+    char* b = (char*)s;
+    if (b[0] == (char)43)  { return 1; } // '+'
+    if (b[0] == (char)45)  { return 2; } // '-'
+    if (b[0] == (char)64)  { return 3; } // '@'
+    if (b[0] == (char)100) { return 3; } // 'd' (--- header)
+    return 0;
+}
+
+// Split a unified diff string into individual lines and load into DiffViewer
+fn void DiffViewer.load_diff_text(string diff_text) {
+    this->clear();
+
+    char* b   = (char*)diff_text;
+    int   len = strlen(diff_text);
+    int   start = 0;
+
+    int i = 0;
+    while (i <= len) {
+        bool at_newline = (i == len) || (b[i] == (char)10);
+        if (at_newline) {
+            int line_len = i - start;
+            if (line_len > 0 && b[start + line_len - 1] == (char)13) { line_len = line_len - 1; }
+
+            char* line_buf = (char*)malloc(line_len + 1);
+            int k = 0;
+            while (k < line_len) { line_buf[k] = b[start + k]; k = k + 1; }
+            line_buf[line_len] = (char)0;
+            string line_str = (string)line_buf;
+
+            int kind = classify_diff_line(line_str);
+            this->push_line(line_str, kind);
+
+            start = i + 1;
+        }
+        i = i + 1;
+    }
+}
+
+// Load diff between a commit and its parent by reading the staged blob vs current HEAD tree
+fn void DiffViewer.load_commit(string commit_hash) {
+    this->commit_hash = commit_hash;
+    this->clear();
+
+    if (strlen(commit_hash) == 0) {
+        this->push_line("No commit selected.", 0);
+        return;
+    }
+
+    // Read commit object to extract tree and parent
+    string commit_body = vobj.read_object(this->repo_root, commit_hash);
+    if (strlen(commit_body) == 0) {
+        this->push_line("Could not read commit object.", 0);
+        return;
+    }
+
+    // Display the commit header lines first (tree, parent, author, etc.)
+    char* b   = (char*)commit_body;
+    int   len = strlen(commit_body);
+
+    // Show first 6 lines of commit header as context lines
+    int line_count = 0;
+    int start = 0;
+    int j = 0;
+    while (j <= len && line_count < 6) {
+        bool at_nl = (j == len) || (b[j] == (char)10);
+        if (at_nl) {
+            int ll = j - start;
+            if (ll > 0 && b[start + ll - 1] == (char)13) { ll = ll - 1; }
+            char* lbuf = (char*)malloc(ll + 1);
+            int k = 0;
+            while (k < ll) { lbuf[k] = b[start + k]; k = k + 1; }
+            lbuf[ll] = (char)0;
+            this->push_line((string)lbuf, 3);
+            start = j + 1;
+            line_count = line_count + 1;
+        }
+        j = j + 1;
+    }
+
+    this->push_line("", 0);
+
+    // Load staged index and generate diff for each indexed file
+    vidx.Index index;
+    index.init();
+    index.load(this->repo_root);
+
+    if (index.count == 0) {
+        this->push_line("(no staged files in index)", 0);
+        index.destroy();
+        return;
+    }
+
+    int fi = 0;
+    while (fi < index.count) {
+        string file_path = index.entries[fi].file_path;
+        string blob_id   = index.entries[fi].id;
+
+        // Header line for file
+        char* hdr_buf = (char*)malloc(strlen(file_path) + 20);
+        int hdr_len = 0;
+        string hdr_prefix = "File: ";
+        char* hp = (char*)hdr_prefix;
+        int hp_len = strlen(hdr_prefix);
+        int hk = 0;
+        while (hk < hp_len) { hdr_buf[hk] = hp[hk]; hk = hk + 1; }
+        char* fp = (char*)file_path;
+        int fp_len = strlen(file_path);
+        int fk = 0;
+        while (fk < fp_len) { hdr_buf[hp_len + fk] = fp[fk]; fk = fk + 1; }
+        hdr_buf[hp_len + fp_len] = (char)0;
+        this->push_line((string)hdr_buf, 3);
+
+        // Read blob content from object store
+        string blob_content = vobj.read_object(this->repo_root, blob_id);
+        string diff_text = vdiff.unified_diff(file_path, "", blob_content);
+        this->load_diff_text(diff_text);
+
+        fi = fi + 1;
+    }
+
+    index.destroy();
+}
+
+fn void DiffViewer.scroll(float delta) {
+    this->scroll_y = this->scroll_y + delta;
+    float max_scroll = (float)(this->count * DIFF_LINE_H());
+    if (this->scroll_y < 0.0f) { this->scroll_y = 0.0f; }
+    if (this->scroll_y > max_scroll) { this->scroll_y = max_scroll; }
+}
+
+fn void DiffViewer.render(rbatch.BatchRenderer* r, glloader.GLContext* gl_ctx, rfont.FontAtlas* font,
+                           float x, float y, float w, float h) {
+    rmath.Color panel_bg  = rmath.color_rgba(0.11f, 0.12f, 0.14f, 1.0f);
+    rmath.Color add_bg    = rmath.color_rgba(0.08f, 0.28f, 0.12f, 0.50f);
+    rmath.Color del_bg    = rmath.color_rgba(0.30f, 0.08f, 0.08f, 0.50f);
+    rmath.Color hdr_bg    = rmath.color_rgba(0.14f, 0.20f, 0.32f, 1.0f);
+    rmath.Color add_col   = rmath.color_rgba(0.55f, 0.95f, 0.55f, 1.0f);
+    rmath.Color del_col   = rmath.color_rgba(0.95f, 0.55f, 0.55f, 1.0f);
+    rmath.Color hdr_col   = rmath.color_rgba(0.55f, 0.75f, 0.95f, 1.0f);
+    rmath.Color ctx_col   = rmath.color_rgba(0.80f, 0.82f, 0.86f, 1.0f);
+
+    r->push_quad(gl_ctx, x, y, w, h, panel_bg);
+    r->set_clip_rect(gl_ctx, x, y, w, h);
+
+    float line_h = (float)DIFF_LINE_H();
+
+    int i = 0;
+    while (i < this->count) {
+        float line_y = y + (float)(i * DIFF_LINE_H()) - this->scroll_y;
+
+        if (line_y + line_h < y || line_y > y + h) {
+            i = i + 1;
+            continue;
+        }
+
+        int kind = this->lines[i].kind;
+
+        if (kind == 1) {
+            r->push_quad(gl_ctx, x, line_y, w, line_h, add_bg);
+            font->draw_text(r, gl_ctx, this->lines[i].text, x + 8.0f, line_y + 2.0f, add_col);
+        } else if (kind == 2) {
+            r->push_quad(gl_ctx, x, line_y, w, line_h, del_bg);
+            font->draw_text(r, gl_ctx, this->lines[i].text, x + 8.0f, line_y + 2.0f, del_col);
+        } else if (kind == 3) {
+            r->push_quad(gl_ctx, x, line_y, w, line_h, hdr_bg);
+            font->draw_text(r, gl_ctx, this->lines[i].text, x + 8.0f, line_y + 2.0f, hdr_col);
+        } else {
+            font->draw_text(r, gl_ctx, this->lines[i].text, x + 8.0f, line_y + 2.0f, ctx_col);
+        }
+
+        i = i + 1;
+    }
+
+    r->reset_clip(gl_ctx);
+}

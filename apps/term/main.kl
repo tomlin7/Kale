@@ -1,0 +1,295 @@
+// apps/term/main.kl
+// Kale Term — Standalone GPU-Accelerated Terminal Emulator
+//
+// Features:
+//   - Multiple tabs (up to 8), each with its own Terminal + CellGrid
+//   - Full character input dispatched to the active terminal session
+//   - Shell command echo via libs/term/shell ShellExecutor
+//   - GPU rendering of every cell with per-cell fg/bg color
+//   - VT100/ANSI escape sequence processing via libs/term/escape
+//
+// Keybindings:
+//   Ctrl+T       — new tab
+//   Ctrl+W       — close tab
+//   Ctrl+Tab     — next tab
+//   Enter        — submit typed command to shell
+//   Backspace    — delete last char from command line buffer
+//   PgUp/Dn      — scroll terminal view
+//   ESC          — quit
+
+import "libs/framework/app.kl" as fw;
+import "libs/glfw/glfw.kl" as glfw;
+import "libs/glfw/constants.kl" as glc;
+import "libs/glfw/input.kl" as ginput;
+import "libs/render/math.kl" as rmath;
+import "libs/term/shell.kl" as sh;
+
+import "apps/term/tab_bar.kl"      as tabs;
+import "apps/term/terminal_view.kl" as tv;
+
+extern int strlen(string s);
+extern int printf(string fmt, ...);
+extern void* malloc(int size);
+
+// Maximum simultaneous terminal sessions
+int MAX_SESSIONS() { return 8; }
+// Command line input buffer
+int CMD_BUF_CAP()  { return 512; }
+
+struct TermSession {
+    tv.TerminalView view;
+    sh.ShellExecutor* shell;
+    char* cmd_buf;
+    int   cmd_len;
+    bool  active;
+}
+
+fn void TermSession.init(int cols, int rows) {
+    this->view.init(cols, rows, "Terminal");
+    this->shell   = sh.shell_new(this->view.terminal);
+    this->cmd_buf = (char*)malloc(CMD_BUF_CAP() + 1);
+    this->cmd_len = 0;
+    this->cmd_buf[0] = (char)0;
+    this->active  = true;
+
+    // Welcome message written directly to terminal grid
+    this->view.write("Kale Term v0.1.0 — GPU Native Terminal Emulator\r\n");
+    this->view.write("$ ");
+}
+
+fn void TermSession.destroy() {
+    this->view.destroy();
+    sh.shell_free(this->shell);
+    free(this->cmd_buf);
+    this->active = false;
+}
+
+fn void TermSession.append_char(int ch) {
+    if (this->cmd_len >= CMD_BUF_CAP()) { return; }
+    this->cmd_buf[this->cmd_len] = (char)ch;
+    this->cmd_len = this->cmd_len + 1;
+    this->cmd_buf[this->cmd_len] = (char)0;
+    // Echo the char to the terminal view
+    char* echo = (char*)malloc(2);
+    echo[0] = (char)ch;
+    echo[1] = (char)0;
+    this->view.write((string)echo);
+    free(echo);
+}
+
+fn void TermSession.backspace() {
+    if (this->cmd_len > 0) {
+        this->cmd_len = this->cmd_len - 1;
+        this->cmd_buf[this->cmd_len] = (char)0;
+    }
+}
+
+fn void TermSession.submit() {
+    // Submit command to shell executor
+    this->view.write("\r\n");
+    sh.shell_exec(this->shell, (string)this->cmd_buf);
+    this->cmd_len    = 0;
+    this->cmd_buf[0] = (char)0;
+    this->view.write("$ ");
+}
+
+// Poll keyboard and feed printable chars into the active session
+fn void poll_term_typing(void* window, TermSession* session, bool shift) {
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_A()) == glc.GLFW_PRESS()) { if (shift) { session->append_char(65); } else { session->append_char(97); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_B()) == glc.GLFW_PRESS()) { if (shift) { session->append_char(66); } else { session->append_char(98); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_C()) == glc.GLFW_PRESS()) { if (shift) { session->append_char(67); } else { session->append_char(99); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_D()) == glc.GLFW_PRESS()) { if (shift) { session->append_char(68); } else { session->append_char(100); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_E()) == glc.GLFW_PRESS()) { if (shift) { session->append_char(69); } else { session->append_char(101); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_F()) == glc.GLFW_PRESS()) { if (shift) { session->append_char(70); } else { session->append_char(102); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_G()) == glc.GLFW_PRESS()) { if (shift) { session->append_char(71); } else { session->append_char(103); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_H()) == glc.GLFW_PRESS()) { if (shift) { session->append_char(72); } else { session->append_char(104); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_I()) == glc.GLFW_PRESS()) { if (shift) { session->append_char(73); } else { session->append_char(105); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_J()) == glc.GLFW_PRESS()) { if (shift) { session->append_char(74); } else { session->append_char(106); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_K()) == glc.GLFW_PRESS()) { if (shift) { session->append_char(75); } else { session->append_char(107); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_L()) == glc.GLFW_PRESS()) { if (shift) { session->append_char(76); } else { session->append_char(108); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_M()) == glc.GLFW_PRESS()) { if (shift) { session->append_char(77); } else { session->append_char(109); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_N()) == glc.GLFW_PRESS()) { if (shift) { session->append_char(78); } else { session->append_char(110); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_O()) == glc.GLFW_PRESS()) { if (shift) { session->append_char(79); } else { session->append_char(111); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_P()) == glc.GLFW_PRESS()) { if (shift) { session->append_char(80); } else { session->append_char(112); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_Q()) == glc.GLFW_PRESS()) { if (shift) { session->append_char(81); } else { session->append_char(113); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_R()) == glc.GLFW_PRESS()) { if (shift) { session->append_char(82); } else { session->append_char(114); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_S()) == glc.GLFW_PRESS()) { if (shift) { session->append_char(83); } else { session->append_char(115); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_T()) == glc.GLFW_PRESS()) { if (shift) { session->append_char(84); } else { session->append_char(116); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_U()) == glc.GLFW_PRESS()) { if (shift) { session->append_char(85); } else { session->append_char(117); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_V()) == glc.GLFW_PRESS()) { if (shift) { session->append_char(86); } else { session->append_char(118); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_W()) == glc.GLFW_PRESS()) { if (shift) { session->append_char(87); } else { session->append_char(119); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_X()) == glc.GLFW_PRESS()) { if (shift) { session->append_char(88); } else { session->append_char(120); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_Y()) == glc.GLFW_PRESS()) { if (shift) { session->append_char(89); } else { session->append_char(121); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_Z()) == glc.GLFW_PRESS()) { if (shift) { session->append_char(90); } else { session->append_char(122); } return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_0()) == glc.GLFW_PRESS()) { session->append_char(48); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_1()) == glc.GLFW_PRESS()) { session->append_char(49); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_2()) == glc.GLFW_PRESS()) { session->append_char(50); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_3()) == glc.GLFW_PRESS()) { session->append_char(51); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_4()) == glc.GLFW_PRESS()) { session->append_char(52); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_5()) == glc.GLFW_PRESS()) { session->append_char(53); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_6()) == glc.GLFW_PRESS()) { session->append_char(54); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_7()) == glc.GLFW_PRESS()) { session->append_char(55); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_8()) == glc.GLFW_PRESS()) { session->append_char(56); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_9()) == glc.GLFW_PRESS()) { session->append_char(57); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_SPACE()) == glc.GLFW_PRESS()) { session->append_char(32); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_MINUS()) == glc.GLFW_PRESS()) { session->append_char(45); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_PERIOD()) == glc.GLFW_PRESS()) { session->append_char(46); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_SLASH()) == glc.GLFW_PRESS()) { session->append_char(47); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_EQUAL()) == glc.GLFW_PRESS()) { session->append_char(61); return; }
+    if (ginput.glfwGetKey(window, glc.GLFW_KEY_COMMA()) == glc.GLFW_PRESS()) { session->append_char(44); return; }
+}
+
+fn void run_kale_term() {
+    fw.AppConfig config;
+    config.init("Kale Term", 1200, 800);
+    config.font_size = 14.0f;  // monospace at 14px for terminal readability
+
+    fw.App app;
+    int ok = app.init(config);
+    if (ok == 0) {
+        printf("Fatal: could not open Kale Term window\n");
+        return;
+    }
+
+    tabs.TabBar tab_bar;
+    tab_bar.init();
+
+    TermSession* sessions = alloc(TermSession, 8);
+    int session_count = 0;
+
+    // Create initial session
+    int initial_cols = 120;
+    int initial_rows = 40;
+    sessions[0].init(initial_cols, initial_rows);
+    session_count = 1;
+    tab_bar.add_tab("Terminal 1");
+
+    int key_delay = 0;
+
+    while (app.begin_frame() != 0) {
+        float cur_w = (float)app.width;
+        float cur_h = (float)app.height;
+        float tab_h = 32.0f;
+        float term_y = tab_h;
+        float term_h = cur_h - tab_h;
+
+        bool ctrl_down  = (ginput.glfwGetKey(app.window, glc.GLFW_KEY_LEFT_CONTROL()) == glc.GLFW_PRESS());
+        bool shift_down = (ginput.glfwGetKey(app.window, glc.GLFW_KEY_LEFT_SHIFT())   == glc.GLFW_PRESS());
+
+        int active_idx = tab_bar.active;
+
+        // ── Tab bar ───────────────────────────────────────────────────
+        tab_bar.render(&app.ui_ctx.renderer, &app.gl_ctx, &app.ui_ctx.font, 0.0f, 0.0f, cur_w);
+
+        // ── Active terminal view ───────────────────────────────────────
+        if (active_idx >= 0 && active_idx < session_count) {
+            sessions[active_idx].view.render(
+                &app.ui_ctx.renderer, &app.gl_ctx, &app.ui_ctx.font,
+                0.0f, term_y, cur_w, term_h
+            );
+        }
+
+        // ── Input handling ─────────────────────────────────────────────
+        // ESC: quit
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_ESCAPE()) == glc.GLFW_PRESS()) {
+            app.close();
+        }
+
+        // Ctrl+T: new tab
+        if (ctrl_down && ginput.glfwGetKey(app.window, glc.GLFW_KEY_T()) == glc.GLFW_PRESS() && key_delay == 0) {
+            if (session_count < MAX_SESSIONS()) {
+                sessions[session_count].init(initial_cols, initial_rows);
+                session_count = session_count + 1;
+                tab_bar.add_tab("Terminal");
+            }
+            key_delay = 20;
+        }
+
+        // Ctrl+W: close current tab
+        if (ctrl_down && ginput.glfwGetKey(app.window, glc.GLFW_KEY_W()) == glc.GLFW_PRESS() && key_delay == 0) {
+            if (session_count > 1) {
+                sessions[active_idx].destroy();
+                int si = active_idx;
+                while (si < session_count - 1) {
+                    sessions[si] = sessions[si + 1];
+                    si = si + 1;
+                }
+                session_count = session_count - 1;
+                tab_bar.close_active();
+            }
+            key_delay = 20;
+        }
+
+        // Ctrl+Tab: next tab
+        if (ctrl_down && ginput.glfwGetKey(app.window, glc.GLFW_KEY_TAB()) == glc.GLFW_PRESS() && key_delay == 0) {
+            tab_bar.active = (tab_bar.active + 1) % session_count;
+            key_delay = 15;
+        }
+
+        // Mouse click on tab bar
+        if (app.ui_ctx.mouse_pressed != 0 && app.ui_ctx.mouse_y < tab_h) {
+            tab_bar.select_at_x(app.ui_ctx.mouse_x, 0.0f);
+
+            // Click + button
+            float new_btn_x = (float)(tab_bar.count * tabs.TAB_W());
+            if (app.ui_ctx.mouse_x >= new_btn_x && app.ui_ctx.mouse_x < new_btn_x + 36.0f
+                && session_count < MAX_SESSIONS()) {
+                sessions[session_count].init(initial_cols, initial_rows);
+                session_count = session_count + 1;
+                tab_bar.add_tab("Terminal");
+            }
+        }
+
+        // Enter: submit command
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_ENTER()) == glc.GLFW_PRESS() && key_delay == 0
+            && !ctrl_down && active_idx < session_count) {
+            sessions[active_idx].submit();
+            key_delay = 15;
+        }
+
+        // Backspace
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_BACKSPACE()) == glc.GLFW_PRESS() && key_delay == 0
+            && active_idx < session_count) {
+            sessions[active_idx].backspace();
+            key_delay = 5;
+        }
+
+        // Scroll: PgUp / PgDn
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_PAGE_UP()) == glc.GLFW_PRESS() && key_delay == 0
+            && active_idx < session_count) {
+            sessions[active_idx].view.scroll(-200.0f);
+            key_delay = 8;
+        }
+        if (ginput.glfwGetKey(app.window, glc.GLFW_KEY_PAGE_DOWN()) == glc.GLFW_PRESS() && key_delay == 0
+            && active_idx < session_count) {
+            sessions[active_idx].view.scroll(200.0f);
+            key_delay = 8;
+        }
+
+        // Typing
+        if (key_delay == 0 && !ctrl_down && active_idx < session_count) {
+            poll_term_typing(app.window, &sessions[active_idx], shift_down);
+            key_delay = 6;
+        }
+
+        if (key_delay > 0) { key_delay = key_delay - 1; }
+        app.end_frame();
+    }
+
+    // Cleanup
+    int si = 0;
+    while (si < session_count) {
+        sessions[si].destroy();
+        si = si + 1;
+    }
+    free(sessions);
+    tab_bar.destroy();
+    app.close();
+}
+
+fn int main_entry() {
+    run_kale_term();
+    return 0;
+}
+
+main_entry();

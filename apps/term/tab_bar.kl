@@ -1,0 +1,96 @@
+// apps/term/tab_bar.kl
+// Tab bar for Kale Term — manages multiple terminal sessions
+
+import "libs/render/batch.kl" as rbatch;
+import "libs/render/font.kl" as rfont;
+import "libs/render/math.kl" as rmath;
+import "libs/gl/loader.kl" as glloader;
+
+extern int strlen(string s);
+
+int MAX_TERM_TABS() { return 8; }
+int TAB_W()         { return 120; }
+int TAB_H()         { return 32; }
+
+struct TabBar {
+    string* titles;
+    int     count;
+    int     active;
+}
+
+fn void TabBar.init() {
+    this->count  = 0;
+    this->active = 0;
+    this->titles = alloc(string, MAX_TERM_TABS());
+}
+
+fn void TabBar.destroy() {
+    if (this->titles != (string*)0) {
+        free(this->titles);
+        this->titles = (string*)0;
+    }
+}
+
+fn void TabBar.add_tab(string title) {
+    if (this->count >= MAX_TERM_TABS()) { return; }
+    this->titles[this->count] = title;
+    this->count = this->count + 1;
+    this->active = this->count - 1;
+}
+
+fn void TabBar.close_active() {
+    if (this->count <= 1) { return; }
+    int a = this->active;
+    int i = a;
+    while (i < this->count - 1) {
+        this->titles[i] = this->titles[i + 1];
+        i = i + 1;
+    }
+    this->count = this->count - 1;
+    if (this->active >= this->count) { this->active = this->count - 1; }
+}
+
+fn void TabBar.select_at_x(float mouse_x, float panel_x) {
+    float rel_x = mouse_x - panel_x;
+    int idx = (int)(rel_x / (float)TAB_W());
+    if (idx >= 0 && idx < this->count) {
+        this->active = idx;
+    }
+}
+
+fn void TabBar.render(rbatch.BatchRenderer* r, glloader.GLContext* gl_ctx, rfont.FontAtlas* font,
+                       float x, float y, float w) {
+    rmath.Color bar_bg   = rmath.color_rgba(0.14f, 0.15f, 0.18f, 1.0f);
+    rmath.Color tab_act  = rmath.color_rgba(0.11f, 0.12f, 0.14f, 1.0f);
+    rmath.Color tab_inac = rmath.color_rgba(0.17f, 0.18f, 0.22f, 1.0f);
+    rmath.Color fg_act   = rmath.color_rgba(0.92f, 0.94f, 0.96f, 1.0f);
+    rmath.Color fg_inac  = rmath.color_rgba(0.55f, 0.58f, 0.65f, 1.0f);
+    rmath.Color accent   = rmath.color_rgba(0.20f, 0.65f, 0.50f, 1.0f);
+    rmath.Color sep      = rmath.color_rgba(0.22f, 0.23f, 0.27f, 1.0f);
+    rmath.Color new_col  = rmath.color_rgba(0.30f, 0.33f, 0.40f, 1.0f);
+
+    float tab_h = (float)TAB_H();
+    r->push_quad(gl_ctx, x, y, w, tab_h, bar_bg);
+    r->push_quad(gl_ctx, x, y + tab_h - 1.0f, w, 1.0f, sep);
+
+    int i = 0;
+    while (i < this->count) {
+        float tx = x + (float)(i * TAB_W());
+        bool is_act = (i == this->active);
+        rmath.Color tbg = tab_inac;
+        rmath.Color tfg = fg_inac;
+        if (is_act) { tbg = tab_act; tfg = fg_act; }
+        r->push_quad(gl_ctx, tx, y, (float)TAB_W() - 1.0f, tab_h, tbg);
+        if (is_act) {
+            r->push_quad(gl_ctx, tx, y, (float)TAB_W() - 1.0f, 2.0f, accent);
+        }
+        font->draw_text(r, gl_ctx, this->titles[i], tx + 10.0f, y + 8.0f, tfg);
+        r->push_quad(gl_ctx, tx + (float)TAB_W() - 1.0f, y, 1.0f, tab_h, sep);
+        i = i + 1;
+    }
+
+    // "+ New Tab" button
+    float new_x = x + (float)(this->count * TAB_W());
+    r->push_quad(gl_ctx, new_x, y + 6.0f, 28.0f, 20.0f, new_col);
+    font->draw_text(r, gl_ctx, "+", new_x + 8.0f, y + 7.0f, fg_act);
+}

@@ -1,0 +1,216 @@
+// apps/api_client/request_panel.kl
+// Request Builder Panel — URL, method selector, headers, body input
+
+import "libs/render/batch.kl" as rbatch;
+import "libs/render/font.kl" as rfont;
+import "libs/render/math.kl" as rmath;
+import "libs/gl/loader.kl" as glloader;
+
+extern int strlen(string s);
+extern void* malloc(int size);
+
+int REQ_BUF_CAP() { return 2048; }
+
+// HTTP methods
+int METHOD_GET()    { return 0; }
+int METHOD_POST()   { return 1; }
+int METHOD_PUT()    { return 2; }
+int METHOD_DELETE() { return 3; }
+int METHOD_PATCH()  { return 4; }
+
+struct RequestPanel {
+    char* url_buf;
+    int   url_len;
+
+    int   method;   // METHOD_* constant
+
+    char* body_buf;
+    int   body_len;
+
+    char* ct_buf;   // content-type
+    int   ct_len;
+
+    // Focus: 0=url, 1=body, 2=content_type
+    int   focus_field;
+
+    bool  send_requested;
+}
+
+fn void RequestPanel.init() {
+    this->url_buf  = (char*)malloc(REQ_BUF_CAP() + 1);
+    this->url_len  = 0;
+    this->url_buf[0] = (char)0;
+
+    this->body_buf = (char*)malloc(REQ_BUF_CAP() + 1);
+    this->body_len = 0;
+    this->body_buf[0] = (char)0;
+
+    this->ct_buf   = (char*)malloc(256);
+    this->ct_len   = 0;
+    // Default content type
+    string default_ct = "application/json";
+    char* dct = (char*)default_ct;
+    int di = 0;
+    while (dct[di] != (char)0 && di < 255) {
+        this->ct_buf[di] = dct[di];
+        di = di + 1;
+    }
+    this->ct_buf[di] = (char)0;
+    this->ct_len = di;
+
+    this->method       = METHOD_GET();
+    this->focus_field  = 0;
+    this->send_requested = false;
+}
+
+fn void RequestPanel.destroy() {
+    free(this->url_buf);
+    free(this->body_buf);
+    free(this->ct_buf);
+}
+
+fn string RequestPanel.url()    { return (string)this->url_buf;  }
+fn string RequestPanel.body()   { return (string)this->body_buf; }
+fn string RequestPanel.ct()     { return (string)this->ct_buf;   }
+
+fn string RequestPanel.method_name() {
+    if (this->method == METHOD_POST())   { return "POST"; }
+    if (this->method == METHOD_PUT())    { return "PUT"; }
+    if (this->method == METHOD_DELETE()) { return "DELETE"; }
+    if (this->method == METHOD_PATCH())  { return "PATCH"; }
+    return "GET";
+}
+
+fn void RequestPanel.append_char_to_focused(string ch) {
+    if (strlen(ch) == 0) { return; }
+    char c = ((char*)ch)[0];
+    if (this->focus_field == 0 && this->url_len < REQ_BUF_CAP()) {
+        this->url_buf[this->url_len] = c;
+        this->url_len = this->url_len + 1;
+        this->url_buf[this->url_len] = (char)0;
+    } else if (this->focus_field == 1 && this->body_len < REQ_BUF_CAP()) {
+        this->body_buf[this->body_len] = c;
+        this->body_len = this->body_len + 1;
+        this->body_buf[this->body_len] = (char)0;
+    } else if (this->focus_field == 2 && this->ct_len < 255) {
+        this->ct_buf[this->ct_len] = c;
+        this->ct_len = this->ct_len + 1;
+        this->ct_buf[this->ct_len] = (char)0;
+    }
+}
+
+fn void RequestPanel.backspace() {
+    if (this->focus_field == 0 && this->url_len > 0) {
+        this->url_len = this->url_len - 1;
+        this->url_buf[this->url_len] = (char)0;
+    } else if (this->focus_field == 1 && this->body_len > 0) {
+        this->body_len = this->body_len - 1;
+        this->body_buf[this->body_len] = (char)0;
+    } else if (this->focus_field == 2 && this->ct_len > 0) {
+        this->ct_len = this->ct_len - 1;
+        this->ct_buf[this->ct_len] = (char)0;
+    }
+}
+
+fn void RequestPanel.cycle_method() {
+    this->method = (this->method + 1) % 5;
+}
+
+fn void RequestPanel.render(rbatch.BatchRenderer* r, glloader.GLContext* gl_ctx, rfont.FontAtlas* font,
+                             float x, float y, float w, float h) {
+    rmath.Color panel_bg  = rmath.color_rgba(0.14f, 0.15f, 0.18f, 1.0f);
+    rmath.Color input_bg  = rmath.color_rgba(0.11f, 0.12f, 0.14f, 1.0f);
+    rmath.Color focus_brd = rmath.color_rgba(0.25f, 0.55f, 0.95f, 1.0f);
+    rmath.Color norm_brd  = rmath.color_rgba(0.25f, 0.27f, 0.32f, 1.0f);
+    rmath.Color text_col  = rmath.color_rgba(0.92f, 0.94f, 0.96f, 1.0f);
+    rmath.Color label_col = rmath.color_rgba(0.50f, 0.53f, 0.60f, 1.0f);
+    rmath.Color hint_col  = rmath.color_rgba(0.35f, 0.38f, 0.45f, 1.0f);
+    rmath.Color cursor_c  = rmath.color_rgba(0.30f, 0.65f, 1.0f, 1.0f);
+    rmath.Color send_bg   = rmath.color_rgba(0.18f, 0.50f, 0.25f, 1.0f);
+    rmath.Color send_fg   = rmath.color_rgba(1.0f, 1.0f, 1.0f, 1.0f);
+    rmath.Color meth_bg   = rmath.color_rgba(0.20f, 0.21f, 0.26f, 1.0f);
+    rmath.Color border_b  = rmath.color_rgba(0.20f, 0.21f, 0.25f, 1.0f);
+
+    // Draw method colors by type
+    rmath.Color meth_col = rmath.color_rgba(0.25f, 0.65f, 0.85f, 1.0f); // GET
+    if (this->method == METHOD_POST())   { meth_col = rmath.color_rgba(0.85f, 0.55f, 0.20f, 1.0f); }
+    if (this->method == METHOD_PUT())    { meth_col = rmath.color_rgba(0.55f, 0.75f, 0.25f, 1.0f); }
+    if (this->method == METHOD_DELETE()) { meth_col = rmath.color_rgba(0.85f, 0.30f, 0.30f, 1.0f); }
+    if (this->method == METHOD_PATCH())  { meth_col = rmath.color_rgba(0.75f, 0.55f, 0.85f, 1.0f); }
+
+    r->push_quad(gl_ctx, x, y, w, h, panel_bg);
+    r->push_quad(gl_ctx, x, y + h - 1.0f, w, 1.0f, border_b);
+
+    float row_y = y + 10.0f;
+    float lbl_w = 120.0f;
+
+    // ── Row 1: Method + URL + Send ────────────────────────────────────
+    // Method selector button
+    r->push_quad(gl_ctx, x + 8.0f, row_y, 72.0f, 28.0f, meth_bg);
+    r->push_quad(gl_ctx, x + 8.0f, row_y + 24.0f, 72.0f, 4.0f, meth_col);
+    font->draw_text(r, gl_ctx, this->method_name(), x + 18.0f, row_y + 6.0f, meth_col);
+
+    // URL input
+    float url_x = x + 86.0f;
+    float url_w = w - 86.0f - 90.0f;
+    rmath.Color url_brd = norm_brd;
+    if (this->focus_field == 0) { url_brd = focus_brd; }
+    r->push_quad(gl_ctx, url_x, row_y, url_w, 28.0f, url_brd);
+    r->push_quad(gl_ctx, url_x + 1.0f, row_y + 1.0f, url_w - 2.0f, 26.0f, input_bg);
+    if (this->url_len == 0) {
+        font->draw_text(r, gl_ctx, "http://...", url_x + 8.0f, row_y + 6.0f, hint_col);
+    } else {
+        r->set_clip_rect(gl_ctx, url_x + 2.0f, row_y + 2.0f, url_w - 4.0f, 24.0f);
+        font->draw_text(r, gl_ctx, (string)this->url_buf, url_x + 8.0f, row_y + 6.0f, text_col);
+        r->reset_clip(gl_ctx);
+    }
+    if (this->focus_field == 0) {
+        float tw = font->measure_text((string)this->url_buf);
+        r->push_quad(gl_ctx, url_x + 8.0f + tw, row_y + 5.0f, 2.0f, 18.0f, cursor_c);
+    }
+
+    // Send button
+    float send_x = url_x + url_w + 8.0f;
+    r->push_quad(gl_ctx, send_x, row_y, 72.0f, 28.0f, send_bg);
+    font->draw_text(r, gl_ctx, "Send", send_x + 18.0f, row_y + 6.0f, send_fg);
+
+    // ── Row 2: Content-Type ───────────────────────────────────────────
+    row_y = row_y + 38.0f;
+    font->draw_text(r, gl_ctx, "Content-Type:", x + 8.0f, row_y + 6.0f, label_col);
+    float ct_x = x + 120.0f;
+    float ct_w = w * 0.4f;
+    rmath.Color ct_brd = norm_brd;
+    if (this->focus_field == 2) { ct_brd = focus_brd; }
+    r->push_quad(gl_ctx, ct_x, row_y, ct_w, 24.0f, ct_brd);
+    r->push_quad(gl_ctx, ct_x + 1.0f, row_y + 1.0f, ct_w - 2.0f, 22.0f, input_bg);
+    font->draw_text(r, gl_ctx, (string)this->ct_buf, ct_x + 6.0f, row_y + 4.0f, text_col);
+    if (this->focus_field == 2) {
+        float tw = font->measure_text((string)this->ct_buf);
+        r->push_quad(gl_ctx, ct_x + 6.0f + tw, row_y + 3.0f, 2.0f, 16.0f, cursor_c);
+    }
+
+    // ── Row 3: Body ───────────────────────────────────────────────────
+    row_y = row_y + 34.0f;
+    font->draw_text(r, gl_ctx, "Body:", x + 8.0f, row_y + 6.0f, label_col);
+    float body_x = x + 8.0f;
+    float body_w = w - 16.0f;
+    float body_h = h - (row_y - y) - 10.0f;
+    if (body_h < 40.0f) { body_h = 40.0f; }
+
+    rmath.Color body_brd = norm_brd;
+    if (this->focus_field == 1) { body_brd = focus_brd; }
+    r->push_quad(gl_ctx, body_x, row_y + 24.0f, body_w, body_h, body_brd);
+    r->push_quad(gl_ctx, body_x + 1.0f, row_y + 25.0f, body_w - 2.0f, body_h - 2.0f, input_bg);
+
+    r->set_clip_rect(gl_ctx, body_x + 2.0f, row_y + 26.0f, body_w - 4.0f, body_h - 4.0f);
+    if (this->body_len == 0) {
+        font->draw_text(r, gl_ctx, "{\"key\": \"value\"}", body_x + 8.0f, row_y + 28.0f, hint_col);
+    } else {
+        font->draw_text(r, gl_ctx, (string)this->body_buf, body_x + 8.0f, row_y + 28.0f, text_col);
+    }
+    if (this->focus_field == 1) {
+        float tw = font->measure_text((string)this->body_buf);
+        r->push_quad(gl_ctx, body_x + 8.0f + tw, row_y + 28.0f, 2.0f, 16.0f, cursor_c);
+    }
+    r->reset_clip(gl_ctx);
+}

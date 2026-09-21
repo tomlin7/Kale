@@ -1,0 +1,234 @@
+// apps/db_studio/result_grid.kl
+// Query Result Grid — renders a paginated table of rows and columns from a query
+
+import "libs/render/batch.kl" as rbatch;
+import "libs/render/font.kl" as rfont;
+import "libs/render/math.kl" as rmath;
+import "libs/gl/loader.kl" as glloader;
+import "libs/sql/connection.kl" as conn;
+import "libs/sql/statement.kl" as stmt;
+
+extern int strlen(string s);
+extern void* malloc(int size);
+
+int MAX_COLS()    { return 16; }
+int MAX_ROWS()    { return 256; }
+int GRID_COL_W()  { return 160; }
+int GRID_ROW_H()  { return 26; }
+int GRID_HROW_H() { return 28; }
+
+struct GridCell {
+    string text;
+}
+
+struct ResultGrid {
+    // Header column names
+    string* col_names;
+    int    col_count;
+
+    // Row data (row_count * col_count cells, stored row-major)
+    GridCell* cells;
+    int       row_count;
+    int       cell_capacity;
+
+    float     scroll_x;
+    float     scroll_y;
+    int       selected_row;
+
+    string    status_msg;
+    bool      has_error;
+}
+
+fn void ResultGrid.init() {
+    this->col_count      = 0;
+    this->col_names      = alloc(string, MAX_COLS());
+    this->row_count      = 0;
+    this->cell_capacity  = MAX_ROWS() * MAX_COLS();
+    this->cells          = alloc(GridCell, this->cell_capacity);
+    this->scroll_x       = 0.0f;
+    this->scroll_y       = 0.0f;
+    this->selected_row   = -1;
+    this->status_msg     = "No query executed.";
+    this->has_error      = false;
+}
+
+fn void ResultGrid.destroy() {
+    if (this->col_names != (string*)0) {
+        free(this->col_names);
+        this->col_names = (string*)0;
+    }
+    if (this->cell_capacity > 0) {
+        free(this->cells);
+        this->cell_capacity = 0;
+    }
+}
+
+fn void ResultGrid.clear() {
+    this->col_count    = 0;
+    this->row_count    = 0;
+    this->scroll_x     = 0.0f;
+    this->scroll_y     = 0.0f;
+    this->selected_row = -1;
+}
+
+fn void ResultGrid.set_cell(int row, int col, string text) {
+    int idx = row * MAX_COLS() + col;
+    if (idx >= 0 && idx < this->cell_capacity) {
+        int tlen = strlen(text);
+        char* buf = (char*)malloc(tlen + 1);
+        char* src = (char*)text;
+        int k = 0;
+        while (k < tlen) { buf[k] = src[k]; k = k + 1; }
+        buf[tlen] = (char)0;
+        this->cells[idx].text = (string)buf;
+    }
+}
+
+fn string ResultGrid.get_cell(int row, int col) {
+    int idx = row * MAX_COLS() + col;
+    if (idx >= 0 && idx < this->cell_capacity) {
+        return this->cells[idx].text;
+    }
+    return "";
+}
+
+// Execute a SQL query and populate this grid
+fn void ResultGrid.run_query(conn.Database* db, string sql_query) {
+    this->clear();
+    this->has_error = false;
+
+    if (!db->is_open) {
+        this->status_msg = "No database open.";
+        this->has_error = true;
+        return;
+    }
+
+    if (strlen(sql_query) == 0) {
+        this->status_msg = "Empty query.";
+        return;
+    }
+
+    stmt.Statement s = db->prepare(sql_query);
+    if (!s.is_valid) {
+        this->status_msg = db->errmsg();
+        this->has_error = true;
+        return;
+    }
+
+    // Extract column names
+    this->col_count = s.column_count();
+    if (this->col_count > MAX_COLS()) { this->col_count = MAX_COLS(); }
+
+    int ci = 0;
+    while (ci < this->col_count) {
+        string cname = s.column_name(ci);
+        int clen = strlen(cname);
+        char* cbuf = (char*)malloc(clen + 1);
+        char* csrc = (char*)cname;
+        int k = 0;
+        while (k < clen) { cbuf[k] = csrc[k]; k = k + 1; }
+        cbuf[clen] = (char)0;
+        this->col_names[ci] = (string)cbuf;
+        ci = ci + 1;
+    }
+
+    // Fetch rows
+    while (s.step() && this->row_count < MAX_ROWS()) {
+        int col = 0;
+        while (col < this->col_count) {
+            string cell_text = s.get_string(col);
+            this->set_cell(this->row_count, col, cell_text);
+            col = col + 1;
+        }
+        this->row_count = this->row_count + 1;
+    }
+    s.finalize();
+    this->status_msg = "Query OK.";
+}
+
+fn void ResultGrid.scroll(float dx, float dy) {
+    this->scroll_x = this->scroll_x + dx;
+    this->scroll_y = this->scroll_y + dy;
+    if (this->scroll_x < 0.0f) { this->scroll_x = 0.0f; }
+    if (this->scroll_y < 0.0f) { this->scroll_y = 0.0f; }
+}
+
+fn void ResultGrid.select_at_y(float mouse_y, float panel_y) {
+    float rel_y = mouse_y - panel_y - (float)GRID_HROW_H() + this->scroll_y;
+    int idx = (int)(rel_y / (float)GRID_ROW_H());
+    if (idx >= 0 && idx < this->row_count) {
+        this->selected_row = idx;
+    }
+}
+
+fn void ResultGrid.render(rbatch.BatchRenderer* r, glloader.GLContext* gl_ctx, rfont.FontAtlas* font,
+                           float x, float y, float w, float h) {
+    rmath.Color panel_bg  = rmath.color_rgba(0.11f, 0.12f, 0.14f, 1.0f);
+    rmath.Color header_bg = rmath.color_rgba(0.19f, 0.20f, 0.24f, 1.0f);
+    rmath.Color sel_bg    = rmath.color_rgba(0.18f, 0.45f, 0.75f, 0.30f);
+    rmath.Color even_bg   = rmath.color_rgba(0.13f, 0.14f, 0.17f, 1.0f);
+    rmath.Color odd_bg    = rmath.color_rgba(0.11f, 0.12f, 0.14f, 1.0f);
+    rmath.Color hdr_text  = rmath.color_rgba(0.65f, 0.80f, 0.95f, 1.0f);
+    rmath.Color cell_text = rmath.color_rgba(0.88f, 0.90f, 0.94f, 1.0f);
+    rmath.Color sep_col   = rmath.color_rgba(0.20f, 0.21f, 0.25f, 1.0f);
+    rmath.Color err_col   = rmath.color_rgba(0.95f, 0.45f, 0.45f, 1.0f);
+    rmath.Color ok_col    = rmath.color_rgba(0.50f, 0.53f, 0.60f, 1.0f);
+
+    r->push_quad(gl_ctx, x, y, w, h, panel_bg);
+    r->set_clip_rect(gl_ctx, x, y, w, h);
+
+    float col_w = (float)GRID_COL_W();
+    float hdr_h = (float)GRID_HROW_H();
+    float row_h = (float)GRID_ROW_H();
+
+    // Column headers
+    r->push_quad(gl_ctx, x, y, w, hdr_h, header_bg);
+    int ci = 0;
+    while (ci < this->col_count) {
+        float cx = x + (float)(ci * GRID_COL_W()) - this->scroll_x;
+        if (cx + col_w > x && cx < x + w) {
+            font->draw_text(r, gl_ctx, this->col_names[ci], cx + 6.0f, y + 6.0f, hdr_text);
+            r->push_quad(gl_ctx, cx + col_w - 1.0f, y, 1.0f, hdr_h, sep_col);
+        }
+        ci = ci + 1;
+    }
+    r->push_quad(gl_ctx, x, y + hdr_h - 1.0f, w, 1.0f, sep_col);
+
+    // Data rows
+    int ri = 0;
+    while (ri < this->row_count) {
+        float ry = y + hdr_h + (float)(ri * GRID_ROW_H()) - this->scroll_y;
+        if (ry + row_h < y || ry > y + h) {
+            ri = ri + 1;
+            continue;
+        }
+
+        rmath.Color row_bg = even_bg;
+        if (ri % 2 == 1) { row_bg = odd_bg; }
+        if (ri == this->selected_row) { row_bg = sel_bg; }
+        r->push_quad(gl_ctx, x, ry, w, row_h, row_bg);
+
+        int cj = 0;
+        while (cj < this->col_count) {
+            float cx = x + (float)(cj * GRID_COL_W()) - this->scroll_x;
+            if (cx + col_w > x && cx < x + w) {
+                string cell_val = this->get_cell(ri, cj);
+                font->draw_text(r, gl_ctx, cell_val, cx + 6.0f, ry + 4.0f, cell_text);
+            }
+            cj = cj + 1;
+        }
+
+        r->push_quad(gl_ctx, x, ry + row_h - 1.0f, w, 1.0f, sep_col);
+        ri = ri + 1;
+    }
+
+    // Status bar at bottom
+    float status_y = y + h - 22.0f;
+    rmath.Color status_bg = rmath.color_rgba(0.16f, 0.17f, 0.20f, 1.0f);
+    r->push_quad(gl_ctx, x, status_y, w, 22.0f, status_bg);
+    rmath.Color status_fg = ok_col;
+    if (this->has_error) { status_fg = err_col; }
+    font->draw_text(r, gl_ctx, this->status_msg, x + 8.0f, status_y + 3.0f, status_fg);
+
+    r->reset_clip(gl_ctx);
+}

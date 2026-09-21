@@ -1,0 +1,194 @@
+// apps/files/file_panel.kl
+// File Panel — Directory navigation pane for dual-pane file manager
+
+import "libs/render/batch.kl" as rbatch;
+import "libs/render/font.kl" as rfont;
+import "libs/render/math.kl" as rmath;
+import "libs/gl/loader.kl" as glloader;
+import "packages/std/fs/path.kl" as kpath;
+import "packages/std/fs/file_util.kl" as kfu;
+
+extern int strlen(string s);
+extern int strcmp(string a, string b);
+extern void* malloc(int size);
+
+int MAX_DIR_ENTRIES() { return 128; }
+int FILE_ROW_H()      { return 24; }
+
+struct FileEntry {
+    string name;
+    bool   is_dir;
+    int    size;
+    string ext;
+}
+
+struct FilePanel {
+    string     current_dir;
+    FileEntry* entries;
+    int        count;
+    int        selected;
+    float      scroll_y;
+    bool       is_active;
+}
+
+fn void FilePanel.init(string start_dir) {
+    this->current_dir = start_dir;
+    this->entries     = alloc(FileEntry, MAX_DIR_ENTRIES());
+    this->count       = 0;
+    this->selected    = 0;
+    this->scroll_y    = 0.0f;
+    this->is_active   = false;
+    this->refresh();
+}
+
+fn void FilePanel.destroy() {
+    if (this->entries != (FileEntry*)0) {
+        free(this->entries);
+        this->entries = (FileEntry*)0;
+    }
+    this->count = 0;
+}
+
+fn void FilePanel.add_entry(string name, bool is_dir, int size, string ext) {
+    if (this->count >= MAX_DIR_ENTRIES()) { return; }
+    this->entries[this->count].name   = name;
+    this->entries[this->count].is_dir = is_dir;
+    this->entries[this->count].size   = size;
+    this->entries[this->count].ext    = ext;
+    this->count = this->count + 1;
+}
+
+// Populates entries for the current directory
+fn void FilePanel.refresh() {
+    this->count = 0;
+    this->selected = 0;
+    this->scroll_y = 0.0f;
+
+    // Parent directory link
+    this->add_entry("..", true, 0, "");
+
+    // Mock/Common directories & files for browsing demo / local directory
+    if (strcmp(this->current_dir, ".") == 0 || strcmp(this->current_dir, "e:\\kale") == 0) {
+        this->add_entry("apps", true, 0, "");
+        this->add_entry("editor", true, 0, "");
+        this->add_entry("libs", true, 0, "");
+        this->add_entry("packages", true, 0, "");
+        this->add_entry("src", true, 0, "");
+        this->add_entry("tools", true, 0, "");
+        this->add_entry("vcs", true, 0, "");
+        this->add_entry("kale.toml", false, 1420, "toml");
+        this->add_entry("README.md", false, 3210, "md");
+        this->add_entry("LICENSE", false, 1084, "");
+    } else if (strcmp(this->current_dir, "apps") == 0) {
+        this->add_entry("api_client", true, 0, "");
+        this->add_entry("asset_studio", true, 0, "");
+        this->add_entry("db_studio", true, 0, "");
+        this->add_entry("editor", true, 0, "");
+        this->add_entry("files", true, 0, "");
+        this->add_entry("git_lens", true, 0, "");
+        this->add_entry("hex", true, 0, "");
+        this->add_entry("kv", true, 0, "");
+        this->add_entry("perf", true, 0, "");
+        this->add_entry("shader_lab", true, 0, "");
+        this->add_entry("term", true, 0, "");
+        this->add_entry("tracker", true, 0, "");
+    } else if (strcmp(this->current_dir, "libs") == 0) {
+        this->add_entry("framework", true, 0, "");
+        this->add_entry("gl", true, 0, "");
+        this->add_entry("glfw", true, 0, "");
+        this->add_entry("net", true, 0, "");
+        this->add_entry("render", true, 0, "");
+        this->add_entry("sql", true, 0, "");
+        this->add_entry("term", true, 0, "");
+        this->add_entry("ui", true, 0, "");
+    } else {
+        // Generic contents
+        this->add_entry("main.kl", false, 2450, "kl");
+        this->add_entry("config.json", false, 512, "json");
+        this->add_entry("notes.txt", false, 128, "txt");
+    }
+}
+
+fn void FilePanel.enter_selected() {
+    if (this->selected < 0 || this->selected >= this->count) { return; }
+    FileEntry entry = this->entries[this->selected];
+    if (entry.is_dir) {
+        if (strcmp(entry.name, "..") == 0) {
+            // Go up one level
+            this->current_dir = kpath.dirname(this->current_dir);
+        } else {
+            // Go down
+            this->current_dir = entry.name;
+        }
+        this->refresh();
+    }
+}
+
+fn void FilePanel.scroll(float dy) {
+    this->scroll_y = this->scroll_y + dy;
+    float max_s = (float)(this->count * FILE_ROW_H());
+    if (this->scroll_y < 0.0f)  { this->scroll_y = 0.0f; }
+    if (this->scroll_y > max_s) { this->scroll_y = max_s; }
+}
+
+fn void FilePanel.render(rbatch.BatchRenderer* r, glloader.GLContext* gl_ctx, rfont.FontAtlas* font,
+                          float x, float y, float w, float h) {
+    rmath.Color panel_bg = rmath.color_rgba(0.12f, 0.13f, 0.16f, 1.0f);
+    rmath.Color path_bg  = rmath.color_rgba(0.16f, 0.17f, 0.21f, 1.0f);
+    rmath.Color path_fg  = rmath.color_rgba(0.92f, 0.94f, 0.96f, 1.0f);
+    rmath.Color act_brd  = rmath.color_rgba(0.25f, 0.65f, 0.85f, 1.0f);
+    rmath.Color inact_brd = rmath.color_rgba(0.20f, 0.22f, 0.26f, 1.0f);
+    rmath.Color sel_bg   = rmath.color_rgba(0.18f, 0.45f, 0.75f, 0.40f);
+    rmath.Color dir_col  = rmath.color_rgba(0.95f, 0.80f, 0.35f, 1.0f); // folder yellow
+    rmath.Color file_col = rmath.color_rgba(0.88f, 0.90f, 0.94f, 1.0f);
+    rmath.Color size_col = rmath.color_rgba(0.50f, 0.53f, 0.60f, 1.0f);
+    rmath.Color sep_col  = rmath.color_rgba(0.18f, 0.19f, 0.23f, 1.0f);
+
+    rmath.Color brd_c = inact_brd;
+    if (this->is_active) { brd_c = act_brd; }
+
+    r->push_quad(gl_ctx, x, y, w, h, panel_bg);
+    r->push_rect_outline(gl_ctx, x, y, w, h, 1.0f, brd_c);
+
+    // Current path header
+    float path_h = 28.0f;
+    r->push_quad(gl_ctx, x + 1.0f, y + 1.0f, w - 2.0f, path_h, path_bg);
+    r->push_quad(gl_ctx, x, y + path_h, w, 1.0f, brd_c);
+    font->draw_text(r, gl_ctx, this->current_dir, x + 10.0f, y + 6.0f, path_fg);
+
+    // Entries area
+    float list_y = y + path_h + 1.0f;
+    float list_h = h - path_h - 2.0f;
+    r->set_clip_rect(gl_ctx, x + 1.0f, list_y, w - 2.0f, list_h);
+
+    float row_h = (float)FILE_ROW_H();
+    int i = 0;
+    while (i < this->count) {
+        float ry = list_y + (float)(i * FILE_ROW_H()) - this->scroll_y;
+        if (ry + row_h >= list_y && ry <= list_y + list_h) {
+            bool is_sel = (i == this->selected);
+            if (is_sel) {
+                r->push_quad(gl_ctx, x + 2.0f, ry, w - 4.0f, row_h, sel_bg);
+            }
+
+            FileEntry e = this->entries[i];
+            rmath.Color fc = file_col;
+            if (e.is_dir) { fc = dir_col; }
+
+            // Name
+            font->draw_text(r, gl_ctx, e.name, x + 12.0f, ry + 3.0f, fc);
+
+            // Size / <DIR> label
+            if (e.is_dir) {
+                font->draw_text(r, gl_ctx, "<DIR>", x + w - 65.0f, ry + 3.0f, dir_col);
+            } else {
+                font->draw_text(r, gl_ctx, e.ext, x + w - 50.0f, ry + 3.0f, size_col);
+            }
+
+            r->push_quad(gl_ctx, x + 2.0f, ry + row_h - 1.0f, w - 4.0f, 1.0f, sep_col);
+        }
+        i = i + 1;
+    }
+
+    r->reset_clip(gl_ctx);
+}

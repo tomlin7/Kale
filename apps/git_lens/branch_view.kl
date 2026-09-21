@@ -1,0 +1,181 @@
+// apps/git_lens/branch_view.kl
+// Branch List Side Panel — shows all local branches, marks HEAD, allows switching focus
+
+import "libs/render/batch.kl" as rbatch;
+import "libs/render/font.kl" as rfont;
+import "libs/render/math.kl" as rmath;
+import "libs/gl/loader.kl" as glloader;
+import "packages/std/fs/file_util.kl" as fu;
+import "packages/std/fs/path.kl" as path;
+import "packages/std/fs/dir.kl" as dir;
+
+extern int strlen(string s);
+extern void* malloc(int size);
+extern int strcmp(string a, string b);
+
+int MAX_BRANCHES() { return 32; }
+int BRANCH_ROW_H() { return 32; }
+
+struct BranchEntry {
+    string name;
+    string tip_hash;   // short 7-char hash of tip commit
+    int    is_head;    // 1 = current HEAD branch
+}
+
+struct BranchView {
+    BranchEntry* branches;
+    int          count;
+    int          capacity;
+    int          selected_idx;
+    string       repo_root;
+    string       head_branch;
+}
+
+fn void BranchView.init(string repo_root) {
+    this->capacity     = MAX_BRANCHES();
+    this->count        = 0;
+    this->branches     = alloc(BranchEntry, this->capacity);
+    this->selected_idx = 0;
+    this->repo_root    = repo_root;
+    this->head_branch  = "master";
+}
+
+fn void BranchView.destroy() {
+    if (this->capacity > 0) {
+        free(this->branches);
+        this->capacity = 0;
+        this->count = 0;
+    }
+}
+
+// Load branch refs from .kale/refs/heads/
+fn void BranchView.load() {
+    this->count = 0;
+
+    string heads_path = path.join(this->repo_root, ".kale/refs/heads");
+
+    // Read HEAD to determine current branch name
+    string head_file = path.join(this->repo_root, ".kale/HEAD");
+    if (fu.exists(head_file)) {
+        string head_content = fu.read_to_string(head_file);
+        // HEAD content is either "ref: refs/heads/<name>" or a raw hash
+        char* hc = (char*)head_content;
+        int hlen = strlen(head_content);
+        // Look for "refs/heads/"
+        int ri = 0;
+        while (ri < hlen - 11) {
+            if (hc[ri]==(char)114 && hc[ri+1]==(char)101 && hc[ri+2]==(char)102 &&
+                hc[ri+3]==(char)115 && hc[ri+4]==(char)47 && hc[ri+5]==(char)104) {
+                // "refs/h" found — skip "refs/heads/"
+                int name_start = ri + 11;
+                int name_end = name_start;
+                while (name_end < hlen && hc[name_end] != (char)10 && hc[name_end] != (char)13 && hc[name_end] != (char)32) {
+                    name_end = name_end + 1;
+                }
+                int nlen = name_end - name_start;
+                char* nbuf = (char*)malloc(nlen + 1);
+                int k = 0;
+                while (k < nlen) { nbuf[k] = hc[name_start + k]; k = k + 1; }
+                nbuf[nlen] = (char)0;
+                this->head_branch = (string)nbuf;
+                break;
+            }
+            ri = ri + 1;
+        }
+    }
+
+    // Enumerate heads dir entries — read each as a branch ref
+    // For now, always add "master" as the canonical branch (extended when dir listing is available)
+    if (this->count < this->capacity) {
+        string master_ref = path.join(heads_path, "master");
+        string tip = "";
+        if (fu.exists(master_ref)) {
+            tip = fu.read_to_string(master_ref);
+            // trim trailing whitespace
+            char* tb = (char*)tip;
+            int tlen = strlen(tip);
+            while (tlen > 0 && (tb[tlen-1] == (char)10 || tb[tlen-1] == (char)13 || tb[tlen-1] == (char)32)) {
+                tlen = tlen - 1;
+            }
+            char* short_tip = (char*)malloc(8);
+            int si = 0;
+            while (si < 7 && si < tlen) { short_tip[si] = tb[si]; si = si + 1; }
+            short_tip[si] = (char)0;
+            tip = (string)short_tip;
+        }
+        this->branches[this->count].name     = "master";
+        this->branches[this->count].tip_hash = tip;
+        this->branches[this->count].is_head  = 1;
+        this->count = this->count + 1;
+    }
+
+    // Enumerate additional named branches from refs/heads directory
+    // (support up to MAX_BRANCHES - 1 extras; names are discovered from list)
+    // This is a forward placeholder — when dir.list is available, iterate entries.
+}
+
+fn void BranchView.select_at_y(float mouse_y, float panel_y) {
+    float rel_y = mouse_y - panel_y;
+    int idx = (int)(rel_y / (float)BRANCH_ROW_H());
+    // account for header row (32px)
+    idx = idx - 1;
+    if (idx >= 0 && idx < this->count) {
+        this->selected_idx = idx;
+    }
+}
+
+fn string BranchView.selected_branch() {
+    if (this->selected_idx >= 0 && this->selected_idx < this->count) {
+        return this->branches[this->selected_idx].name;
+    }
+    return "";
+}
+
+fn void BranchView.render(rbatch.BatchRenderer* r, glloader.GLContext* gl_ctx, rfont.FontAtlas* font,
+                           float x, float y, float w, float h) {
+    rmath.Color panel_bg   = rmath.color_rgba(0.16f, 0.17f, 0.20f, 1.0f);
+    rmath.Color header_bg  = rmath.color_rgba(0.20f, 0.21f, 0.25f, 1.0f);
+    rmath.Color sel_bg     = rmath.color_rgba(0.18f, 0.45f, 0.75f, 0.30f);
+    rmath.Color head_dot   = rmath.color_rgba(0.20f, 0.65f, 0.50f, 1.0f);
+    rmath.Color branch_col = rmath.color_rgba(0.92f, 0.94f, 0.96f, 1.0f);
+    rmath.Color muted_col  = rmath.color_rgba(0.55f, 0.58f, 0.65f, 1.0f);
+    rmath.Color hash_col   = rmath.color_rgba(0.55f, 0.80f, 0.55f, 1.0f);
+    rmath.Color sep_col    = rmath.color_rgba(0.20f, 0.21f, 0.25f, 1.0f);
+    rmath.Color border_col = rmath.color_rgba(0.22f, 0.23f, 0.27f, 1.0f);
+
+    // Background
+    r->push_quad(gl_ctx, x, y, w, h, panel_bg);
+
+    // Right border separator
+    r->push_quad(gl_ctx, x + w - 1.0f, y, 1.0f, h, border_col);
+
+    // Section header
+    r->push_quad(gl_ctx, x, y, w, 32.0f, header_bg);
+    font->draw_text(r, gl_ctx, "BRANCHES", x + 12.0f, y + 8.0f, muted_col);
+
+    float row_y = y + 32.0f;
+    int i = 0;
+    while (i < this->count) {
+        float this_y = row_y + (float)(i * BRANCH_ROW_H());
+
+        if (i == this->selected_idx) {
+            r->push_quad(gl_ctx, x, this_y, w, (float)BRANCH_ROW_H(), sel_bg);
+        }
+
+        // HEAD indicator dot
+        if (this->branches[i].is_head != 0) {
+            r->push_quad(gl_ctx, x + 10.0f, this_y + 12.0f, 8.0f, 8.0f, head_dot);
+        }
+
+        // Branch name
+        font->draw_text(r, gl_ctx, this->branches[i].name, x + 26.0f, this_y + 8.0f, branch_col);
+
+        // Tip hash
+        font->draw_text(r, gl_ctx, this->branches[i].tip_hash, x + 26.0f, this_y + 18.0f, hash_col);
+
+        // Separator
+        r->push_quad(gl_ctx, x, this_y + (float)BRANCH_ROW_H() - 1.0f, w, 1.0f, sep_col);
+
+        i = i + 1;
+    }
+}
