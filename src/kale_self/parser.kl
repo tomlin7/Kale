@@ -6,34 +6,54 @@ import "src/kale_self/lexer.kl" as lx;
 import "src/kale_self/ast.kl" as ast;
 
 extern int strcmp(string s1, string s2);
+extern void* strstr(string haystack, string needle);
 
 struct Parser {
     lx.Lexer* lexer;
     tok.Token* current;
+    tok.Token* tok1;
+    tok.Token* tok2;
+    tok.Token* tok3;
     int error_count;
+    string import_aliases;
 }
 
 fn Parser* parser_new(lx.Lexer* l) {
     Parser* p = alloc(Parser);
     p->lexer = l;
     p->current = lx.lexer_next_token(l);
+    p->tok1 = lx.lexer_next_token(l);
+    p->tok2 = lx.lexer_next_token(l);
+    p->tok3 = lx.lexer_next_token(l);
     p->error_count = 0;
+    p->import_aliases = "";
     return p;
 }
 
 fn void parser_free(Parser* p) {
     if (p != (Parser*)0) {
-        if (p->current != (tok.Token*)0) {
-            tok.token_free(p->current);
-        }
+        if (p->current != (tok.Token*)0) { tok.token_free(p->current); }
+        if (p->tok1 != (tok.Token*)0) { tok.token_free(p->tok1); }
+        if (p->tok2 != (tok.Token*)0) { tok.token_free(p->tok2); }
+        if (p->tok3 != (tok.Token*)0) { tok.token_free(p->tok3); }
         free(p);
     }
 }
 
 fn tok.Token* parser_advance(Parser* p) {
     tok.Token* prev = p->current;
-    p->current = lx.lexer_next_token(p->lexer);
+    p->current = p->tok1;
+    p->tok1 = p->tok2;
+    p->tok2 = p->tok3;
+    p->tok3 = lx.lexer_next_token(p->lexer);
     return prev;
+}
+
+fn bool parser_is_import_alias(Parser* p, string name) {
+    if (strlen(p->import_aliases) == 0 || strlen(name) == 0) {
+        return false;
+    }
+    return strstr(p->import_aliases, name) != (void*)0;
 }
 
 fn bool parser_check(Parser* p, int kind) {
@@ -165,6 +185,7 @@ fn ast.ASTNode* parser_parse_primary(Parser* p) {
     }
 
     p->error_count = p->error_count + 1;
+    parser_advance(p);
     return (ast.ASTNode*)0;
 }
 
@@ -177,20 +198,38 @@ fn ast.ASTNode* parser_parse_postfix(Parser* p) {
             string mname = "";
             if (mem != (tok.Token*)0) { mname = mem->text; }
             if (parser_match(p, tok.TOK_LPAREN())) {
-                ast.ASTNode* first_arg = expr;
-                ast.ASTNode* last_arg = first_arg;
-                if (!parser_check(p, tok.TOK_RPAREN())) {
-                    ast.ASTNode* a = parser_parse_expression(p);
-                    last_arg->next = a;
-                    last_arg = a;
-                    while (parser_match(p, tok.TOK_COMMA())) {
-                        ast.ASTNode* next_a = parser_parse_expression(p);
-                        last_arg->next = next_a;
-                        last_arg = next_a;
+                if (expr != (ast.ASTNode*)0 && expr->kind == ast.AST_IDENT() && parser_is_import_alias(p, expr->text)) {
+                    ast.ASTNode* first_arg = (ast.ASTNode*)0;
+                    ast.ASTNode* last_arg = (ast.ASTNode*)0;
+                    if (!parser_check(p, tok.TOK_RPAREN())) {
+                        first_arg = parser_parse_expression(p);
+                        last_arg = first_arg;
+                        while (parser_match(p, tok.TOK_COMMA())) {
+                            ast.ASTNode* next_a = parser_parse_expression(p);
+                            if (last_arg != (ast.ASTNode*)0) {
+                                last_arg->next = next_a;
+                                last_arg = next_a;
+                            }
+                        }
                     }
+                    parser_consume(p, tok.TOK_RPAREN());
+                    expr = ast.ast_call(mname, first_arg);
+                } else {
+                    ast.ASTNode* first_arg = ast.ast_unary(tok.TOK_AMP(), expr);
+                    ast.ASTNode* last_arg = first_arg;
+                    if (!parser_check(p, tok.TOK_RPAREN())) {
+                        ast.ASTNode* a = parser_parse_expression(p);
+                        last_arg->next = a;
+                        last_arg = a;
+                        while (parser_match(p, tok.TOK_COMMA())) {
+                            ast.ASTNode* next_a = parser_parse_expression(p);
+                            last_arg->next = next_a;
+                            last_arg = next_a;
+                        }
+                    }
+                    parser_consume(p, tok.TOK_RPAREN());
+                    expr = ast.ast_call(mname, first_arg);
                 }
-                parser_consume(p, tok.TOK_RPAREN());
-                expr = ast.ast_call(mname, first_arg);
             } else {
                 expr = ast.ast_member(expr, mname, false);
             }
@@ -400,7 +439,39 @@ fn bool is_type_name(string s) {
     return false;
 }
 
+fn bool is_var_decl_start(Parser* p) {
+    if (!parser_check(p, tok.TOK_IDENT())) {
+        return false;
+    }
+    if (is_type_name(p->current->text)) {
+        return true;
+    }
+    if (p->tok1 != (tok.Token*)0) {
+        if (p->tok1->kind == tok.TOK_STAR()) {
+            return true;
+        }
+        if (p->tok1->kind == tok.TOK_IDENT()) {
+            return true;
+        }
+        if (p->tok1->kind == tok.TOK_DOT()) {
+            if (p->tok2 != (tok.Token*)0 && p->tok2->kind == tok.TOK_IDENT()) {
+                if (p->tok3 != (tok.Token*)0) {
+                    if (p->tok3->kind == tok.TOK_STAR() || p->tok3->kind == tok.TOK_IDENT()) {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    return false;
+}
+
 fn ast.ASTNode* parser_parse_statement(Parser* p) {
+    // Block statement: { <stmts> }
+    if (parser_check(p, tok.TOK_LBRACE())) {
+        return parser_parse_block(p);
+    }
+
     // Return statement: return <expr>;
     if (parser_match(p, tok.TOK_RETURN())) {
         ast.ASTNode* val = (ast.ASTNode*)0;
@@ -409,6 +480,99 @@ fn ast.ASTNode* parser_parse_statement(Parser* p) {
         }
         parser_consume(p, tok.TOK_SEMICOLON());
         return ast.ast_return(val);
+    }
+
+    // Break statement: break;
+    if (parser_match(p, tok.TOK_BREAK())) {
+        parser_consume(p, tok.TOK_SEMICOLON());
+        return ast.ast_break();
+    }
+
+    // Continue statement: continue;
+    if (parser_match(p, tok.TOK_CONTINUE())) {
+        parser_consume(p, tok.TOK_SEMICOLON());
+        return ast.ast_continue();
+    }
+
+    // Free statement: free(ptr);
+    if (parser_match(p, tok.TOK_FREE())) {
+        parser_consume(p, tok.TOK_LPAREN());
+        ast.ASTNode* target = parser_parse_expression(p);
+        parser_consume(p, tok.TOK_RPAREN());
+        parser_consume(p, tok.TOK_SEMICOLON());
+        return ast.ast_free_node(target);
+    }
+
+    // Print statement: print(arg1, arg2, ...);
+    if (parser_match(p, tok.TOK_PRINT())) {
+        parser_consume(p, tok.TOK_LPAREN());
+        ast.ASTNode* first_arg = (ast.ASTNode*)0;
+        ast.ASTNode* last_arg = (ast.ASTNode*)0;
+        if (!parser_check(p, tok.TOK_RPAREN())) {
+            first_arg = parser_parse_expression(p);
+            last_arg = first_arg;
+            while (parser_match(p, tok.TOK_COMMA())) {
+                ast.ASTNode* next_arg = parser_parse_expression(p);
+                if (last_arg != (ast.ASTNode*)0) {
+                    last_arg->next = next_arg;
+                    last_arg = next_arg;
+                }
+            }
+        }
+        parser_consume(p, tok.TOK_RPAREN());
+        parser_consume(p, tok.TOK_SEMICOLON());
+        return ast.ast_print(first_arg);
+    }
+
+    // Switch statement: switch (expr) { case val: ... default: ... }
+    if (parser_match(p, tok.TOK_SWITCH())) {
+        parser_consume(p, tok.TOK_LPAREN());
+        ast.ASTNode* cond = parser_parse_expression(p);
+        parser_consume(p, tok.TOK_RPAREN());
+        parser_consume(p, tok.TOK_LBRACE());
+        ast.ASTNode* first_case = (ast.ASTNode*)0;
+        ast.ASTNode* last_case = (ast.ASTNode*)0;
+        while (!parser_check(p, tok.TOK_RBRACE()) && !parser_check(p, tok.TOK_EOF())) {
+            ast.ASTNode* case_node = (ast.ASTNode*)0;
+            if (parser_match(p, tok.TOK_CASE())) {
+                ast.ASTNode* case_val = parser_parse_expression(p);
+                parser_consume(p, tok.TOK_COLON());
+                ast.ASTNode* case_body = ast.ast_block((ast.ASTNode*)0);
+                while (!parser_check(p, tok.TOK_CASE()) && !parser_check(p, tok.TOK_DEFAULT()) &&
+                       !parser_check(p, tok.TOK_RBRACE()) && !parser_check(p, tok.TOK_EOF())) {
+                    ast.ASTNode* cs = parser_parse_statement(p);
+                    if (cs != (ast.ASTNode*)0) {
+                        ast.ast_block_append(case_body, cs);
+                    }
+                }
+                case_node = ast.ast_case(case_val, case_body);
+            } else if (parser_match(p, tok.TOK_DEFAULT())) {
+                parser_consume(p, tok.TOK_COLON());
+                ast.ASTNode* def_body = ast.ast_block((ast.ASTNode*)0);
+                while (!parser_check(p, tok.TOK_CASE()) && !parser_check(p, tok.TOK_DEFAULT()) &&
+                       !parser_check(p, tok.TOK_RBRACE()) && !parser_check(p, tok.TOK_EOF())) {
+                    ast.ASTNode* ds = parser_parse_statement(p);
+                    if (ds != (ast.ASTNode*)0) {
+                        ast.ast_block_append(def_body, ds);
+                    }
+                }
+                case_node = ast.ast_default(def_body);
+            } else {
+                p->error_count = p->error_count + 1;
+                parser_advance(p);
+            }
+            if (case_node != (ast.ASTNode*)0) {
+                if (first_case == (ast.ASTNode*)0) {
+                    first_case = case_node;
+                    last_case = case_node;
+                } else {
+                    last_case->next = case_node;
+                    last_case = case_node;
+                }
+            }
+        }
+        parser_consume(p, tok.TOK_RBRACE());
+        return ast.ast_switch(cond, first_case);
     }
 
     // If statement: if (<cond>) <block> [else <block>]
@@ -442,7 +606,7 @@ fn ast.ASTNode* parser_parse_statement(Parser* p) {
         parser_consume(p, tok.TOK_LPAREN());
         ast.ASTNode* init_stmt = (ast.ASTNode*)0;
         if (!parser_check(p, tok.TOK_SEMICOLON())) {
-            if (parser_check(p, tok.TOK_LET()) || parser_check(p, tok.TOK_VAR())) {
+            if (parser_check(p, tok.TOK_LET()) || parser_check(p, tok.TOK_VAR()) || is_var_decl_start(p)) {
                 init_stmt = parser_parse_statement(p);
             } else {
                 init_stmt = parser_parse_expression(p);
@@ -483,25 +647,33 @@ fn ast.ASTNode* parser_parse_statement(Parser* p) {
         return ast.ast_var_decl("var", name, init_expr);
     }
 
-    // Typed variable declaration: int x = <expr>; or char* p; etc.
-    if (parser_check(p, tok.TOK_IDENT())) {
-        string t_name = p->current->text;
-        if (is_type_name(t_name)) {
-            tok.Token* type_tok = parser_advance(p);
-            while (parser_match(p, tok.TOK_STAR())) {
-            }
-            tok.Token* id = parser_consume(p, tok.TOK_IDENT());
-            string name = "";
-            if (id != (tok.Token*)0) {
-                name = id->text;
-            }
-            ast.ASTNode* init_expr = (ast.ASTNode*)0;
-            if (parser_match(p, tok.TOK_EQUALS())) {
-                init_expr = parser_parse_expression(p);
-            }
-            parser_consume(p, tok.TOK_SEMICOLON());
-            return ast.ast_var_decl(type_tok->text, name, init_expr);
+    // Typed variable declaration: int x = <expr>; or Vec2 v; or ast.ASTNode* p;
+    if (is_var_decl_start(p)) {
+        string t_name = "";
+        tok.Token* type_tok = parser_advance(p);
+        if (type_tok != (tok.Token*)0) {
+            t_name = type_tok->text;
         }
+        if (parser_match(p, tok.TOK_DOT())) {
+            tok.Token* sub = parser_consume(p, tok.TOK_IDENT());
+            if (sub != (tok.Token*)0) {
+                t_name = str_concat(t_name, str_concat(".", sub->text));
+            }
+        }
+        while (parser_match(p, tok.TOK_STAR())) {
+            t_name = str_concat(t_name, "*");
+        }
+        tok.Token* id = parser_consume(p, tok.TOK_IDENT());
+        string name = "";
+        if (id != (tok.Token*)0) {
+            name = id->text;
+        }
+        ast.ASTNode* init_expr = (ast.ASTNode*)0;
+        if (parser_match(p, tok.TOK_EQUALS())) {
+            init_expr = parser_parse_expression(p);
+        }
+        parser_consume(p, tok.TOK_SEMICOLON());
+        return ast.ast_var_decl(t_name, name, init_expr);
     }
 
     // Expression statement
@@ -512,31 +684,80 @@ fn ast.ASTNode* parser_parse_statement(Parser* p) {
 
 fn ast.ASTNode* parser_parse_fn(Parser* p) {
     parser_consume(p, tok.TOK_FN());
-    if (!parser_check(p, tok.TOK_IDENT())) {
-        p->error_count = p->error_count + 1;
-        return (ast.ASTNode*)0;
-    }
-    tok.Token* first_tok = parser_advance(p);
     string ret_type = "void";
     string name = "";
 
-    // Check if shorthand fn name(...) or typed fn <type> <name>(...)
-    if (parser_check(p, tok.TOK_LPAREN())) {
-        name = first_tok->text;
-    } else {
-        ret_type = first_tok->text;
-        if (parser_match(p, tok.TOK_DOT())) {
-            if (parser_check(p, tok.TOK_IDENT())) {
-                tok.Token* sub = parser_advance(p);
-                ret_type = sub->text;
+    if (parser_check(p, tok.TOK_IDENT())) {
+        tok.Token* first_tok = parser_advance(p);
+        if (parser_check(p, tok.TOK_LPAREN())) {
+            name = first_tok->text;
+        } else {
+            ret_type = first_tok->text;
+            if (parser_match(p, tok.TOK_DOT())) {
+                if (parser_check(p, tok.TOK_IDENT())) {
+                    tok.Token* sub = parser_advance(p);
+                    ret_type = str_concat(ret_type, str_concat(".", sub->text));
+                }
+            }
+            while (parser_match(p, tok.TOK_STAR())) {
+                ret_type = str_concat(ret_type, "*");
+            }
+
+            if (parser_match(p, tok.TOK_OPERATOR())) {
+                if (parser_match(p, tok.TOK_LBRACKET())) {
+                    parser_consume(p, tok.TOK_RBRACKET());
+                    name = "operator[]";
+                } else {
+                    tok.Token* op_tok = parser_advance(p);
+                    if (op_tok != (tok.Token*)0) {
+                        name = str_concat("operator", tok.token_name(op_tok->kind));
+                    } else {
+                        name = "operator";
+                    }
+                }
+            } else {
+                tok.Token* name_tok = parser_consume(p, tok.TOK_IDENT());
+                if (name_tok != (tok.Token*)0) {
+                    name = name_tok->text;
+                }
+                if (parser_match(p, tok.TOK_DOT())) {
+                    name = str_concat(name, ".");
+                    if (parser_match(p, tok.TOK_OPERATOR())) {
+                        if (parser_match(p, tok.TOK_LBRACKET())) {
+                            parser_consume(p, tok.TOK_RBRACKET());
+                            name = str_concat(name, "operator[]");
+                        } else {
+                            tok.Token* op_tok = parser_advance(p);
+                            if (op_tok != (tok.Token*)0) {
+                                name = str_concat(name, str_concat("operator", tok.token_name(op_tok->kind)));
+                            } else {
+                                name = str_concat(name, "operator");
+                            }
+                        }
+                    } else {
+                        tok.Token* sub_tok = parser_consume(p, tok.TOK_IDENT());
+                        if (sub_tok != (tok.Token*)0) {
+                            name = str_concat(name, sub_tok->text);
+                        }
+                    }
+                }
             }
         }
-        while (parser_match(p, tok.TOK_STAR())) {
+    } else if (parser_match(p, tok.TOK_OPERATOR())) {
+        if (parser_match(p, tok.TOK_LBRACKET())) {
+            parser_consume(p, tok.TOK_RBRACKET());
+            name = "operator[]";
+        } else {
+            tok.Token* op_tok = parser_advance(p);
+            if (op_tok != (tok.Token*)0) {
+                name = str_concat("operator", tok.token_name(op_tok->kind));
+            } else {
+                name = "operator";
+            }
         }
-        tok.Token* name_tok = parser_consume(p, tok.TOK_IDENT());
-        if (name_tok != (tok.Token*)0) {
-            name = name_tok->text;
-        }
+    } else {
+        p->error_count = p->error_count + 1;
+        return (ast.ASTNode*)0;
     }
 
     parser_consume(p, tok.TOK_LPAREN());
@@ -544,33 +765,38 @@ fn ast.ASTNode* parser_parse_fn(Parser* p) {
     ast.ASTNode* last_param = (ast.ASTNode*)0;
     if (!parser_check(p, tok.TOK_RPAREN())) {
         tok.Token* p_type = parser_consume(p, tok.TOK_IDENT());
+        string pt = "";
+        if (p_type != (tok.Token*)0) { pt = p_type->text; }
         if (parser_match(p, tok.TOK_DOT())) {
             if (parser_check(p, tok.TOK_IDENT())) {
-                p_type = parser_advance(p);
+                tok.Token* sub = parser_advance(p);
+                pt = str_concat(pt, str_concat(".", sub->text));
             }
         }
         while (parser_match(p, tok.TOK_STAR())) {
+            pt = str_concat(pt, "*");
         }
         tok.Token* p_name = parser_consume(p, tok.TOK_IDENT());
-        string pt = "";
         string pn = "";
-        if (p_type != (tok.Token*)0) { pt = p_type->text; }
         if (p_name != (tok.Token*)0) { pn = p_name->text; }
         first_param = ast.ast_param(pt, pn);
         last_param = first_param;
 
         while (parser_match(p, tok.TOK_COMMA())) {
             p_type = parser_consume(p, tok.TOK_IDENT());
+            pt = "";
+            if (p_type != (tok.Token*)0) { pt = p_type->text; }
             if (parser_match(p, tok.TOK_DOT())) {
                 if (parser_check(p, tok.TOK_IDENT())) {
-                    p_type = parser_advance(p);
+                    tok.Token* sub = parser_advance(p);
+                    pt = str_concat(pt, str_concat(".", sub->text));
                 }
             }
             while (parser_match(p, tok.TOK_STAR())) {
+                pt = str_concat(pt, "*");
             }
             p_name = parser_consume(p, tok.TOK_IDENT());
-            pt = ""; pn = "";
-            if (p_type != (tok.Token*)0) { pt = p_type->text; }
+            pn = "";
             if (p_name != (tok.Token*)0) { pn = p_name->text; }
             ast.ASTNode* next_param = ast.ast_param(pt, pn);
             if (last_param != (ast.ASTNode*)0) {
@@ -597,18 +823,21 @@ fn ast.ASTNode* parser_parse_struct(Parser* p) {
 
     while (!parser_check(p, tok.TOK_RBRACE()) && !parser_check(p, tok.TOK_EOF())) {
         tok.Token* f_type = parser_consume(p, tok.TOK_IDENT());
+        string ft = "";
+        if (f_type != (tok.Token*)0) { ft = f_type->text; }
         if (parser_match(p, tok.TOK_DOT())) {
             if (parser_check(p, tok.TOK_IDENT())) {
-                f_type = parser_advance(p);
+                tok.Token* sub = parser_advance(p);
+                ft = str_concat(ft, str_concat(".", sub->text));
             }
         }
         while (parser_match(p, tok.TOK_STAR())) {
+            ft = str_concat(ft, "*");
         }
         tok.Token* f_name = parser_consume(p, tok.TOK_IDENT());
         parser_consume(p, tok.TOK_SEMICOLON());
 
-        string ft = ""; string fname = "";
-        if (f_type != (tok.Token*)0) { ft = f_type->text; }
+        string fname = "";
         if (f_name != (tok.Token*)0) { fname = f_name->text; }
 
         ast.ASTNode* field = ast.ast_field_decl(ft, fname);
@@ -624,6 +853,46 @@ fn ast.ASTNode* parser_parse_struct(Parser* p) {
     return ast.ast_struct_decl(name, first_field);
 }
 
+fn ast.ASTNode* parser_parse_enum(Parser* p) {
+    parser_consume(p, tok.TOK_ENUM());
+    tok.Token* id = parser_consume(p, tok.TOK_IDENT());
+    string name = "";
+    if (id != (tok.Token*)0) {
+        name = id->text;
+    }
+    parser_consume(p, tok.TOK_LBRACE());
+    ast.ASTNode* first_mem = (ast.ASTNode*)0;
+    ast.ASTNode* last_mem = (ast.ASTNode*)0;
+    int current_val = 0;
+
+    while (!parser_check(p, tok.TOK_RBRACE()) && !parser_check(p, tok.TOK_EOF())) {
+        tok.Token* m_id = parser_consume(p, tok.TOK_IDENT());
+        string m_name = "";
+        if (m_id != (tok.Token*)0) {
+            m_name = m_id->text;
+        }
+        if (parser_match(p, tok.TOK_EQUALS())) {
+            tok.Token* val_tok = parser_consume(p, tok.TOK_INT());
+            if (val_tok != (tok.Token*)0) {
+                current_val = val_tok->int_val;
+            }
+        }
+        ast.ASTNode* mem = ast.ast_enum_member(m_name, current_val);
+        current_val = current_val + 1;
+        if (first_mem == (ast.ASTNode*)0) {
+            first_mem = mem;
+            last_mem = mem;
+        } else {
+            last_mem->next = mem;
+            last_mem = mem;
+        }
+        parser_match(p, tok.TOK_COMMA());
+    }
+    parser_consume(p, tok.TOK_RBRACE());
+    parser_match(p, tok.TOK_SEMICOLON());
+    return ast.ast_enum_decl(name, first_mem);
+}
+
 fn ast.ASTNode* parser_parse_import(Parser* p) {
     parser_consume(p, tok.TOK_IMPORT());
     tok.Token* path_tok = parser_consume(p, tok.TOK_STRING());
@@ -636,6 +905,7 @@ fn ast.ASTNode* parser_parse_import(Parser* p) {
         tok.Token* as_tok = parser_consume(p, tok.TOK_IDENT());
         if (as_tok != (tok.Token*)0) {
             alias = as_tok->text;
+            p->import_aliases = str_concat(p->import_aliases, str_concat(" ", alias));
         }
     }
     parser_consume(p, tok.TOK_SEMICOLON());
@@ -653,6 +923,8 @@ fn ast.ASTNode* parser_parse_program(Parser* p) {
             item = parser_parse_fn(p);
         } else if (parser_check(p, tok.TOK_STRUCT())) {
             item = parser_parse_struct(p);
+        } else if (parser_check(p, tok.TOK_ENUM())) {
+            item = parser_parse_enum(p);
         } else if (parser_check(p, tok.TOK_IMPORT())) {
             item = parser_parse_import(p);
         } else {

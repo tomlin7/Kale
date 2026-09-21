@@ -5,6 +5,49 @@ import "src/kale_self/token.kl" as tok;
 import "src/kale_self/ast.kl" as ast;
 
 extern int strcmp(string s1, string s2);
+extern int strlen(string s);
+extern void* malloc(int size);
+
+fn string str_concat(string s1, string s2) {
+    int l1 = strlen(s1);
+    int l2 = strlen(s2);
+    char* buf = (char*)malloc(l1 + l2 + 1);
+    int i = 0;
+    while (i < l1) {
+        buf[i] = s1[i];
+        i = i + 1;
+    }
+    int j = 0;
+    while (j < l2) {
+        buf[l1 + j] = s2[j];
+        j = j + 1;
+    }
+    buf[l1 + l2] = (char)0;
+    return (string)buf;
+}
+
+fn bool is_std_func(string name) {
+    if (strcmp(name, "malloc") == 0) { return true; }
+    if (strcmp(name, "free") == 0) { return true; }
+    if (strcmp(name, "strlen") == 0) { return true; }
+    if (strcmp(name, "strcmp") == 0) { return true; }
+    if (strcmp(name, "strstr") == 0) { return true; }
+    if (strcmp(name, "printf") == 0) { return true; }
+    if (strcmp(name, "sprintf") == 0) { return true; }
+    if (strcmp(name, "fopen") == 0) { return true; }
+    if (strcmp(name, "fclose") == 0) { return true; }
+    if (strcmp(name, "fseek") == 0) { return true; }
+    if (strcmp(name, "ftell") == 0) { return true; }
+    if (strcmp(name, "fread") == 0) { return true; }
+    if (strcmp(name, "fputs") == 0) { return true; }
+    int len = strlen(name);
+    int i = 0;
+    while (i < len) {
+        if (name[i] == (char)46) { return true; }
+        i = i + 1;
+    }
+    return false;
+}
 
 fn int TYPE_UNKNOWN() { return 0; }
 fn int TYPE_INT() { return 1; }
@@ -172,6 +215,37 @@ fn int checker_check_expr(Checker* c, ast.ASTNode* expr) {
         return sym->type_tag;
     }
 
+    if (expr->kind == ast.AST_ALLOC()) {
+        if (expr->left != (ast.ASTNode*)0) {
+            checker_check_expr(c, expr->left);
+        }
+        return TYPE_STRUCT();
+    }
+
+    if (expr->kind == ast.AST_INDEX()) {
+        checker_check_expr(c, expr->left);
+        checker_check_expr(c, expr->right);
+        return TYPE_UNKNOWN();
+    }
+
+    if (expr->kind == ast.AST_INDEX_ASSIGN()) {
+        checker_check_expr(c, expr->left);
+        checker_check_expr(c, expr->right);
+        checker_check_expr(c, expr->body);
+        return TYPE_UNKNOWN();
+    }
+
+    if (expr->kind == ast.AST_MEMBER()) {
+        checker_check_expr(c, expr->left);
+        return TYPE_UNKNOWN();
+    }
+
+    if (expr->kind == ast.AST_MEMBER_ASSIGN()) {
+        checker_check_expr(c, expr->left);
+        checker_check_expr(c, expr->right);
+        return TYPE_UNKNOWN();
+    }
+
     if (expr->kind == ast.AST_UNARY()) {
         int operand_type = checker_check_expr(c, expr->left);
         if (expr->op == tok.TOK_BANG()) {
@@ -219,15 +293,48 @@ fn int checker_check_expr(Checker* c, ast.ASTNode* expr) {
     if (expr->kind == ast.AST_CALL()) {
         Symbol* fn_sym = scope_lookup(c->current_scope, expr->text);
         if (fn_sym == (Symbol*)0) {
-            c->error_count = c->error_count + 1;
-            return TYPE_UNKNOWN();
+            bool resolved = false;
+            if (expr->left != (ast.ASTNode*)0) {
+                ast.ASTNode* target = expr->left;
+                if (target->kind == ast.AST_UNARY() && target->op == tok.TOK_AMP()) {
+                    target = target->left;
+                }
+                if (target != (ast.ASTNode*)0 && target->kind == ast.AST_IDENT()) {
+                    Symbol* obj_sym = scope_lookup(c->current_scope, target->text);
+                    if (obj_sym != (Symbol*)0 && strlen(obj_sym->type_name) > 0) {
+                        string st_name = obj_sym->type_name;
+                        int st_len = strlen(st_name);
+                        if (st_len > 0 && st_name[st_len - 1] == (char)42) {
+                            char* b = (char*)malloc(st_len);
+                            int k = 0;
+                            while (k < st_len - 1) { b[k] = st_name[k]; k = k + 1; }
+                            b[st_len - 1] = (char)0;
+                            st_name = (string)b;
+                        }
+                        string m_key = str_concat(st_name, str_concat(".", expr->text));
+                        Symbol* m_sym = scope_lookup(c->current_scope, m_key);
+                        if (m_sym != (Symbol*)0) {
+                            expr->text = m_key;
+                            fn_sym = m_sym;
+                            resolved = true;
+                        }
+                    }
+                }
+            }
+            if (!resolved && !is_std_func(expr->text)) {
+                c->error_count = c->error_count + 1;
+                return TYPE_UNKNOWN();
+            }
         }
         ast.ASTNode* arg = expr->left;
         while (arg != (ast.ASTNode*)0) {
             checker_check_expr(c, arg);
             arg = arg->next;
         }
-        return fn_sym->type_tag;
+        if (fn_sym != (Symbol*)0) {
+            return fn_sym->type_tag;
+        }
+        return TYPE_UNKNOWN();
     }
 
     if (expr->kind == ast.AST_ASSIGN()) {
@@ -263,6 +370,59 @@ fn void checker_check_stmt(Checker* c, ast.ASTNode* stmt) {
             if (c->current_fn_ret_type != TYPE_VOID()) {
                 c->error_count = c->error_count + 1;
             }
+        }
+        return;
+    }
+
+    if (stmt->kind == ast.AST_BREAK() || stmt->kind == ast.AST_CONTINUE()) {
+        return;
+    }
+
+    if (stmt->kind == ast.AST_FREE()) {
+        if (stmt->left != (ast.ASTNode*)0) {
+            checker_check_expr(c, stmt->left);
+        }
+        return;
+    }
+
+    if (stmt->kind == ast.AST_PRINT()) {
+        ast.ASTNode* arg = stmt->left;
+        while (arg != (ast.ASTNode*)0) {
+            checker_check_expr(c, arg);
+            arg = arg->next;
+        }
+        return;
+    }
+
+    if (stmt->kind == ast.AST_SWITCH()) {
+        if (stmt->cond != (ast.ASTNode*)0) {
+            checker_check_expr(c, stmt->cond);
+        }
+        ast.ASTNode* c_case = stmt->body;
+        while (c_case != (ast.ASTNode*)0) {
+            if (c_case->kind == ast.AST_CASE()) {
+                if (c_case->left != (ast.ASTNode*)0) {
+                    checker_check_expr(c, c_case->left);
+                }
+                if (c_case->body != (ast.ASTNode*)0) {
+                    checker_check_stmt(c, c_case->body);
+                }
+            } else if (c_case->kind == ast.AST_DEFAULT()) {
+                if (c_case->body != (ast.ASTNode*)0) {
+                    checker_check_stmt(c, c_case->body);
+                }
+            }
+            c_case = c_case->next;
+        }
+        return;
+    }
+
+    if (stmt->kind == ast.AST_ENUM_DECL()) {
+        scope_define(c->current_scope, stmt->text, SYM_STRUCT(), TYPE_STRUCT(), stmt->text);
+        ast.ASTNode* m = stmt->body;
+        while (m != (ast.ASTNode*)0) {
+            scope_define(c->current_scope, m->text, SYM_VAR(), TYPE_INT(), "int");
+            m = m->next;
         }
         return;
     }
@@ -344,7 +504,7 @@ fn int checker_check_program(Checker* c, ast.ASTNode* prog) {
         return c->error_count;
     }
 
-    // Pass 1: Declare top-level functions and structs
+    // Pass 1: Declare top-level functions, structs, and enums
     ast.ASTNode* cur = prog->body;
     while (cur != (ast.ASTNode*)0) {
         if (cur->kind == ast.AST_FN_DECL()) {
@@ -352,6 +512,13 @@ fn int checker_check_program(Checker* c, ast.ASTNode* prog) {
             scope_define(c->current_scope, cur->text, SYM_FN(), ret_t, cur->type_name);
         } else if (cur->kind == ast.AST_STRUCT_DECL()) {
             scope_define(c->current_scope, cur->text, SYM_STRUCT(), TYPE_STRUCT(), cur->text);
+        } else if (cur->kind == ast.AST_ENUM_DECL()) {
+            scope_define(c->current_scope, cur->text, SYM_STRUCT(), TYPE_STRUCT(), cur->text);
+            ast.ASTNode* m = cur->body;
+            while (m != (ast.ASTNode*)0) {
+                scope_define(c->current_scope, m->text, SYM_VAR(), TYPE_INT(), "int");
+                m = m->next;
+            }
         }
         cur = cur->next;
     }
@@ -362,6 +529,24 @@ fn int checker_check_program(Checker* c, ast.ASTNode* prog) {
         if (cur->kind == ast.AST_FN_DECL()) {
             checker_enter_scope(c);
             c->current_fn_ret_type = type_from_name(cur->type_name);
+
+            // If struct method (e.g. Counter.increment), define this pointer
+            int fn_len = strlen(cur->text);
+            int dot_i = -1;
+            int di = 0;
+            while (di < fn_len) {
+                if (cur->text[di] == (char)46) { dot_i = di; }
+                di = di + 1;
+            }
+            if (dot_i >= 0) {
+                char* sname_buf = (char*)malloc(dot_i + 1);
+                int k = 0;
+                while (k < dot_i) { sname_buf[k] = cur->text[k]; k = k + 1; }
+                sname_buf[dot_i] = (char)0;
+                string st_ptr = str_concat((string)sname_buf, "*");
+                scope_define(c->current_scope, "this", SYM_PARAM(), TYPE_STRUCT(), st_ptr);
+            }
+
             ast.ASTNode* p = cur->left;
             while (p != (ast.ASTNode*)0) {
                 int pt = type_from_name(p->type_name);
@@ -372,7 +557,7 @@ fn int checker_check_program(Checker* c, ast.ASTNode* prog) {
                 checker_check_stmt(c, cur->body);
             }
             checker_exit_scope(c);
-        } else if (cur->kind != ast.AST_STRUCT_DECL() && cur->kind != ast.AST_IMPORT()) {
+        } else if (cur->kind != ast.AST_STRUCT_DECL() && cur->kind != ast.AST_ENUM_DECL() && cur->kind != ast.AST_IMPORT()) {
             checker_check_stmt(c, cur);
         }
         cur = cur->next;

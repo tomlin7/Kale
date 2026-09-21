@@ -177,7 +177,30 @@ fn int main_entry() {
         printf("  [FAIL] Expected 3 for check semantic error, got %d\n", check_sem);
         return 24;
     }
-    printf("  [PASS] main_driver --check error codes verified\n");
+    // Test 12: Advanced parity features (struct method, enum, switch, alloc/free, print)
+    string adv_code = "enum Status { IDLE, RUNNING = 1, STOPPED = 2 }\nstruct Point { int x; int y; }\nfn void Point.set(int nx, int ny) { this->x = nx; this->y = ny; }\nfn int main() { Point* p = alloc(Point); p->set(10, 20); int s = RUNNING; switch (s) { case 1: { print(p->x, p->y); break; } default: { break; } } free(p); return 0; }";
+    string adv_c = km.compile_source(adv_code);
+    if ((void*)adv_c == (void*)0 || strlen(adv_c) == 0) {
+        printf("  [FAIL] Failed to compile advanced parity program\n");
+        return 25;
+    }
+    if (strstr(adv_c, "kale_Point_set") == (void*)0) {
+        printf("  [FAIL] Missing struct method kale_Point_set\n");
+        return 26;
+    }
+    if (strstr(adv_c, "typedef enum Status") == (void*)0) {
+        printf("  [FAIL] Missing enum Status definition\n");
+        return 27;
+    }
+    if (strstr(adv_c, "switch (") == (void*)0) {
+        printf("  [FAIL] Missing switch statement\n");
+        return 28;
+    }
+    if (strstr(adv_c, "malloc(sizeof(Point))") == (void*)0) {
+        printf("  [FAIL] Missing alloc/malloc call\n");
+        return 29;
+    }
+    printf("  [PASS] Advanced parity features (methods, enums, switch, alloc, print) compiled successfully\n");
 
     printf("ALL SELF-HOSTING DRIVER TESTS PASSED PERFECTLY.\n");
     return 0;
