@@ -1,0 +1,239 @@
+// apps/particle_lab/particles.kl
+// Particle physics simulation and emitter logic
+
+extern double sin(double x);
+extern double cos(double x);
+extern double sqrt(double x);
+extern int rand();
+
+struct ParticleSystem {
+    float* px;
+    float* py;
+    float* pvx;
+    float* pvy;
+    float* plife;
+    float* pmax_life;
+    int* pcolor;
+    int max_count;
+    int active_count;
+    int emitter_type;
+    float gravity;
+    float wind;
+    int vortex_enabled;
+    int bounce_floor;
+    int color_theme;
+    float time_acc;
+}
+
+fn float ps_frand() {
+    int r = rand();
+    if (r < 0) { r = -r; }
+    return (float)(r % 10000) / 10000.0f;
+}
+
+fn void ParticleSystem.init(int capacity) {
+    this.max_count = capacity;
+    this.active_count = 0;
+    this.emitter_type = 0; // 0: Fountain, 1: Spiral, 2: Ring, 3: Explosion
+    this.gravity = 140.0f;
+    this.wind = 0.0f;
+    this.vortex_enabled = 0;
+    this.bounce_floor = 1;
+    this.color_theme = 0; // 0: Inferno/Fire, 1: Cyan/Plasma, 2: Toxic Neon
+    this.time_acc = 0.0f;
+
+    this.px = alloc(float, capacity);
+    this.py = alloc(float, capacity);
+    this.pvx = alloc(float, capacity);
+    this.pvy = alloc(float, capacity);
+    this.plife = alloc(float, capacity);
+    this.pmax_life = alloc(float, capacity);
+    this.pcolor = alloc(int, capacity);
+
+    int i = 0;
+    while (i < capacity) {
+        this.plife[i] = 0.0f;
+        this.pmax_life[i] = 1.0f;
+        this.px[i] = 0.0f;
+        this.py[i] = 0.0f;
+        this.pvx[i] = 0.0f;
+        this.pvy[i] = 0.0f;
+        this.pcolor[i] = 0;
+        i = i + 1;
+    }
+}
+
+fn void ParticleSystem.clear() {
+    int i = 0;
+    while (i < this.max_count) {
+        this.plife[i] = 0.0f;
+        i = i + 1;
+    }
+    this.active_count = 0;
+}
+
+fn int ParticleSystem.pick_color(int theme, float life_norm) {
+    // 0: Inferno (Yellow -> Red -> Dark Smoke)
+    if (theme == 0) {
+        if (life_norm > 0.7f) {
+            return 0xFFEE55; // Bright yellow/white
+        } else {
+            if (life_norm > 0.4f) {
+                return 0xFF7722; // Bright orange
+            } else {
+                if (life_norm > 0.15f) {
+                    return 0xDD2222; // Deep red
+                } else {
+                    return 0x552222; // Charred ember
+                }
+            }
+        }
+    }
+    // 1: Cyan Plasma (Bright Cyan -> Royal Blue -> Violet)
+    if (theme == 1) {
+        if (life_norm > 0.7f) {
+            return 0x88FFFF;
+        } else {
+            if (life_norm > 0.4f) {
+                return 0x00B4D8;
+            } else {
+                if (life_norm > 0.15f) {
+                    return 0x0077B6;
+                } else {
+                    return 0x480CA8;
+                }
+            }
+        }
+    }
+    // 2: Toxic Neon (Neon Green -> Emerald -> Dark Green)
+    if (life_norm > 0.7f) {
+        return 0x70E000;
+    } else {
+        if (life_norm > 0.4f) {
+            return 0x38B000;
+        } else {
+            if (life_norm > 0.15f) {
+                return 0x007200;
+            } else {
+                return 0x004B23;
+            }
+        }
+    }
+}
+
+fn void ParticleSystem.spawn_one(float ox, float oy) {
+    // Find an inactive slot
+    int slot = -1;
+    int i = 0;
+    while (i < this.max_count) {
+        if (this.plife[i] <= 0.0f) {
+            slot = i;
+            i = this.max_count; // break
+        } else {
+            i = i + 1;
+        }
+    }
+    if (slot < 0) { return; }
+
+    float ang = 0.0f;
+    float spd = 0.0f;
+    float max_l = 2.0f + ps_frand() * 1.5f;
+
+    if (this.emitter_type == 0) {
+        // Fountain: shoots upwards with horizontal jitter
+        ang = -1.5707f + (ps_frand() - 0.5f) * 0.8f;
+        spd = 180.0f + ps_frand() * 120.0f;
+    } else {
+        if (this.emitter_type == 1) {
+            // Spiral
+            this.time_acc = this.time_acc + 0.15f;
+            ang = this.time_acc + (ps_frand() - 0.5f) * 0.2f;
+            spd = 140.0f + ps_frand() * 60.0f;
+        } else {
+            if (this.emitter_type == 2) {
+                // Ring
+                ang = ps_frand() * 6.28318f;
+                spd = 150.0f + ps_frand() * 30.0f;
+            } else {
+                // Explosion
+                ang = ps_frand() * 6.28318f;
+                spd = 50.0f + ps_frand() * 250.0f;
+                max_l = 1.0f + ps_frand() * 1.2f;
+            }
+        }
+    }
+
+    this.px[slot] = ox + (ps_frand() - 0.5f) * 6.0f;
+    this.py[slot] = oy + (ps_frand() - 0.5f) * 6.0f;
+    this.pvx[slot] = (float)cos((double)ang) * spd;
+    this.pvy[slot] = (float)sin((double)ang) * spd;
+    this.plife[slot] = max_l;
+    this.pmax_life[slot] = max_l;
+    this.pcolor[slot] = this.pick_color(this.color_theme, 1.0f);
+}
+
+fn void ParticleSystem.emit(float ox, float oy, int count) {
+    int i = 0;
+    while (i < count) {
+        this.spawn_one(ox, oy);
+        i = i + 1;
+    }
+}
+
+fn void ParticleSystem.update(float dt, float min_x, float max_x, float min_y, float max_y, float vortex_cx, float vortex_cy) {
+    int count = 0;
+    int i = 0;
+    while (i < this.max_count) {
+        if (this.plife[i] > 0.0f) {
+            this.plife[i] = this.plife[i] - dt;
+            if (this.plife[i] <= 0.0f) {
+                this.plife[i] = 0.0f;
+            } else {
+                // Forces: Gravity
+                this.pvy[i] = this.pvy[i] + this.gravity * dt;
+                // Forces: Wind
+                this.pvx[i] = this.pvx[i] + this.wind * dt;
+
+                // Forces: Vortex
+                if (this.vortex_enabled == 1) {
+                    float dx = vortex_cx - this.px[i];
+                    float dy = vortex_cy - this.py[i];
+                    float dist2 = dx * dx + dy * dy;
+                    if (dist2 > 25.0f && dist2 < 160000.0f) {
+                        float dist = (float)sqrt((double)dist2);
+                        // Tangential force + radial pull
+                        float nx = dx / dist;
+                        float ny = dy / dist;
+                        // Tangent: (-ny, nx)
+                        float vstrength = 180.0f;
+                        this.pvx[i] = this.pvx[i] + (-ny * vstrength + nx * 50.0f) * dt;
+                        this.pvy[i] = this.pvy[i] + ( nx * vstrength + ny * 50.0f) * dt;
+                    }
+                }
+
+                // Integrate position
+                this.px[i] = this.px[i] + this.pvx[i] * dt;
+                this.py[i] = this.py[i] + this.pvy[i] * dt;
+
+                // Floor collision / bounce
+                if (this.bounce_floor == 1 && this.py[i] >= max_y - 4.0f) {
+                    this.py[i] = max_y - 4.0f;
+                    this.pvy[i] = -this.pvy[i] * 0.65f;
+                    this.pvx[i] = this.pvx[i] * 0.88f; // friction
+                }
+
+                // Bounds kill or clamp
+                if (this.px[i] < min_x || this.px[i] > max_x || this.py[i] < min_y || this.py[i] > max_y + 10.0f) {
+                    this.plife[i] = 0.0f;
+                } else {
+                    // Update color based on remaining life
+                    float norm = this.plife[i] / this.pmax_life[i];
+                    this.pcolor[i] = this.pick_color(this.color_theme, norm);
+                    count = count + 1;
+                }
+            }
+        }
+        i = i + 1;
+    }
+    this.active_count = count;
+}

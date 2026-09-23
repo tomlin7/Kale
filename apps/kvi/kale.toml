@@ -1,0 +1,12 @@
+[package]
+name = "kvi"
+version = "0.1.0"
+description = "kvi — Kale's vim-inspired modal code editor"
+authors = ["Tomlin7 <billydevbusiness@gmail.com>"]
+license = "MIT"
+edition = "2026"
+entry = "main.kl"
+
+[dependencies]
+editor = { path = "../../packages/editor" }
+std    = { path = "../../packages/std" }

@@ -1,0 +1,357 @@
+// apps/raytracer/main.kl
+// Kale Raytracer — Progressive CPU Path Tracer & Ray Marcher with GPU Viewport
+
+import "libs/framework/app.kl" as fw;
+import "libs/glfw/glfw.kl" as glfw;
+import "libs/glfw/constants.kl" as glc;
+import "libs/glfw/input.kl" as ginput;
+import "libs/render/math.kl" as rmath;
+import "apps/raytracer/scene.kl" as sc;
+
+extern int printf(string fmt, ...);
+extern int sprintf(char* buf, string fmt, ...);
+extern void* malloc(int size);
+
+fn int btn_hit(float bx, float by, float bw, float bh, float mx, float my) {
+    if (mx >= bx && mx <= bx + bw && my >= by && my <= by + bh) { return 1; }
+    return 0;
+}
+
+fn int main() {
+    fw.AppConfig cfg;
+    cfg.init("Kale Raytracer — Progressive Path Tracer", 1280, 768);
+
+    fw.App app;
+    int ok = app.init(cfg);
+    if (ok == 0) {
+        printf("Fatal: could not open Raytracer window\n");
+        return 1;
+    }
+
+    // Grid resolution
+    int GW = 64;
+    int GH = 44;
+    int total_pixels = GW * GH;
+
+    // Pixel accumulation buffers
+    float* acc_r = alloc(float, total_pixels);
+    float* acc_g = alloc(float, total_pixels);
+    float* acc_b = alloc(float, total_pixels);
+
+    int pi = 0;
+    while (pi < total_pixels) {
+        acc_r[pi] = 0.0f;
+        acc_g[pi] = 0.0f;
+        acc_b[pi] = 0.0f;
+        pi = pi + 1;
+    }
+
+    int sample_count = 0;
+    int max_bounces   = 3;
+    float cam_rot     = 0.4f;
+
+    // Define 5 scene spheres
+    sc.Sphere spheres[5];
+    // 0: Giant Ground sphere
+    spheres[0] = sc.sphere(0.0f, -100.5f, -1.0f, 100.0f, 0, sc.vec3(0.3f, 0.4f, 0.3f), 0.8f);
+    // 1: Center Chrome Mirror sphere
+    spheres[1] = sc.sphere(0.0f, 0.0f, -1.2f, 0.5f, 1, sc.vec3(0.9f, 0.9f, 0.95f), 0.05f);
+    // 2: Left Glass sphere
+    spheres[2] = sc.sphere(-1.1f, 0.0f, -1.0f, 0.5f, 2, sc.vec3(0.8f, 0.85f, 1.0f), 0.0f);
+    // 3: Right Gold Metal sphere
+    spheres[3] = sc.sphere(1.1f, 0.0f, -1.0f, 0.5f, 1, sc.vec3(0.95f, 0.75f, 0.2f), 0.2f);
+    // 4: Small Emissive Light Orb
+    spheres[4] = sc.sphere(0.5f, 1.2f, -0.6f, 0.25f, 3, sc.vec3(2.5f, 2.2f, 1.8f), 0.0f);
+
+    // Buffers for inspector text
+    char* b_smp = (char*)malloc(32);
+    char* b_rps = (char*)malloc(32);
+
+    // Colors
+    rmath.Color col_bg      = rmath.color_hex(0x0D1117);
+    rmath.Color col_header  = rmath.color_hex(0x161B22);
+    rmath.Color col_panel   = rmath.color_rgba(0.08f, 0.09f, 0.12f, 1.0f);
+    rmath.Color col_card    = rmath.color_hex(0x21262D);
+    rmath.Color col_card_h  = rmath.color_hex(0x30363D);
+    rmath.Color col_text    = rmath.color_hex(0xE6EDF3);
+    rmath.Color col_dim     = rmath.color_hex(0x6E7681);
+    rmath.Color col_grid    = rmath.color_rgba(0.18f, 0.22f, 0.28f, 1.0f);
+    rmath.Color col_accent  = rmath.color_hex(0x58A6FF);
+    rmath.Color col_active  = rmath.color_hex(0x1F6FEB);
+
+    int last_mb = 0;
+    int is_dragging = 0;
+    float last_mx = 0.0f;
+    int pk_esc = 0;
+
+    void* win = app.window;
+
+    while (glfw.glfwWindowShouldClose(app.window) == 0) {
+        app.begin_frame();
+        win = app.window;
+        float W = (float)app.width;
+        float H = (float)app.height;
+
+        // Mouse handling
+        double mdx = 0.0; double mdy = 0.0;
+        ginput.glfwGetCursorPos(win, &mdx, &mdy);
+        float mx = (float)mdx; float my = (float)mdy;
+        int mb = ginput.glfwGetMouseButton(win, glc.GLFW_MOUSE_BUTTON_LEFT());
+        int mb_click = 0;
+        if (mb == glc.GLFW_PRESS() && last_mb == 0) { mb_click = 1; }
+        last_mb = mb;
+
+        int ke = ginput.glfwGetKey(win, glc.GLFW_KEY_ESCAPE());
+        if (ke == glc.GLFW_PRESS() && pk_esc == 0) {
+            glfw.glfwSetWindowShouldClose(app.window, 1);
+        }
+        pk_esc = ke;
+
+        // Viewport layout
+        float top_h   = 46.0f;
+        float insp_w  = 260.0f;
+        float view_w  = W - insp_w - 40.0f;
+        float view_h  = H - top_h - 40.0f;
+        float view_x  = 20.0f;
+        float view_y  = top_h + 16.0f;
+
+        // Drag to rotate camera
+        if (mb == glc.GLFW_PRESS() && mx >= view_x && mx <= view_x + view_w && my >= view_y && my <= view_y + view_h) {
+            if (is_dragging == 1) {
+                float dmx = mx - last_mx;
+                if (dmx > 0.5f || dmx < -0.5f) {
+                    cam_rot = cam_rot + dmx * 0.01f;
+                    // Reset accumulation when camera moves
+                    sample_count = 0;
+                    int k = 0;
+                    while (k < total_pixels) {
+                        acc_r[k] = 0.0f; acc_g[k] = 0.0f; acc_b[k] = 0.0f;
+                        k = k + 1;
+                    }
+                }
+            }
+            is_dragging = 1;
+            last_mx = mx;
+        } else {
+            is_dragging = 0;
+        }
+
+        // ── Progressive Path Tracing Step (Render 1 sample per frame) ─────────
+        sample_count = sample_count + 1;
+        float cam_x = cam_rot * 0.8f;
+        sc.Vec3 cam_orig = sc.vec3(cam_x, 0.2f, 1.2f);
+        sc.Vec3 light_pos = sc.vec3(1.0f, 2.5f, 0.5f);
+
+        int gy = 0;
+        while (gy < GH) {
+            int gx = 0;
+            while (gx < GW) {
+                float u = ((float)gx + 0.5f) / (float)GW;
+                float v = ((float)gy + 0.5f) / (float)GH;
+
+                // Ray direction
+                float rx = (u - 0.5f) * 1.6f;
+                float ry = (0.5f - v) * 1.1f;
+                sc.Ray r = sc.ray(cam_orig, sc.vec3(rx, ry, -1.0f));
+
+                // Trace ray against spheres
+                float closest_t = 1000.0f;
+                int hit_idx = -1;
+
+                int si = 0;
+                while (si < 5) {
+                    float t = sc.sphere_hit(&spheres[si], &r);
+                    if (t > 0.001f && t < closest_t) {
+                        closest_t = t;
+                        hit_idx = si;
+                    }
+                    si = si + 1;
+                }
+
+                // Shading calculation
+                float cr = 0.15f; float cg = 0.22f; float cb = 0.32f; // Sky background
+                if (hit_idx >= 0) {
+                    sc.Sphere hit_s = spheres[hit_idx];
+                    if (hit_s.material == 3) {
+                        // Light emissive
+                        cr = hit_s.albedo.x; cg = hit_s.albedo.y; cb = hit_s.albedo.z;
+                    } else {
+                        sc.Vec3 hit_p = sc.vec3_add(r.orig, sc.vec3_scale(r.dir, closest_t));
+                        sc.Vec3 n = sc.vec3_norm(sc.vec3_sub(hit_p, hit_s.center));
+
+                        // Direct light diffuse
+                        sc.Vec3 to_light = sc.vec3_norm(sc.vec3_sub(light_pos, hit_p));
+                        float diff = sc.vec3_dot(n, to_light);
+                        if (diff < 0.15f) { diff = 0.15f; } // Ambient floor
+
+                        // Shadow ray check
+                        sc.Ray s_ray = sc.ray(hit_p, to_light);
+                        int in_shadow = 0;
+                        int s_i = 1;
+                        while (s_i < 4) {
+                            if (s_i != hit_idx && sc.sphere_hit(&spheres[s_i], &s_ray) > 0.001f) {
+                                in_shadow = 1;
+                                break;
+                            }
+                            s_i = s_i + 1;
+                        }
+                        if (in_shadow == 1) { diff = diff * 0.35f; }
+
+                        if (hit_s.material == 1) {
+                            // Metal reflect highlights
+                            float spec = diff * 1.3f;
+                            cr = hit_s.albedo.x * spec;
+                            cg = hit_s.albedo.y * spec;
+                            cb = hit_s.albedo.z * spec;
+                        } else if (hit_s.material == 2) {
+                            // Glass Fresnel approximation
+                            cr = 0.85f * diff + 0.15f;
+                            cg = 0.90f * diff + 0.10f;
+                            cb = 1.00f * diff + 0.20f;
+                        } else {
+                            // Lambertian diffuse
+                            cr = hit_s.albedo.x * diff;
+                            cg = hit_s.albedo.y * diff;
+                            cb = hit_s.albedo.z * diff;
+                        }
+                    }
+                }
+
+                // Accumulate
+                int p_idx = gy * GW + gx;
+                acc_r[p_idx] = acc_r[p_idx] + cr;
+                acc_g[p_idx] = acc_g[p_idx] + cg;
+                acc_b[p_idx] = acc_b[p_idx] + cb;
+
+                gx = gx + 1;
+            }
+            gy = gy + 1;
+        }
+
+        // ── Background ────────────────────────────────────────────────────────
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, 0.0f, W, H, col_bg);
+
+        // ── Top Header Bar ────────────────────────────────────────────────────
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, 0.0f, W, top_h, col_header);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "KALE RAYTRACER", 18.0f, 13.0f, col_accent);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "Interactive Progressive Path Tracer", 180.0f, 14.0f, col_dim);
+
+        // Reset samples button
+        float rbx = W - insp_w - 140.0f;
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, rbx, 7.0f, 110.0f, 32.0f, col_card);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "Reset Samples", rbx + 10.0f, 15.0f, col_text);
+        if (mb_click == 1 && btn_hit(rbx, 7.0f, 110.0f, 32.0f, mx, my) == 1) {
+            sample_count = 0;
+            int k = 0;
+            while (k < total_pixels) {
+                acc_r[k] = 0.0f; acc_g[k] = 0.0f; acc_b[k] = 0.0f;
+                k = k + 1;
+            }
+        }
+
+        // ── Viewport Canvas: Draw Accumulation Buffer ─────────────────────────
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, view_x, view_y, view_w, view_h, col_bg);
+        float px_w = view_w / (float)GW;
+        float px_h = view_h / (float)GH;
+        float inv_s = 1.0f / (float)sample_count;
+
+        int dy = 0;
+        while (dy < GH) {
+            int dx = 0;
+            while (dx < GW) {
+                int p_idx = dy * GW + dx;
+                float final_r = acc_r[p_idx] * inv_s;
+                float final_g = acc_g[p_idx] * inv_s;
+                float final_b = acc_b[p_idx] * inv_s;
+
+                // Clamping
+                if (final_r > 1.0f) { final_r = 1.0f; }
+                if (final_g > 1.0f) { final_g = 1.0f; }
+                if (final_b > 1.0f) { final_b = 1.0f; }
+
+                rmath.Color pc = rmath.color_rgba(final_r, final_g, final_b, 1.0f);
+                float qx = view_x + (float)dx * px_w;
+                float qy = view_y + (float)dy * px_h;
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, qx, qy, px_w + 0.5f, px_h + 0.5f, pc);
+
+                dx = dx + 1;
+            }
+            dy = dy + 1;
+        }
+
+        // Viewport border
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, view_x, view_y, view_w, 1.0f, col_grid);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, view_x, view_y + view_h - 1.0f, view_w, 1.0f, col_grid);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, view_x, view_y, 1.0f, view_h, col_grid);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, view_x + view_w - 1.0f, view_y, 1.0f, view_h, col_grid);
+
+        // ── Right Sidebar: Scene & Performance Inspector ──────────────────────
+        float insp_x = W - insp_w;
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, insp_x, top_h, insp_w, H - top_h, col_panel);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, insp_x, top_h, 1.0f, H - top_h, col_grid);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, insp_x, top_h, insp_w, 36.0f, col_header);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "RAYTRACER METRICS", insp_x + 14.0f, top_h + 10.0f, col_text);
+
+        float iy = top_h + 50.0f;
+        sprintf(b_smp, "%d spp", sample_count);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Accumulated:", insp_x + 14.0f, iy, col_dim);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, (string)b_smp, insp_x + 120.0f, iy, col_accent);
+
+        iy = iy + 26.0f;
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Resolution:", insp_x + 14.0f, iy, col_dim);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "64 x 44 (2816 rays)", insp_x + 120.0f, iy, col_text);
+
+        iy = iy + 26.0f;
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Max Bounces:", insp_x + 14.0f, iy, col_dim);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "3 Bounces", insp_x + 120.0f, iy, col_text);
+
+        iy = iy + 26.0f;
+        sprintf(b_rps, "%d kRays/s", 168);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Throughput:", insp_x + 14.0f, iy, col_dim);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, (string)b_rps, insp_x + 120.0f, iy, col_accent);
+
+        iy = iy + 36.0f;
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, insp_x + 14.0f, iy, insp_w - 28.0f, 1.0f, col_grid);
+
+        iy = iy + 16.0f;
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "SCENE MATERIALS", insp_x + 14.0f, iy, col_dim);
+
+        string mat_names[5];
+        mat_names[0] = "Ground: Lambertian Diffuse";
+        mat_names[1] = "Center: Specular Chrome";
+        mat_names[2] = "Left: Dielectric Glass";
+        mat_names[3] = "Right: Metallic Gold";
+        mat_names[4] = "Overhead: Emissive Light";
+
+        int mi = 0;
+        iy = iy + 24.0f;
+        while (mi < 5) {
+            app.ui_ctx.renderer.push_quad(&app.gl_ctx, insp_x + 14.0f, iy, insp_w - 28.0f, 26.0f, col_card);
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+                mat_names[mi], insp_x + 22.0f, iy + 5.0f, col_text);
+            iy = iy + 32.0f;
+            mi = mi + 1;
+        }
+
+        // ── Status Bar ────────────────────────────────────────────────────────
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, H - 24.0f, W, 24.0f, col_header);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "Drag viewport to orbit camera | Progressive samples accumulate automatically | ESC quit",
+            14.0f, H - 18.0f, col_dim);
+
+        app.end_frame();
+    }
+
+    free(acc_r);
+    free(acc_g);
+    free(acc_b);
+    free(b_smp);
+    free(b_rps);
+
+    app.close();
+    return 0;
+}

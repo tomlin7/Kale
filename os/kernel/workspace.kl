@@ -1,0 +1,224 @@
+// os/kernel/workspace.kl
+// Virtual Desktop Workspace Manager & Multi-Monitor Viewport for Kale OS
+// Supports multiple virtual workspaces, sticky windows across desktops,
+// and multi-display monitor bounds/migration.
+
+struct Monitor {
+    int32 id;
+    int32 x;
+    int32 y;
+    int32 width;
+    int32 height;
+    bool is_active;
+}
+
+struct Workspace {
+    uint32 id;
+    char[16] name;
+    uint32 window_count;
+    uint32 focused_window_id;
+}
+
+struct WorkspaceManager {
+    Workspace[4] workspaces;
+    uint32 active_workspace;
+    uint32[16] window_workspace_map;
+    bool[16] window_sticky_flags;
+    Monitor[2] monitors;
+    uint32 monitor_count;
+}
+
+// String copy helper
+fn void ws_str_copy(char* dest, char* src, int max_len) {
+    int i = 0;
+    while (i < max_len - 1 && src[i] != (0 as char)) {
+        dest[i] = src[i];
+        i = i + 1;
+    }
+    dest[i] = 0 as char;
+}
+
+// Initialize Workspace Manager
+fn void ws_init(WorkspaceManager* mgr) {
+    mgr->active_workspace = 1 as uint32;
+    mgr->monitor_count = 1 as uint32;
+
+    // Monitor 0: Primary 1024x768
+    mgr->monitors[0].id = 0;
+    mgr->monitors[0].x = 0;
+    mgr->monitors[0].y = 0;
+    mgr->monitors[0].width = 1024;
+    mgr->monitors[0].height = 768;
+    mgr->monitors[0].is_active = true;
+
+    // Monitor 1: Inactive secondary by default
+    mgr->monitors[1].id = 1;
+    mgr->monitors[1].x = 1024;
+    mgr->monitors[1].y = 0;
+    mgr->monitors[1].width = 800;
+    mgr->monitors[1].height = 600;
+    mgr->monitors[1].is_active = false;
+
+    // Initialize 4 workspaces
+    int w = 0;
+    while (w < 4) {
+        mgr->workspaces[w].id = (w + 1) as uint32;
+        mgr->workspaces[w].window_count = 0 as uint32;
+        mgr->workspaces[w].focused_window_id = 0 as uint32;
+        
+        if (w == 0) {
+            ws_str_copy(&mgr->workspaces[w].name[0], "Desk 1", 16);
+        } else if (w == 1) {
+            ws_str_copy(&mgr->workspaces[w].name[0], "Desk 2", 16);
+        } else if (w == 2) {
+            ws_str_copy(&mgr->workspaces[w].name[0], "Desk 3", 16);
+        } else {
+            ws_str_copy(&mgr->workspaces[w].name[0], "Desk 4", 16);
+        }
+        w = w + 1;
+    }
+
+    // Initialize window mappings (all start on Workspace 1, non-sticky)
+    int i = 0;
+    while (i < 16) {
+        mgr->window_workspace_map[i] = 1 as uint32;
+        mgr->window_sticky_flags[i] = false;
+        i = i + 1;
+    }
+}
+
+// Switch active workspace (1..4)
+fn bool ws_set_active(WorkspaceManager* mgr, uint32 ws_id) {
+    if (ws_id < (1 as uint32) || ws_id > (4 as uint32)) {
+        return false;
+    }
+    mgr->active_workspace = ws_id;
+    return true;
+}
+
+fn uint32 ws_get_active(WorkspaceManager* mgr) {
+    return mgr->active_workspace;
+}
+
+// Cycle to next workspace (1 -> 2 -> 3 -> 4 -> 1)
+fn uint32 ws_cycle_next(WorkspaceManager* mgr) {
+    uint32 cur = mgr->active_workspace;
+    if (cur >= (4 as uint32)) {
+        mgr->active_workspace = 1 as uint32;
+    } else {
+        mgr->active_workspace = cur + (1 as uint32);
+    }
+    return mgr->active_workspace;
+}
+
+// Cycle to previous workspace (4 <- 1 <- 2 <- 3 <- 4)
+fn uint32 ws_cycle_prev(WorkspaceManager* mgr) {
+    uint32 cur = mgr->active_workspace;
+    if (cur <= (1 as uint32)) {
+        mgr->active_workspace = 4 as uint32;
+    } else {
+        mgr->active_workspace = cur - (1 as uint32);
+    }
+    return mgr->active_workspace;
+}
+
+// Assign a window (ID 1..16) to a workspace (1..4)
+fn bool ws_assign_window(WorkspaceManager* mgr, uint32 win_id, uint32 ws_id) {
+    if (win_id < (1 as uint32) || win_id > (16 as uint32)) {
+        return false;
+    }
+    if (ws_id < (1 as uint32) || ws_id > (4 as uint32)) {
+        return false;
+    }
+    int slot = (win_id - (1 as uint32)) as int;
+    mgr->window_workspace_map[slot] = ws_id;
+    return true;
+}
+
+fn uint32 ws_get_window_workspace(WorkspaceManager* mgr, uint32 win_id) {
+    if (win_id < (1 as uint32) || win_id > (16 as uint32)) {
+        return 0 as uint32;
+    }
+    int slot = (win_id - (1 as uint32)) as int;
+    return mgr->window_workspace_map[slot];
+}
+
+// Sticky flag: window visible across all workspaces (e.g. system panels, modals)
+fn bool ws_set_window_sticky(WorkspaceManager* mgr, uint32 win_id, bool sticky) {
+    if (win_id < (1 as uint32) || win_id > (16 as uint32)) {
+        return false;
+    }
+    int slot = (win_id - (1 as uint32)) as int;
+    mgr->window_sticky_flags[slot] = sticky;
+    return true;
+}
+
+fn bool ws_is_window_sticky(WorkspaceManager* mgr, uint32 win_id) {
+    if (win_id < (1 as uint32) || win_id > (16 as uint32)) {
+        return false;
+    }
+    int slot = (win_id - (1 as uint32)) as int;
+    return mgr->window_sticky_flags[slot];
+}
+
+// Check if a window should be rendered on the active workspace
+fn bool ws_is_window_visible_on_active(WorkspaceManager* mgr, uint32 win_id) {
+    if (win_id < (1 as uint32) || win_id > (16 as uint32)) {
+        return false;
+    }
+    int slot = (win_id - (1 as uint32)) as int;
+    if (mgr->window_sticky_flags[slot]) {
+        return true;
+    }
+    return mgr->window_workspace_map[slot] == mgr->active_workspace;
+}
+
+// Multi-Monitor Support
+fn bool ws_enable_secondary_monitor(WorkspaceManager* mgr, int32 x, int32 y, int32 width, int32 height) {
+    mgr->monitors[1].x = x;
+    mgr->monitors[1].y = y;
+    mgr->monitors[1].width = width;
+    mgr->monitors[1].height = height;
+    mgr->monitors[1].is_active = true;
+    mgr->monitor_count = 2 as uint32;
+    return true;
+}
+
+// Identify which monitor contains the given coordinates
+fn int32 ws_get_monitor_for_coords(WorkspaceManager* mgr, int32 x, int32 y) {
+    // Check monitor 0
+    if (x >= mgr->monitors[0].x && x < mgr->monitors[0].x + mgr->monitors[0].width &&
+        y >= mgr->monitors[0].y && y < mgr->monitors[0].y + mgr->monitors[0].height) {
+        return 0;
+    }
+    // Check monitor 1 if active
+    if (mgr->monitors[1].is_active) {
+        if (x >= mgr->monitors[1].x && x < mgr->monitors[1].x + mgr->monitors[1].width &&
+            y >= mgr->monitors[1].y && y < mgr->monitors[1].y + mgr->monitors[1].height) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// Move window to target monitor with coordinate translation
+fn bool ws_move_window_to_monitor(WorkspaceManager* mgr, int32* win_x, int32* win_y, int32 target_mon_id) {
+    if (target_mon_id < 0 || target_mon_id > 1) {
+        return false;
+    }
+    if (!mgr->monitors[target_mon_id].is_active) {
+        return false;
+    }
+    int32 cur_mon = ws_get_monitor_for_coords(mgr, *win_x, *win_y);
+    if (cur_mon == target_mon_id) {
+        return true; // Already on this monitor
+    }
+
+    // Translate relative offset from current monitor origin to target monitor origin
+    int32 rel_x = *win_x - mgr->monitors[cur_mon].x;
+    int32 rel_y = *win_y - mgr->monitors[cur_mon].y;
+
+    *win_x = mgr->monitors[target_mon_id].x + rel_x;
+    *win_y = mgr->monitors[target_mon_id].y + rel_y;
+    return true;
+}

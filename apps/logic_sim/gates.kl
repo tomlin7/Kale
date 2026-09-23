@@ -1,0 +1,135 @@
+// apps/logic_sim/gates.kl
+// Digital logic components, gates, wires, and circuit simulation
+
+int GATE_SWITCH() { return 0; }
+int GATE_AND()    { return 1; }
+int GATE_OR()     { return 2; }
+int GATE_NOT()    { return 3; }
+int GATE_XOR()    { return 4; }
+int GATE_CLOCK()  { return 5; }
+int GATE_LED()    { return 6; }
+int GATE_7SEG()   { return 7; }
+
+struct Component {
+    int   type_id;
+    float x;
+    float y;
+    float w;
+    float h;
+    int   in_a;
+    int   in_b;
+    int   out_val;
+    string name;
+}
+
+fn void Component.init(int t, float x, float y, float w, float h, string name) {
+    this->type_id = t;
+    this->x       = x;
+    this->y       = y;
+    this->w       = w;
+    this->h       = h;
+    this->in_a    = 0;
+    this->in_b    = 0;
+    this->out_val = 0;
+    this->name    = name;
+}
+
+struct Wire {
+    int from_comp;
+    int to_comp;
+    int to_pin; // 0 = in_a, 1 = in_b
+    int signal;
+}
+
+struct Circuit {
+    Component* comps;
+    int        comp_count;
+    int        comp_cap;
+    Wire*      wires;
+    int        wire_count;
+    int        wire_cap;
+    int        clock_state;
+    int        tick_counter;
+}
+
+fn void Circuit.init() {
+    this->comp_cap     = 64;
+    this->comp_count   = 0;
+    this->comps        = alloc(Component, 64);
+    this->wire_cap     = 64;
+    this->wire_count   = 0;
+    this->wires        = alloc(Wire, 64);
+    this->clock_state  = 0;
+    this->tick_counter = 0;
+}
+
+fn int Circuit.add_comp(int t, float x, float y, float w, float h, string name) {
+    if (this->comp_count >= this->comp_cap) { return -1; }
+    int idx = this->comp_count;
+    this->comps[idx].init(t, x, y, w, h, name);
+    this->comp_count = idx + 1;
+    return idx;
+}
+
+fn void Circuit.add_wire(int from_c, int to_c, int to_pin) {
+    if (this->wire_count >= this->wire_cap) { return; }
+    int idx = this->wire_count;
+    this->wires[idx].from_comp = from_c;
+    this->wires[idx].to_comp   = to_c;
+    this->wires[idx].to_pin    = to_pin;
+    this->wires[idx].signal    = 0;
+    this->wire_count = idx + 1;
+}
+
+fn void Circuit.tick() {
+    this->tick_counter = this->tick_counter + 1;
+    if ((this->tick_counter % 30) == 0) {
+        if (this->clock_state == 0) { this->clock_state = 1; }
+        else { this->clock_state = 0; }
+    }
+
+    // Step 1: Propagate wire signals into inputs
+    int wi = 0;
+    while (wi < this->wire_count) {
+        Wire* w = &this->wires[wi];
+        int sig = this->comps[w->from_comp].out_val;
+        w->signal = sig;
+        if (w->to_pin == 0) {
+            this->comps[w->to_comp].in_a = sig;
+        } else {
+            this->comps[w->to_comp].in_b = sig;
+        }
+        wi = wi + 1;
+    }
+
+    // Step 2: Evaluate logic gates
+    int ci = 0;
+    while (ci < this->comp_count) {
+        Component* c = &this->comps[ci];
+        if (c->type_id == GATE_CLOCK()) {
+            c->out_val = this->clock_state;
+        } else if (c->type_id == GATE_AND()) {
+            if (c->in_a == 1 && c->in_b == 1) { c->out_val = 1; } else { c->out_val = 0; }
+        } else if (c->type_id == GATE_OR()) {
+            if (c->in_a == 1 || c->in_b == 1) { c->out_val = 1; } else { c->out_val = 0; }
+        } else if (c->type_id == GATE_NOT()) {
+            if (c->in_a == 0) { c->out_val = 1; } else { c->out_val = 0; }
+        } else if (c->type_id == GATE_XOR()) {
+            if (c->in_a != c->in_b) { c->out_val = 1; } else { c->out_val = 0; }
+        } else if (c->type_id == GATE_LED() || c->type_id == GATE_7SEG()) {
+            c->out_val = c->in_a;
+        }
+        ci = ci + 1;
+    }
+}
+
+fn void Circuit.destroy() {
+    if (this->comps != (Component*)0) {
+        free(this->comps);
+        this->comps = (Component*)0;
+    }
+    if (this->wires != (Wire*)0) {
+        free(this->wires);
+        this->wires = (Wire*)0;
+    }
+}

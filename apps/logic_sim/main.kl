@@ -1,0 +1,333 @@
+// apps/logic_sim/main.kl
+// Kale Logic Sim — Digital Logic Circuit Simulator & Breadboard Editor
+
+import "libs/framework/app.kl" as fw;
+import "libs/glfw/glfw.kl" as glfw;
+import "libs/glfw/constants.kl" as glc;
+import "libs/glfw/input.kl" as ginput;
+import "libs/render/math.kl" as rmath;
+import "apps/logic_sim/gates.kl" as gs;
+
+extern int printf(string fmt, ...);
+extern int sprintf(char* buf, string fmt, ...);
+extern void* malloc(int size);
+
+fn int btn_hit(float bx, float by, float bw, float bh, float mx, float my) {
+    if (mx >= bx && mx <= bx + bw && my >= by && my <= by + bh) { return 1; }
+    return 0;
+}
+
+fn void draw_line_simple(fw.App* app, float x1, float y1, float x2, float y2, rmath.Color col) {
+    float dx = x2 - x1;
+    float dy = y2 - y1;
+    float len2 = dx * dx + dy * dy;
+    if (len2 < 0.5f) { return; }
+    int steps = 24;
+    int i = 0;
+    while (i <= steps) {
+        float t = (float)i / (float)steps;
+        float px = x1 + dx * t;
+        float py = y1 + dy * t;
+        app->ui_ctx.renderer.push_quad(&app->gl_ctx, px - 1.0f, py - 1.0f, 2.5f, 2.5f, col);
+        i = i + 1;
+    }
+}
+
+fn int main() {
+    fw.AppConfig cfg;
+    cfg.init("Kale Logic Sim — Digital Logic Circuit Simulator", 1280, 768);
+
+    fw.App app;
+    int ok = app.init(cfg);
+    if (ok == 0) {
+        printf("Fatal: could not open Logic Sim window\n");
+        return 1;
+    }
+
+    gs.Circuit circ;
+    circ.init();
+
+    // Build a Half-Adder circuit: Inputs A & B -> XOR (Sum) & AND (Carry)
+    int sw_a = circ.add_comp(gs.GATE_SWITCH(), 260.0f, 140.0f, 90.0f, 44.0f, "Switch A");
+    int sw_b = circ.add_comp(gs.GATE_SWITCH(), 260.0f, 240.0f, 90.0f, 44.0f, "Switch B");
+    int clk  = circ.add_comp(gs.GATE_CLOCK(),  260.0f, 360.0f, 90.0f, 44.0f, "Clock 1Hz");
+
+    int g_xor = circ.add_comp(gs.GATE_XOR(), 440.0f, 140.0f, 100.0f, 54.0f, "XOR (Sum)");
+    int g_and = circ.add_comp(gs.GATE_AND(), 440.0f, 240.0f, 100.0f, 54.0f, "AND (Carry)");
+
+    int led_sum = circ.add_comp(gs.GATE_LED(), 630.0f, 140.0f, 80.0f, 54.0f, "LED Sum");
+    int led_cry = circ.add_comp(gs.GATE_LED(), 630.0f, 240.0f, 80.0f, 54.0f, "LED Carry");
+
+    // Add wires
+    circ.add_wire(sw_a, g_xor, 0); // Sw A -> XOR in_a
+    circ.add_wire(sw_b, g_xor, 1); // Sw B -> XOR in_b
+    circ.add_wire(sw_a, g_and, 0); // Sw A -> AND in_a
+    circ.add_wire(sw_b, g_and, 1); // Sw B -> AND in_b
+    circ.add_wire(g_xor, led_sum, 0); // XOR -> LED Sum
+    circ.add_wire(g_and, led_cry, 0); // AND -> LED Carry
+
+    // Color definitions
+    rmath.Color col_bg       = rmath.color_hex(0x0D1117);
+    rmath.Color col_header   = rmath.color_hex(0x161B22);
+    rmath.Color col_panel    = rmath.color_rgba(0.08f, 0.09f, 0.12f, 1.0f);
+    rmath.Color col_card     = rmath.color_hex(0x21262D);
+    rmath.Color col_card_h   = rmath.color_hex(0x30363D);
+    rmath.Color col_text     = rmath.color_hex(0xE6EDF3);
+    rmath.Color col_dim      = rmath.color_hex(0x6E7681);
+    rmath.Color col_grid     = rmath.color_rgba(0.18f, 0.22f, 0.28f, 1.0f);
+    rmath.Color col_border   = rmath.color_hex(0x30363D);
+    rmath.Color col_accent   = rmath.color_hex(0x58A6FF);
+    rmath.Color col_high     = rmath.color_hex(0x3FB950); // green for high voltage 1
+    rmath.Color col_low      = rmath.color_hex(0x30363D); // dark gray for low voltage 0
+    rmath.Color col_led_off  = rmath.color_hex(0x21262D);
+    rmath.Color col_led_on   = rmath.color_hex(0x3FB950);
+
+    int last_mb = 0;
+    int pk_esc = 0;
+
+    void* win = app.window;
+
+    while (glfw.glfwWindowShouldClose(app.window) == 0) {
+        app.begin_frame();
+        win = app.window;
+        float W = (float)app.width;
+        float H = (float)app.height;
+
+        // Tick simulation
+        circ.tick();
+
+        // Mouse handling
+        double mdx = 0.0; double mdy = 0.0;
+        ginput.glfwGetCursorPos(win, &mdx, &mdy);
+        float mx = (float)mdx; float my = (float)mdy;
+        int mb = ginput.glfwGetMouseButton(win, glc.GLFW_MOUSE_BUTTON_LEFT());
+        int mb_click = 0;
+        if (mb == glc.GLFW_PRESS() && last_mb == 0) { mb_click = 1; }
+        last_mb = mb;
+
+        int ke = ginput.glfwGetKey(win, glc.GLFW_KEY_ESCAPE());
+        if (ke == glc.GLFW_PRESS() && pk_esc == 0) {
+            glfw.glfwSetWindowShouldClose(app.window, 1);
+        }
+        pk_esc = ke;
+
+        // ── Layout Geometry ───────────────────────────────────────────────────
+        float top_h    = 46.0f;
+        float pal_w    = 200.0f;
+        float insp_w   = 250.0f;
+        float canvas_w = W - pal_w - insp_w;
+        float canvas_h = H - top_h;
+        float canvas_x = pal_w;
+        float canvas_y = top_h;
+
+        // Toggle Switch interaction on click
+        if (mb_click == 1) {
+            int ci = 0;
+            while (ci < circ.comp_count) {
+                gs.Component* c = &circ.comps[ci];
+                if (c->type_id == gs.GATE_SWITCH() && btn_hit(c->x, c->y, c->w, c->h, mx, my) == 1) {
+                    if (c->out_val == 0) { c->out_val = 1; }
+                    else { c->out_val = 0; }
+                }
+                ci = ci + 1;
+            }
+        }
+
+        // ── Background ────────────────────────────────────────────────────────
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, 0.0f, W, H, col_bg);
+
+        // ── Top Header Bar ────────────────────────────────────────────────────
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, 0.0f, W, top_h, col_header);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "KALE LOGIC SIM", 18.0f, 13.0f, col_accent);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "Digital Logic Circuit Simulator & Breadboard", 190.0f, 14.0f, col_dim);
+
+        // ── Left Palette Sidebar ──────────────────────────────────────────────
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, top_h, pal_w, H - top_h, col_panel);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, pal_w - 1.0f, top_h, 1.0f, H - top_h, col_grid);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "COMPONENT LIBRARY", 16.0f, top_h + 14.0f, col_dim);
+
+        string gate_names[6];
+        gate_names[0] = "+ Toggle Switch";
+        gate_names[1] = "+ AND Gate";
+        gate_names[2] = "+ OR Gate";
+        gate_names[3] = "+ NOT Gate";
+        gate_names[4] = "+ XOR Gate";
+        gate_names[5] = "+ Output LED";
+
+        int gi = 0;
+        float gby = top_h + 40.0f;
+        while (gi < 6) {
+            float bx = 16.0f;
+            float bw = pal_w - 32.0f;
+            float bh = 34.0f;
+
+            rmath.Color gbc = col_card;
+            if (btn_hit(bx, gby, bw, bh, mx, my) == 1) { gbc = col_card_h; }
+
+            app.ui_ctx.renderer.push_quad(&app.gl_ctx, bx, gby, bw, bh, gbc);
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+                gate_names[gi], bx + 10.0f, gby + 8.0f, col_text);
+
+            if (mb_click == 1 && btn_hit(bx, gby, bw, bh, mx, my) == 1) {
+                float ncx = canvas_x + 80.0f + (float)circ.comp_count * 10.0f;
+                float ncy = canvas_y + 80.0f + (float)circ.comp_count * 10.0f;
+                if (gi == 0) { circ.add_comp(gs.GATE_SWITCH(), ncx, ncy, 90.0f, 44.0f, "Switch"); }
+                if (gi == 1) { circ.add_comp(gs.GATE_AND(), ncx, ncy, 100.0f, 54.0f, "AND"); }
+                if (gi == 2) { circ.add_comp(gs.GATE_OR(), ncx, ncy, 100.0f, 54.0f, "OR"); }
+                if (gi == 3) { circ.add_comp(gs.GATE_NOT(), ncx, ncy, 90.0f, 44.0f, "NOT"); }
+                if (gi == 4) { circ.add_comp(gs.GATE_XOR(), ncx, ncy, 100.0f, 54.0f, "XOR"); }
+                if (gi == 5) { circ.add_comp(gs.GATE_LED(), ncx, ncy, 80.0f, 54.0f, "LED"); }
+            }
+
+            gby = gby + bh + 8.0f;
+            gi = gi + 1;
+        }
+
+        // ── Canvas Area ───────────────────────────────────────────────────────
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, canvas_x, canvas_y, canvas_w, canvas_h, col_bg);
+
+        // Dot grid
+        int dgi = 0;
+        while (dgi < 26) {
+            int dgj = 0;
+            while (dgj < 18) {
+                float gx = canvas_x + 20.0f + (float)dgi * 36.0f;
+                float gy = canvas_y + 20.0f + (float)dgj * 36.0f;
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, gx, gy, 1.5f, 1.5f, col_grid);
+                dgj = dgj + 1;
+            }
+            dgi = dgi + 1;
+        }
+
+        // Step 1: Draw Wires with signal color
+        int wi = 0;
+        while (wi < circ.wire_count) {
+            gs.Wire w = circ.wires[wi];
+            gs.Component from_c = circ.comps[w.from_comp];
+            gs.Component to_c   = circ.comps[w.to_comp];
+
+            float x1 = from_c.x + from_c.w;
+            float y1 = from_c.y + from_c.h * 0.5f;
+
+            float x2 = to_c.x;
+            float y2 = to_c.y + to_c.h * 0.65f;
+            if (w.to_pin == 0) { y2 = to_c.y + to_c.h * 0.35f; }
+
+            rmath.Color wire_col = col_low;
+            if (w.signal == 1) { wire_col = col_high; }
+
+            // Orthogonal wire routing
+            float mid_x = (x1 + x2) * 0.5f;
+            draw_line_simple(&app, x1, y1, mid_x, y1, wire_col);
+            draw_line_simple(&app, mid_x, y1, mid_x, y2, wire_col);
+            draw_line_simple(&app, mid_x, y2, x2, y2, wire_col);
+
+            wi = wi + 1;
+        }
+
+        // Step 2: Draw Components & Gates
+        int ci2 = 0;
+        while (ci2 < circ.comp_count) {
+            gs.Component c = circ.comps[ci2];
+
+            app.ui_ctx.renderer.push_quad(&app.gl_ctx, c.x, c.y, c.w, c.h, col_card);
+            app.ui_ctx.renderer.push_quad(&app.gl_ctx, c.x, c.y, c.w, 1.0f, col_border);
+            app.ui_ctx.renderer.push_quad(&app.gl_ctx, c.x, c.y + c.h - 1.0f, c.w, 1.0f, col_border);
+            app.ui_ctx.renderer.push_quad(&app.gl_ctx, c.x, c.y, 1.0f, c.h, col_border);
+            app.ui_ctx.renderer.push_quad(&app.gl_ctx, c.x + c.w - 1.0f, c.y, 1.0f, c.h, col_border);
+
+            // Title
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+                c.name, c.x + 8.0f, c.y + 6.0f, col_text);
+
+            if (c.type_id == gs.GATE_SWITCH()) {
+                rmath.Color swc = col_border;
+                string sw_state = "0 (LOW)";
+                if (c.out_val == 1) {
+                    swc = col_high;
+                    sw_state = "1 (HIGH)";
+                }
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, c.x + 10.0f, c.y + 24.0f, 32.0f, 14.0f, swc);
+                app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+                    sw_state, c.x + 48.0f, c.y + 24.0f, swc);
+            } else if (c.type_id == gs.GATE_LED()) {
+                rmath.Color led_c = col_led_off;
+                if (c.in_a == 1) { led_c = col_led_on; }
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, c.x + c.w * 0.5f - 10.0f, c.y + 26.0f, 20.0f, 20.0f, led_c);
+            } else if (c.type_id == gs.GATE_CLOCK()) {
+                rmath.Color clkc = col_border;
+                if (c.out_val == 1) { clkc = col_high; }
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, c.x + 10.0f, c.y + 24.0f, 20.0f, 14.0f, clkc);
+                app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+                    "PULSE", c.x + 36.0f, c.y + 24.0f, clkc);
+            } else {
+                // Gate pin indicators
+                rmath.Color pin_a = col_low;
+                if (c.in_a == 1) { pin_a = col_high; }
+                rmath.Color pin_b = col_low;
+                if (c.in_b == 1) { pin_b = col_high; }
+                rmath.Color pin_o = col_low;
+                if (c.out_val == 1) { pin_o = col_high; }
+
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, c.x - 4.0f, c.y + c.h * 0.35f - 3.0f, 6.0f, 6.0f, pin_a);
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, c.x - 4.0f, c.y + c.h * 0.65f - 3.0f, 6.0f, 6.0f, pin_b);
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, c.x + c.w - 2.0f, c.y + c.h * 0.5f - 3.0f, 6.0f, 6.0f, pin_o);
+            }
+
+            ci2 = ci2 + 1;
+        }
+
+        // ── Right Sidebar: Circuit Inspector ──────────────────────────────────
+        float insp_x = W - insp_w;
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, insp_x, top_h, insp_w, H - top_h, col_panel);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, insp_x, top_h, 1.0f, H - top_h, col_grid);
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, insp_x, top_h, insp_w, 36.0f, col_header);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "CIRCUIT STATE", insp_x + 14.0f, top_h + 10.0f, col_text);
+
+        float iy = top_h + 50.0f;
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Half-Adder Output:", insp_x + 14.0f, iy, col_dim);
+        iy = iy + 24.0f;
+
+        int s_a = circ.comps[sw_a].out_val;
+        int s_b = circ.comps[sw_b].out_val;
+        int sum_v = circ.comps[led_sum].out_val;
+        int cry_v = circ.comps[led_cry].out_val;
+
+        string truth_text = "0 + 0 = 0 (Carry: 0)";
+        if (s_a == 0 && s_b == 1) { truth_text = "0 + 1 = 1 (Carry: 0)"; }
+        if (s_a == 1 && s_b == 0) { truth_text = "1 + 0 = 1 (Carry: 0)"; }
+        if (s_a == 1 && s_b == 1) { truth_text = "1 + 1 = 0 (Carry: 1)"; }
+
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, truth_text, insp_x + 14.0f, iy, col_accent);
+
+        iy = iy + 40.0f;
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, insp_x + 14.0f, iy, insp_w - 28.0f, 1.0f, col_grid);
+
+        iy = iy + 16.0f;
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "VOLTAGE LEGEND", insp_x + 14.0f, iy, col_dim);
+
+        iy = iy + 24.0f;
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, insp_x + 14.0f, iy + 2.0f, 12.0f, 12.0f, col_high);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "HIGH (Logic 1: +5V)", insp_x + 34.0f, iy, col_text);
+
+        iy = iy + 24.0f;
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, insp_x + 14.0f, iy + 2.0f, 12.0f, 12.0f, col_low);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "LOW  (Logic 0: GND)", insp_x + 34.0f, iy, col_dim);
+
+        // ── Status Bar ────────────────────────────────────────────────────────
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, H - 24.0f, W, 24.0f, col_header);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx,
+            "Click Toggle Switches to change logic state | Wires propagate live signals | ESC quit",
+            14.0f, H - 18.0f, col_dim);
+
+        app.end_frame();
+    }
+
+    circ.destroy();
+    app.close();
+    return 0;
+}

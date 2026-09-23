@@ -1,0 +1,244 @@
+// os/userspace/libkale.kl
+// User-Space POSIX Runtime Library & libc ABI for Kale OS
+// Provides standard syscall wrappers, memory allocation, string operations,
+// and program execution scaffolding.
+
+// Standard Syscall Numbers
+uint64 SYS_READ     = 0 as uint64;
+uint64 SYS_WRITE    = 1 as uint64;
+uint64 SYS_OPEN     = 2 as uint64;
+uint64 SYS_CLOSE    = 3 as uint64;
+uint64 SYS_MMAP     = 9 as uint64;
+uint64 SYS_BRK      = 12 as uint64;
+uint64 SYS_YIELD    = 24 as uint64;
+uint64 SYS_GETPID   = 39 as uint64;
+uint64 SYS_SOCKET   = 41 as uint64;
+uint64 SYS_EXIT     = 60 as uint64;
+
+// Standard File Descriptors
+int32 STDIN_FILENO  = 0;
+int32 STDOUT_FILENO = 1;
+int32 STDERR_FILENO = 2;
+
+// Syscall Invocation Structure
+struct SyscallFrame {
+    uint64 nr;
+    uint64 arg1;
+    uint64 arg2;
+    uint64 arg3;
+    uint64 arg4;
+    uint64 arg5;
+    uint64 arg6;
+    int64 ret_val;
+    int32 err_no;
+}
+
+// ==============================================================================
+// Standard String & Memory Functions
+// ==============================================================================
+
+fn int k_strlen(char* s) {
+    int len = 0;
+    while (s[len] != (0 as char)) {
+        len = len + 1;
+    }
+    return len;
+}
+
+fn int k_strcmp(char* s1, char* s2) {
+    int i = 0;
+    while (s1[i] != (0 as char) && s2[i] != (0 as char)) {
+        if (s1[i] != s2[i]) {
+            return (s1[i] as int) - (s2[i] as int);
+        }
+        i = i + 1;
+    }
+    return (s1[i] as int) - (s2[i] as int);
+}
+
+fn void k_strcpy(char* dest, char* src) {
+    int i = 0;
+    while (src[i] != (0 as char)) {
+        dest[i] = src[i];
+        i = i + 1;
+    }
+    dest[i] = 0 as char;
+}
+
+fn void k_memcpy(uint8* dest, uint8* src, int count) {
+    int i = 0;
+    while (i < count) {
+        dest[i] = src[i];
+        i = i + 1;
+    }
+}
+
+fn void k_memset(uint8* dest, uint8 val, int count) {
+    int i = 0;
+    while (i < count) {
+        dest[i] = val;
+        i = i + 1;
+    }
+}
+
+fn int k_memcmp(uint8* s1, uint8* s2, int count) {
+    int i = 0;
+    while (i < count) {
+        if (s1[i] != s2[i]) {
+            return (s1[i] as int) - (s2[i] as int);
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// ==============================================================================
+// User-Space Dynamic Heap Allocator (malloc / free)
+// 16-byte aligned block management
+// ==============================================================================
+
+struct HeapBlockHeader {
+    uint32 size;
+    bool is_free;
+    int32 next_offset; // Byte offset of next block in heap buffer, or -1
+}
+
+struct UserHeap {
+    uint8[4096] pool;
+    uint32 total_capacity;
+    uint32 allocated_bytes;
+    uint32 block_count;
+}
+
+fn void k_heap_init(UserHeap* heap) {
+    heap->total_capacity = 4096 as uint32;
+    heap->allocated_bytes = 0 as uint32;
+    heap->block_count = 1 as uint32;
+
+    // Header at offset 0
+    HeapBlockHeader* first = &heap->pool[0] as HeapBlockHeader*;
+    // Header takes 16 bytes (aligned)
+    first->size = 4096 as uint32 - (16 as uint32);
+    first->is_free = true;
+    first->next_offset = -1;
+}
+
+// Allocate 'size' bytes aligned to 16 bytes
+// Returns byte offset into heap->pool for the payload, or -1 if OOM
+fn int32 k_malloc(UserHeap* heap, uint32 size) {
+    if (size == (0 as uint32)) {
+        return -1;
+    }
+
+    // Align request size to 16 bytes
+    uint32 aligned_size = (size + (15 as uint32)) & (~(15 as uint32));
+    uint32 header_size = 16 as uint32;
+
+    int32 current_offset = 0;
+
+    while (current_offset >= 0 && (current_offset as uint32) + header_size <= heap->total_capacity) {
+        HeapBlockHeader* hdr = &heap->pool[current_offset as int] as HeapBlockHeader*;
+
+        if (hdr->is_free && hdr->size >= aligned_size) {
+            // Check if we can split this block
+            if (hdr->size >= aligned_size + header_size + (16 as uint32)) {
+                int32 next_block_offset = current_offset + (header_size as int32) + (aligned_size as int32);
+                HeapBlockHeader* new_block = &heap->pool[next_block_offset as int] as HeapBlockHeader*;
+                new_block->size = hdr->size - aligned_size - header_size;
+                new_block->is_free = true;
+                new_block->next_offset = hdr->next_offset;
+
+                hdr->next_offset = next_block_offset;
+                hdr->size = aligned_size;
+                heap->block_count = heap->block_count + (1 as uint32);
+            }
+
+            hdr->is_free = false;
+            heap->allocated_bytes = heap->allocated_bytes + hdr->size;
+            return current_offset + (header_size as int32);
+        }
+
+        current_offset = hdr->next_offset;
+    }
+
+    return -1; // Out of memory
+}
+
+// Free memory block at payload offset
+fn bool k_free(UserHeap* heap, int32 payload_offset) {
+    uint32 header_size = 16 as uint32;
+    if (payload_offset < (header_size as int32)) {
+        return false;
+    }
+
+    int32 block_offset = payload_offset - (header_size as int32);
+    if ((block_offset as uint32) >= heap->total_capacity) {
+        return false;
+    }
+
+    HeapBlockHeader* hdr = &heap->pool[block_offset as int] as HeapBlockHeader*;
+    if (hdr->is_free) {
+        return false; // Double free
+    }
+
+    hdr->is_free = true;
+    if (heap->allocated_bytes >= hdr->size) {
+        heap->allocated_bytes = heap->allocated_bytes - hdr->size;
+    } else {
+        heap->allocated_bytes = 0 as uint32;
+    }
+
+    // Coalesce adjacent free blocks
+    int32 cur = 0;
+    while (cur >= 0) {
+        HeapBlockHeader* b = &heap->pool[cur as int] as HeapBlockHeader*;
+        if (b->is_free && b->next_offset >= 0) {
+            HeapBlockHeader* next_b = &heap->pool[b->next_offset as int] as HeapBlockHeader*;
+            if (next_b->is_free) {
+                b->size = b->size + header_size + next_b->size;
+                b->next_offset = next_b->next_offset;
+                if (heap->block_count > (1 as uint32)) {
+                    heap->block_count = heap->block_count - (1 as uint32);
+                }
+                continue; // Check if the new combined block can coalesce again
+            }
+        }
+        cur = b->next_offset;
+    }
+
+    return true;
+}
+
+// ==============================================================================
+// Syscall Wrapper Dispatcher
+// ==============================================================================
+
+fn int64 k_dispatch_syscall(SyscallFrame* frame) {
+    if (frame->nr == SYS_GETPID) {
+        frame->ret_val = 1001 as int64; // User space PID
+        frame->err_no = 0;
+        return frame->ret_val;
+    } else if (frame->nr == SYS_YIELD) {
+        frame->ret_val = 0 as int64;
+        frame->err_no = 0;
+        return frame->ret_val;
+    } else if (frame->nr == SYS_EXIT) {
+        frame->ret_val = 0 as int64;
+        frame->err_no = 0;
+        return frame->ret_val;
+    } else if (frame->nr == SYS_WRITE) {
+        // arg1: fd, arg2: buf ptr, arg3: count
+        if (frame->arg1 == (1 as uint64) || frame->arg1 == (2 as uint64)) {
+            frame->ret_val = frame->arg3 as int64; // Wrote count bytes
+            frame->err_no = 0;
+            return frame->ret_val;
+        }
+        frame->ret_val = -1 as int64;
+        frame->err_no = 9; // EBADF
+        return frame->ret_val;
+    }
+    
+    frame->ret_val = -1 as int64;
+    frame->err_no = 38; // ENOSYS
+    return frame->ret_val;
+}

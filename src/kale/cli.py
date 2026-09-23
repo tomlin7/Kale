@@ -32,6 +32,11 @@ from .tools.disasm import run_disasm
 from .tools.fuzz import run_fuzz
 from .tools.watch import run_watch
 from .tools.bundle import run_bundle
+from .tools.profile import run_profiler
+from .tools.docgen import generate_docs
+from .tools.pkg import create_package, verify_package
+from .tools.test_matrix import run_test_matrix
+from .tools.inspect import inspect_source
 
 # Configure UTF-8 for console output
 try:
@@ -769,6 +774,28 @@ def cmd_bundle(args: argparse.Namespace) -> int:
     return run_bundle(args)
 
 
+def cmd_profile(args: argparse.Namespace) -> int:
+    return run_profiler(args.target, getattr(args, "target_args", []), getattr(args, "hz", 100), getattr(args, "duration", 5.0))
+
+
+def cmd_docgen(args: argparse.Namespace) -> int:
+    return generate_docs(args.source, getattr(args, "out", "docs/api"), getattr(args, "format", "markdown"))
+
+
+def cmd_package(args: argparse.Namespace) -> int:
+    if getattr(args, "action", "create") == "verify":
+        return verify_package(args.target)
+    return create_package(args.target, getattr(args, "out", None))
+
+
+def cmd_test_matrix(args: argparse.Namespace) -> int:
+    return run_test_matrix(getattr(args, "dir", "tests"), getattr(args, "xml", None))
+
+
+def cmd_inspect(args: argparse.Namespace) -> int:
+    return inspect_source(args.file)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="kale", description="Kale Programming Language Compiler & Package Manager")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -929,6 +956,33 @@ def main() -> int:
     p_bundle.add_argument("-z", "--zip", action="store_true", help="Create a compressed .zip bundle archive")
     p_bundle.add_argument("-a", "--asset", action="append", default=[], dest="assets", help="Extra asset files or directories to include")
 
+    # profile
+    p_profile = subparsers.add_parser("profile", help="Run statistical CPU sampling profiler on a compiled executable")
+    p_profile.add_argument("target", help="Executable path to profile")
+    p_profile.add_argument("--hz", type=int, default=100, help="Sampling frequency in Hz (default: 100)")
+    p_profile.add_argument("-d", "--duration", type=float, default=5.0, help="Duration to profile in seconds (default: 5.0)")
+
+    # docgen
+    p_docgen = subparsers.add_parser("docgen", help="Generate API reference documentation from Kale source files")
+    p_docgen.add_argument("source", nargs="?", default=".", help="Source directory or file to document (default: .)")
+    p_docgen.add_argument("-o", "--out", default="docs/api", help="Output directory for generated docs")
+    p_docgen.add_argument("-f", "--format", choices=["markdown", "html"], default="markdown", help="Documentation format")
+
+    # package
+    p_package = subparsers.add_parser("package", help="Archive and verify distribution packages for the Kale Registry")
+    p_package.add_argument("target", help="Package directory to archive or archive file to verify")
+    p_package.add_argument("-a", "--action", choices=["create", "verify"], default="create", help="Action to perform (default: create)")
+    p_package.add_argument("-o", "--out", help="Output archive path")
+
+    # test-matrix
+    p_test_matrix = subparsers.add_parser("test-matrix", help="Run automated multi-target test matrix with JUnit XML reports")
+    p_test_matrix.add_argument("dir", nargs="?", default="tests", help="Tests directory (default: tests)")
+    p_test_matrix.add_argument("--xml", help="Path to write JUnit XML test results")
+
+    # inspect
+    p_inspect = subparsers.add_parser("inspect", help="Inspect memory layout, field offsets, and alignment of Kale structs")
+    p_inspect.add_argument("file", help="Kale source file to inspect")
+
     args, unknown = parser.parse_known_args()
 
     # If running a script, allow unknown args to be passed forward
@@ -965,6 +1019,11 @@ def main() -> int:
         "fuzz": cmd_fuzz,
         "watch": cmd_watch,
         "bundle": cmd_bundle,
+        "profile": cmd_profile,
+        "docgen": cmd_docgen,
+        "package": cmd_package,
+        "test-matrix": cmd_test_matrix,
+        "inspect": cmd_inspect,
     }
 
     cmd_fn = commands.get(args.command)

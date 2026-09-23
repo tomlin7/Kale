@@ -2,6 +2,10 @@
 
 ## [0.2.0-alpha] - Current
 ### Added
+- **Milestone 33**: Virtual Desktop Workspace Manager & Multi-Monitor Viewport (`os/kernel/workspace.kl`, `os/plans/033_virtual_workspaces.md`, `tests/test_os_workspaces.py`) supporting 4 virtual desktops, sticky windows, workspace carousel cycling, and multi-display window migration.
+- **Milestone 34**: Desktop Audio Mixer & PCM Sound Server (`os/kernel/sound_server.kl`, `os/plans/034_audio_mixer.md`, `tests/test_os_audio_mixer.py`) supporting multi-channel audio mixing (Master, System, Media, SFX), per-channel volume attenuation, and saturating clipping [-32768, 32767].
+- **Milestone 35**: System Settings Registry & Hardware Telemetry Subsystem (`os/kernel/settings.kl`, `os/plans/035_system_settings.md`, `tests/test_os_settings.py`) providing typed key-value configuration storage and real-time CPU/RAM/uptime performance sampling.
+- **Milestone 36**: User-Space POSIX Runtime Library (`libkale` / `libc` ABI) (`os/userspace/libkale.kl`, `os/plans/036_userspace_runtime.md`, `tests/test_os_userspace_runtime.py`) featuring POSIX syscall wrappers, a 16-byte aligned dynamic memory allocator (`malloc`/`free`), and memory/string primitives.
 - Complete Virtual Memory Manager (VMM) with 4-level paging
 - Page table entry structures and manipulation functions
 - Virtual address mapping and unmapping

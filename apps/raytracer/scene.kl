@@ -1,0 +1,95 @@
+// apps/raytracer/scene.kl
+// 3D vector math, ray casting, and primitive sphere intersections
+
+extern double sqrt(double x);
+
+struct Vec3 {
+    float x;
+    float y;
+    float z;
+}
+
+fn Vec3 vec3(float x, float y, float z) {
+    Vec3 v;
+    v.x = x; v.y = y; v.z = z;
+    return v;
+}
+
+fn Vec3 vec3_add(Vec3 a, Vec3 b) {
+    return vec3(a.x + b.x, a.y + b.y, a.z + b.z);
+}
+
+fn Vec3 vec3_sub(Vec3 a, Vec3 b) {
+    return vec3(a.x - b.x, a.y - b.y, a.z - b.z);
+}
+
+fn Vec3 vec3_scale(Vec3 v, float s) {
+    return vec3(v.x * s, v.y * s, v.z * s);
+}
+
+fn float vec3_dot(Vec3 a, Vec3 b) {
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+fn float vec3_len(Vec3 v) {
+    float d = vec3_dot(v, v);
+    if (d <= 0.0f) { return 0.0f; }
+    return (float)sqrt((double)d);
+}
+
+fn Vec3 vec3_norm(Vec3 v) {
+    float l = vec3_len(v);
+    if (l > 0.0001f) {
+        return vec3_scale(v, 1.0f / l);
+    }
+    return v;
+}
+
+struct Ray {
+    Vec3 orig;
+    Vec3 dir;
+}
+
+fn Ray ray(Vec3 o, Vec3 d) {
+    Ray r;
+    r.orig = o;
+    r.dir = vec3_norm(d);
+    return r;
+}
+
+// Material types: 0=Lambertian, 1=Metal, 2=Dielectric, 3=Emissive
+struct Sphere {
+    Vec3  center;
+    float radius;
+    int   material;
+    Vec3  albedo;
+    float roughness;
+}
+
+fn Sphere sphere(float x, float y, float z, float r, int mat, Vec3 alb, float rough) {
+    Sphere s;
+    s.center = vec3(x, y, z);
+    s.radius = r;
+    s.material = mat;
+    s.albedo = alb;
+    s.roughness = rough;
+    return s;
+}
+
+// Ray-sphere intersection: returns hit distance t > 0.001 or -1.0 if miss
+fn float sphere_hit(Sphere* s, Ray* r) {
+    Vec3 oc = vec3_sub(r->orig, s->center);
+    float a = vec3_dot(r->dir, r->dir);
+    float b = 2.0f * vec3_dot(oc, r->dir);
+    float c = vec3_dot(oc, oc) - s->radius * s->radius;
+    float disc = b * b - 4.0f * a * c;
+
+    if (disc < 0.0f) { return -1.0f; }
+
+    float sqrtd = (float)sqrt((double)disc);
+    float t = (-b - sqrtd) / (2.0f * a);
+    if (t > 0.001f) { return t; }
+    t = (-b + sqrtd) / (2.0f * a);
+    if (t > 0.001f) { return t; }
+    return -1.0f;
+}

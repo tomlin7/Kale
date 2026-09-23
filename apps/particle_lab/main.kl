@@ -1,0 +1,309 @@
+// apps/particle_lab/main.kl
+// Kale Particle Lab — High-Performance 2D GPU Particle Physics Sandbox
+
+import "libs/framework/app.kl" as fw;
+import "libs/glfw/glfw.kl" as glfw;
+import "libs/glfw/constants.kl" as glc;
+import "libs/glfw/input.kl" as ginput;
+import "libs/render/math.kl" as rmath;
+import "apps/particle_lab/particles.kl" as pl;
+
+extern int printf(string fmt, ...);
+extern int sprintf(char* buf, string fmt, ...);
+extern void* malloc(int size);
+
+fn int btn_hit(float bx, float by, float bw, float bh, float mx, float my) {
+    if (mx >= bx && mx <= bx + bw && my >= by && my <= by + bh) { return 1; }
+    return 0;
+}
+
+fn int main() {
+    fw.AppConfig cfg;
+    cfg.init("Kale Particle Lab — GPU Particle Physics Sandbox", 1280, 768);
+
+    fw.App app;
+    int ok = app.init(cfg);
+    if (ok == 0) {
+        printf("Fatal: could not open Particle Lab window\n");
+        return 1;
+    }
+
+    pl.ParticleSystem ps;
+    ps.init(3000);
+
+    float emitter_x = 760.0f;
+    float emitter_y = 500.0f;
+    int spawning = 1;
+
+    char* strbuf = (char*)malloc(128);
+
+    int was_lmb = 0;
+    int was_k_1 = 0;
+    int was_k_2 = 0;
+    int was_k_3 = 0;
+    int was_k_4 = 0;
+    int was_k_g = 0;
+    int was_k_v = 0;
+    int was_k_c = 0;
+
+    while (glfw.glfwWindowShouldClose(app.window) == 0) {
+        app.begin_frame();
+
+        float W = (float)app.width;
+        float H = (float)app.height;
+
+        double cur_x = 0.0;
+        double cur_y = 0.0;
+        ginput.glfwGetCursorPos(app.window, &cur_x, &cur_y);
+        float mx = (float)cur_x;
+        float my = (float)cur_y;
+
+        int lmb = ginput.glfwGetMouseButton(app.window, glc.GLFW_MOUSE_BUTTON_LEFT());
+        int k_1 = ginput.glfwGetKey(app.window, glc.GLFW_KEY_1());
+        int k_2 = ginput.glfwGetKey(app.window, glc.GLFW_KEY_2());
+        int k_3 = ginput.glfwGetKey(app.window, glc.GLFW_KEY_3());
+        int k_4 = ginput.glfwGetKey(app.window, glc.GLFW_KEY_4());
+        int k_g = ginput.glfwGetKey(app.window, glc.GLFW_KEY_G());
+        int k_v = ginput.glfwGetKey(app.window, glc.GLFW_KEY_V());
+        int k_c = ginput.glfwGetKey(app.window, glc.GLFW_KEY_C());
+
+        // Keyboard hotkeys
+        if (k_1 == 1 && was_k_1 == 0) { ps.emitter_type = 0; }
+        if (k_2 == 1 && was_k_2 == 0) { ps.emitter_type = 1; }
+        if (k_3 == 1 && was_k_3 == 0) { ps.emitter_type = 2; }
+        if (k_4 == 1 && was_k_4 == 0) { ps.emitter_type = 3; }
+        if (k_g == 1 && was_k_g == 0) {
+            if (ps.gravity > 0.0f) { ps.gravity = 0.0f; } else { ps.gravity = 140.0f; }
+        }
+        if (k_v == 1 && was_k_v == 0) {
+            if (ps.vortex_enabled == 1) { ps.vortex_enabled = 0; } else { ps.vortex_enabled = 1; }
+        }
+        if (k_c == 1 && was_k_c == 0) { ps.clear(); }
+
+        was_k_1 = k_1; was_k_2 = k_2; was_k_3 = k_3; was_k_4 = k_4;
+        was_k_g = k_g; was_k_v = k_v; was_k_c = k_c;
+
+        // Viewport dimensions
+        float side_w = 280.0f;
+        float view_x = side_w;
+        float view_y = 48.0f;
+        float view_w = W - side_w;
+        float view_h = H - 48.0f - 28.0f;
+
+        // Mouse click interactions
+        if (lmb == 1) {
+            if (mx >= view_x && mx <= W && my >= view_y && my <= view_y + view_h) {
+                emitter_x = mx;
+                emitter_y = my;
+            } else {
+                // UI buttons on left sidebar
+                if (btn_hit(20.0f, 100.0f, 110.0f, 32.0f, mx, my) == 1 && was_lmb == 0) { ps.emitter_type = 0; }
+                if (btn_hit(140.0f, 100.0f, 110.0f, 32.0f, mx, my) == 1 && was_lmb == 0) { ps.emitter_type = 1; }
+                if (btn_hit(20.0f, 140.0f, 110.0f, 32.0f, mx, my) == 1 && was_lmb == 0) { ps.emitter_type = 2; }
+                if (btn_hit(140.0f, 140.0f, 110.0f, 32.0f, mx, my) == 1 && was_lmb == 0) { ps.emitter_type = 3; }
+
+                // Themes
+                if (btn_hit(20.0f, 220.0f, 75.0f, 30.0f, mx, my) == 1 && was_lmb == 0) { ps.color_theme = 0; }
+                if (btn_hit(100.0f, 220.0f, 75.0f, 30.0f, mx, my) == 1 && was_lmb == 0) { ps.color_theme = 1; }
+                if (btn_hit(180.0f, 220.0f, 75.0f, 30.0f, mx, my) == 1 && was_lmb == 0) { ps.color_theme = 2; }
+
+                // Forces
+                if (btn_hit(20.0f, 300.0f, 230.0f, 32.0f, mx, my) == 1 && was_lmb == 0) {
+                    if (ps.gravity > 0.0f) { ps.gravity = 0.0f; } else { ps.gravity = 140.0f; }
+                }
+                if (btn_hit(20.0f, 340.0f, 70.0f, 32.0f, mx, my) == 1 && was_lmb == 0) { ps.wind = -80.0f; }
+                if (btn_hit(100.0f, 340.0f, 70.0f, 32.0f, mx, my) == 1 && was_lmb == 0) { ps.wind = 0.0f; }
+                if (btn_hit(180.0f, 340.0f, 70.0f, 32.0f, mx, my) == 1 && was_lmb == 0) { ps.wind = 80.0f; }
+
+                if (btn_hit(20.0f, 380.0f, 230.0f, 32.0f, mx, my) == 1 && was_lmb == 0) {
+                    if (ps.vortex_enabled == 1) { ps.vortex_enabled = 0; } else { ps.vortex_enabled = 1; }
+                }
+                if (btn_hit(20.0f, 420.0f, 230.0f, 32.0f, mx, my) == 1 && was_lmb == 0) {
+                    if (ps.bounce_floor == 1) { ps.bounce_floor = 0; } else { ps.bounce_floor = 1; }
+                }
+                if (btn_hit(20.0f, 460.0f, 230.0f, 32.0f, mx, my) == 1 && was_lmb == 0) {
+                    if (spawning == 1) { spawning = 0; } else { spawning = 1; }
+                }
+                if (btn_hit(20.0f, 510.0f, 230.0f, 36.0f, mx, my) == 1 && was_lmb == 0) {
+                    ps.clear();
+                }
+            }
+        }
+        was_lmb = lmb;
+
+        // Simulation update
+        float dt = 0.0166f;
+        if (spawning == 1) {
+            ps.emit(emitter_x, emitter_y, 14);
+        }
+        float vortex_x = view_x + view_w * 0.5f;
+        float vortex_y = view_y + view_h * 0.45f;
+        ps.update(dt, view_x, W, view_y, view_y + view_h, vortex_x, vortex_y);
+
+        // Render Background
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, 0.0f, W, H, rmath.color_hex(0x0C0E14));
+
+        // Render Canvas Viewport
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, view_x, view_y, view_w, view_h, rmath.color_hex(0x05070A));
+
+        // Viewport grid lines
+        float gx = view_x + 50.0f;
+        while (gx < W) {
+            app.ui_ctx.renderer.push_quad(&app.gl_ctx, gx, view_y, 1.0f, view_h, rmath.color_hex(0x0E131C));
+            gx = gx + 60.0f;
+        }
+        float gy = view_y + 40.0f;
+        while (gy < view_y + view_h) {
+            app.ui_ctx.renderer.push_quad(&app.gl_ctx, view_x, gy, view_w, 1.0f, rmath.color_hex(0x0E131C));
+            gy = gy + 60.0f;
+        }
+
+        // Render Floor if bounce on
+        if (ps.bounce_floor == 1) {
+            app.ui_ctx.renderer.push_quad(&app.gl_ctx, view_x, view_y + view_h - 4.0f, view_w, 4.0f, rmath.color_hex(0x1F4068));
+        }
+
+        // Render Vortex indicator if on
+        if (ps.vortex_enabled == 1) {
+            app.ui_ctx.renderer.push_quad(&app.gl_ctx, vortex_x - 12.0f, vortex_y - 1.0f, 24.0f, 2.0f, rmath.color_hex(0x5465FF));
+            app.ui_ctx.renderer.push_quad(&app.gl_ctx, vortex_x - 1.0f, vortex_y - 12.0f, 2.0f, 24.0f, rmath.color_hex(0x5465FF));
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "VORTEX CORE", vortex_x - 42.0f, vortex_y + 8.0f, rmath.color_hex(0x5465FF));
+        }
+
+        // Render Emitter crosshair
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, emitter_x - 8.0f, emitter_y - 1.0f, 16.0f, 2.0f, rmath.color_hex(0xFFFFFF));
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, emitter_x - 1.0f, emitter_y - 8.0f, 2.0f, 16.0f, rmath.color_hex(0xFFFFFF));
+
+        // Render Particles
+        int pi = 0;
+        while (pi < ps.max_count) {
+            if (ps.plife[pi] > 0.0f) {
+                float px = ps.px[pi];
+                float py = ps.py[pi];
+                int col = ps.pcolor[pi];
+                app.ui_ctx.renderer.push_quad(&app.gl_ctx, px - 1.5f, py - 1.5f, 3.5f, 3.5f, rmath.color_hex(col));
+            }
+            pi = pi + 1;
+        }
+
+        // Top App Bar
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, 0.0f, W, 48.0f, rmath.color_hex(0x121622));
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "KALE PARTICLE LAB", 20.0f, 14.0f, rmath.color_hex(0x00E5FF));
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "2D GPU Physics Sandbox & Force Fields", 180.0f, 16.0f, rmath.color_hex(0x8A99AD));
+
+        // Left Sidebar
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, 48.0f, side_w, H - 48.0f, rmath.color_hex(0x151A27));
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, side_w - 1.0f, 48.0f, 1.0f, H - 48.0f, rmath.color_hex(0x2B3347));
+
+        // Emitter Buttons
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "EMITTER TYPE", 20.0f, 75.0f, rmath.color_hex(0x7888A0));
+
+        int b1_col = 0x222C3D;
+        if (ps.emitter_type == 0) { b1_col = 0x007ACC; }
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 20.0f, 100.0f, 110.0f, 32.0f, rmath.color_hex(b1_col));
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "[1] Fountain", 30.0f, 108.0f, rmath.color_hex(0xFFFFFF));
+
+        int b2_col = 0x222C3D;
+        if (ps.emitter_type == 1) { b2_col = 0x007ACC; }
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 140.0f, 100.0f, 110.0f, 32.0f, rmath.color_hex(b2_col));
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "[2] Spiral", 155.0f, 108.0f, rmath.color_hex(0xFFFFFF));
+
+        int b3_col = 0x222C3D;
+        if (ps.emitter_type == 2) { b3_col = 0x007ACC; }
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 20.0f, 140.0f, 110.0f, 32.0f, rmath.color_hex(b3_col));
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "[3] Ring", 45.0f, 148.0f, rmath.color_hex(0xFFFFFF));
+
+        int b4_col = 0x222C3D;
+        if (ps.emitter_type == 3) { b4_col = 0x007ACC; }
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 140.0f, 140.0f, 110.0f, 32.0f, rmath.color_hex(b4_col));
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "[4] Burst", 155.0f, 148.0f, rmath.color_hex(0xFFFFFF));
+
+        // Color theme
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "PALETTE THEME", 20.0f, 195.0f, rmath.color_hex(0x7888A0));
+
+        int t0_col = 0x222C3D; if (ps.color_theme == 0) { t0_col = 0xD9480F; }
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 20.0f, 220.0f, 75.0f, 30.0f, rmath.color_hex(t0_col));
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Inferno", 30.0f, 227.0f, rmath.color_hex(0xFFFFFF));
+
+        int t1_col = 0x222C3D; if (ps.color_theme == 1) { t1_col = 0x0077B6; }
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 100.0f, 220.0f, 75.0f, 30.0f, rmath.color_hex(t1_col));
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Plasma", 112.0f, 227.0f, rmath.color_hex(0xFFFFFF));
+
+        int t2_col = 0x222C3D; if (ps.color_theme == 2) { t2_col = 0x2B9348; }
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 180.0f, 220.0f, 75.0f, 30.0f, rmath.color_hex(t2_col));
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Toxic", 195.0f, 227.0f, rmath.color_hex(0xFFFFFF));
+
+        // Force fields
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "FORCES & DYNAMICS", 20.0f, 275.0f, rmath.color_hex(0x7888A0));
+
+        int g_col = 0x222C3D; if (ps.gravity > 0.0f) { g_col = 0x0EAD69; }
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 20.0f, 300.0f, 230.0f, 32.0f, rmath.color_hex(g_col));
+        if (ps.gravity > 0.0f) {
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "[G] Gravity: 140 px/s (ON)", 30.0f, 308.0f, rmath.color_hex(0xFFFFFF));
+        } else {
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "[G] Gravity: 0 px/s (OFF)", 30.0f, 308.0f, rmath.color_hex(0xA0AEC0));
+        }
+
+        // Wind
+        int w0_col = 0x222C3D; if (ps.wind < -1.0f) { w0_col = 0x007ACC; }
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 20.0f, 340.0f, 70.0f, 32.0f, rmath.color_hex(w0_col));
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "< Wind", 28.0f, 348.0f, rmath.color_hex(0xFFFFFF));
+
+        int w1_col = 0x222C3D; if (ps.wind >= -1.0f && ps.wind <= 1.0f) { w1_col = 0x007ACC; }
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 100.0f, 340.0f, 70.0f, 32.0f, rmath.color_hex(w1_col));
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Calm", 116.0f, 348.0f, rmath.color_hex(0xFFFFFF));
+
+        int w2_col = 0x222C3D; if (ps.wind > 1.0f) { w2_col = 0x007ACC; }
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 180.0f, 340.0f, 70.0f, 32.0f, rmath.color_hex(w2_col));
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Wind >", 188.0f, 348.0f, rmath.color_hex(0xFFFFFF));
+
+        // Vortex
+        int v_col = 0x222C3D; if (ps.vortex_enabled == 1) { v_col = 0x7209B7; }
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 20.0f, 380.0f, 230.0f, 32.0f, rmath.color_hex(v_col));
+        if (ps.vortex_enabled == 1) {
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "[V] Vortex Attractor: ACTIVE", 30.0f, 388.0f, rmath.color_hex(0xFFFFFF));
+        } else {
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "[V] Vortex Attractor: OFF", 30.0f, 388.0f, rmath.color_hex(0xA0AEC0));
+        }
+
+        // Floor Bounce
+        int fb_col = 0x222C3D; if (ps.bounce_floor == 1) { fb_col = 0x2A9D8F; }
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 20.0f, 420.0f, 230.0f, 32.0f, rmath.color_hex(fb_col));
+        if (ps.bounce_floor == 1) {
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Floor Collision: ON", 30.0f, 428.0f, rmath.color_hex(0xFFFFFF));
+        } else {
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Floor Collision: OFF", 30.0f, 428.0f, rmath.color_hex(0xA0AEC0));
+        }
+
+        // Spawning toggle
+        int sp_col = 0x222C3D; if (spawning == 1) { sp_col = 0x3A506B; }
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 20.0f, 460.0f, 230.0f, 32.0f, rmath.color_hex(sp_col));
+        if (spawning == 1) {
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Continuous Emission: ON", 30.0f, 468.0f, rmath.color_hex(0xFFFFFF));
+        } else {
+            app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Continuous Emission: OFF", 30.0f, 468.0f, rmath.color_hex(0xA0AEC0));
+        }
+
+        // Clear button
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 20.0f, 510.0f, 230.0f, 36.0f, rmath.color_hex(0xC92A2A));
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "[C] Clear All Particles", 50.0f, 520.0f, rmath.color_hex(0xFFFFFF));
+
+        // Info box
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 20.0f, 570.0f, 230.0f, 130.0f, rmath.color_hex(0x0C1017));
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "LIVE METRICS", 30.0f, 580.0f, rmath.color_hex(0x00E5FF));
+        sprintf(strbuf, "Active: %d / %d", ps.active_count, ps.max_count);
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, (string)strbuf, 30.0f, 605.0f, rmath.color_hex(0xEDF2F7));
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Rate: 840 p/sec", 30.0f, 630.0f, rmath.color_hex(0xA0AEC0));
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Step: 60 Hz dt=16ms", 30.0f, 655.0f, rmath.color_hex(0xA0AEC0));
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Hint: Click canvas to move", 30.0f, 678.0f, rmath.color_hex(0x64748B));
+
+        // Bottom Status Bar
+        app.ui_ctx.renderer.push_quad(&app.gl_ctx, 0.0f, H - 28.0f, W, 28.0f, rmath.color_hex(0x10131C));
+        app.ui_ctx.font.draw_text(&app.ui_ctx.renderer, &app.gl_ctx, "Kale Engine Particle Sandbox | Hotkeys: 1-4 Modes | G Gravity | V Vortex | C Clear | Left-Click reposition emitter", 20.0f, H - 20.0f, rmath.color_hex(0x64748B));
+
+        app.end_frame();
+    }
+
+    app.close();
+    return 0;
+}

@@ -1,0 +1,225 @@
+// os/kernel/settings.kl
+// System Settings Registry & Hardware Telemetry Subsystem for Kale OS
+// Manages system configuration parameters and provides real-time performance metrics.
+
+uint32 SETTING_TYPE_NONE = 0 as uint32;
+uint32 SETTING_TYPE_INT  = 1 as uint32;
+uint32 SETTING_TYPE_BOOL = 2 as uint32;
+uint32 SETTING_TYPE_STR  = 3 as uint32;
+
+struct SettingEntry {
+    char[32] key;
+    uint32 val_type;
+    int32 val_int;
+    bool val_bool;
+    char[32] val_str;
+    bool is_present;
+}
+
+struct SettingsRegistry {
+    SettingEntry[32] entries;
+    uint32 count;
+}
+
+struct SystemTelemetry {
+    uint32 cpu_load_percent;
+    uint64 ram_total_kb;
+    uint64 ram_used_kb;
+    uint64 ram_free_kb;
+    uint32 ram_usage_percent;
+    uint64 uptime_seconds;
+    uint32 active_processes;
+    uint32 active_windows;
+}
+
+// String comparison helper
+fn bool set_str_eq(char* a, char* b) {
+    int i = 0;
+    while (i < 32) {
+        if (a[i] != b[i]) {
+            return false;
+        }
+        if (a[i] == (0 as char)) {
+            return true;
+        }
+        i = i + 1;
+    }
+    return true;
+}
+
+// String copy helper
+fn void set_str_copy(char* dest, char* src, int max_len) {
+    int i = 0;
+    while (i < max_len - 1 && src[i] != (0 as char)) {
+        dest[i] = src[i];
+        i = i + 1;
+    }
+    dest[i] = 0 as char;
+}
+
+// Find entry index by key or return -1
+fn int settings_find(SettingsRegistry* reg, char* key) {
+    int i = 0;
+    while (i < 32) {
+        if (reg->entries[i].is_present && set_str_eq(&reg->entries[i].key[0], key)) {
+            return i;
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+// Find free slot
+fn int settings_find_free(SettingsRegistry* reg) {
+    int i = 0;
+    while (i < 32) {
+        if (!reg->entries[i].is_present) {
+            return i;
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+// Initialize registry with system defaults
+fn void settings_init(SettingsRegistry* reg) {
+    reg->count = 0 as uint32;
+    int i = 0;
+    while (i < 32) {
+        reg->entries[i].is_present = false;
+        reg->entries[i].val_type = SETTING_TYPE_NONE;
+        i = i + 1;
+    }
+
+    // Set default system settings
+    settings_set_int(reg, "display.width", 1024);
+    settings_set_int(reg, "display.height", 768);
+    settings_set_int(reg, "display.scale", 1);
+    settings_set_bool(reg, "theme.dark_mode", true);
+    settings_set_int(reg, "theme.accent", 0x3D7AE8);
+    settings_set_int(reg, "mouse.sensitivity", 5);
+    settings_set_int(reg, "sound.master_volume", 80);
+    settings_set_bool(reg, "sound.muted", false);
+    settings_set_str(reg, "net.hostname", "kale-pc");
+    settings_set_bool(reg, "net.dhcp", true);
+}
+
+// Integer Settings
+fn bool settings_set_int(SettingsRegistry* reg, char* key, int32 val) {
+    int idx = settings_find(reg, key);
+    if (idx < 0) {
+        idx = settings_find_free(reg);
+        if (idx < 0) {
+            return false;
+        }
+        set_str_copy(&reg->entries[idx].key[0], key, 32);
+        reg->entries[idx].is_present = true;
+        reg->count = reg->count + (1 as uint32);
+    }
+    reg->entries[idx].val_type = SETTING_TYPE_INT;
+    reg->entries[idx].val_int = val;
+    return true;
+}
+
+fn int32 settings_get_int(SettingsRegistry* reg, char* key, int32 default_val) {
+    int idx = settings_find(reg, key);
+    if (idx >= 0 && reg->entries[idx].val_type == SETTING_TYPE_INT) {
+        return reg->entries[idx].val_int;
+    }
+    return default_val;
+}
+
+// Boolean Settings
+fn bool settings_set_bool(SettingsRegistry* reg, char* key, bool val) {
+    int idx = settings_find(reg, key);
+    if (idx < 0) {
+        idx = settings_find_free(reg);
+        if (idx < 0) {
+            return false;
+        }
+        set_str_copy(&reg->entries[idx].key[0], key, 32);
+        reg->entries[idx].is_present = true;
+        reg->count = reg->count + (1 as uint32);
+    }
+    reg->entries[idx].val_type = SETTING_TYPE_BOOL;
+    reg->entries[idx].val_bool = val;
+    return true;
+}
+
+fn bool settings_get_bool(SettingsRegistry* reg, char* key, bool default_val) {
+    int idx = settings_find(reg, key);
+    if (idx >= 0 && reg->entries[idx].val_type == SETTING_TYPE_BOOL) {
+        return reg->entries[idx].val_bool;
+    }
+    return default_val;
+}
+
+// String Settings
+fn bool settings_set_str(SettingsRegistry* reg, char* key, char* val) {
+    int idx = settings_find(reg, key);
+    if (idx < 0) {
+        idx = settings_find_free(reg);
+        if (idx < 0) {
+            return false;
+        }
+        set_str_copy(&reg->entries[idx].key[0], key, 32);
+        reg->entries[idx].is_present = true;
+        reg->count = reg->count + (1 as uint32);
+    }
+    reg->entries[idx].val_type = SETTING_TYPE_STR;
+    set_str_copy(&reg->entries[idx].val_str[0], val, 32);
+    return true;
+}
+
+fn bool settings_get_str(SettingsRegistry* reg, char* key, char* out_buf, int max_len) {
+    int idx = settings_find(reg, key);
+    if (idx >= 0 && reg->entries[idx].val_type == SETTING_TYPE_STR) {
+        set_str_copy(out_buf, &reg->entries[idx].val_str[0], max_len);
+        return true;
+    }
+    return false;
+}
+
+// Telemetry Sampling
+fn void telemetry_sample(
+    SystemTelemetry* telem,
+    uint32 cpu_active_ticks,
+    uint32 cpu_total_ticks,
+    uint64 ram_total_kb,
+    uint64 ram_used_kb,
+    uint64 pit_ticks,
+    uint32 proc_count,
+    uint32 win_count
+) {
+    // CPU load percentage calculation
+    if (cpu_total_ticks > (0 as uint32)) {
+        telem->cpu_load_percent = (cpu_active_ticks * (100 as uint32)) / cpu_total_ticks;
+    } else {
+        telem->cpu_load_percent = 0 as uint32;
+    }
+    if (telem->cpu_load_percent > (100 as uint32)) {
+        telem->cpu_load_percent = 100 as uint32;
+    }
+
+    // Memory metrics
+    telem->ram_total_kb = ram_total_kb;
+    telem->ram_used_kb = ram_used_kb;
+    if (ram_total_kb >= ram_used_kb) {
+        telem->ram_free_kb = ram_total_kb - ram_used_kb;
+    } else {
+        telem->ram_free_kb = 0 as uint64;
+    }
+
+    if (ram_total_kb > (0 as uint64)) {
+        telem->ram_usage_percent = ((ram_used_kb * (100 as uint64)) / ram_total_kb) as uint32;
+    } else {
+        telem->ram_usage_percent = 0 as uint32;
+    }
+
+    // Uptime calculation (assuming 1000 Hz PIT timer tick rate)
+    telem->uptime_seconds = pit_ticks / (1000 as uint64);
+
+    // Process and Window metrics
+    telem->active_processes = proc_count;
+    telem->active_windows = win_count;
+}

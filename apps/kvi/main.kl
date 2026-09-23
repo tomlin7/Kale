@@ -1,0 +1,88 @@
+// apps/kvi/main.kl
+// kvi — Kale's vim-inspired terminal-style code editor.
+// Library lives in packages/editor/; this wires up the Win32 event loop
+// and hands keystrokes to the Editor.
+
+import "packages/editor/editor.kl" as ed;
+import "packages/bindings/win32/user32.kl" as u32;
+
+extern int GetAsyncKeyState(int vkey);
+
+// Virtual-key constants for modifier keys
+fn int VK_SHIFT()   { return 16; }
+fn int VK_CONTROL() { return 17; }
+
+// Map a Win32 WM_CHAR wParam to the char the Editor expects.
+// Returns 0 for keys we don't handle here.
+fn char wm_char_to_editor(int wparam) {
+    return (char)wparam;
+}
+
+fn int main() {
+    ed.Editor e;
+    e.init(1024, 720);
+
+    bool opened = e.open_window("kale-vim  [No Name]");
+    if (!opened) {
+        print("ERROR: failed to open vim editor window");
+        return 1;
+    }
+
+    e.file_name = "[No Name]";
+    e.load_text("// Welcome to kale-vim!\n// Press 'i' to enter INSERT mode.\n// Press Esc to return to NORMAL.\n// :w  save   :q  quit   :wq  save & quit\n");
+
+    // Win32 message loop — poll events, dispatch chars to editor
+    bool running = true;
+    while (running) {
+        running = e.window.poll_events();
+        if (!running) {
+            break;
+        }
+
+        // Peek for WM_CHAR (256) in the queue directly via PeekMessage
+        // poll_events already dispatches messages; we use a secondary
+        // GetMessage-free approach: read raw keyboard state each frame.
+        // For a proper integration we hook WM_CHAR; for now we sample
+        // GetAsyncKeyState for printable ASCII keys every frame.
+
+        // Sample letter keys A-Z (65-90)
+        int vk = 65;
+        while (vk <= 90) {
+            int state = GetAsyncKeyState(vk);
+            if ((state & 1) != 0) {
+                // Map VK to lowercase char unless shift held
+                int shift_state = GetAsyncKeyState(VK_SHIFT());
+                char c;
+                if ((shift_state & 32768) != 0) {
+                    c = (char)vk;        // uppercase
+                } else {
+                    c = (char)(vk + 32); // lowercase
+                }
+                e.handle_key(c);
+            }
+            vk = vk + 1;
+        }
+
+        // Sample common punctuation / special keys
+        // Colon (':') = Shift + Semicolon (186)
+        int semi = GetAsyncKeyState(186);
+        int shift_held = GetAsyncKeyState(VK_SHIFT());
+        if ((semi & 1) != 0 && (shift_held & 32768) != 0) {
+            e.handle_key((char)58); // ':'
+        }
+
+        // Escape (27)
+        int esc_state = GetAsyncKeyState(27);
+        if ((esc_state & 1) != 0) {
+            e.handle_key((char)27);
+        }
+
+        // Render each frame
+        e.render();
+    }
+
+    e.destroy();
+    return 0;
+}
+
+main();

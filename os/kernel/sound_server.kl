@@ -1,0 +1,185 @@
+// os/kernel/sound_server.kl
+// Desktop Audio Mixer & PCM Sound Server for Kale OS
+// Coordinates multi-channel audio playback, volume attenuation,
+// saturating clipping, and hardware driver bridging.
+
+struct AudioChannel {
+    uint32 id;
+    uint32 volume;       // 0 to 100 percent
+    bool is_muted;
+    bool is_active;
+    int16[64] buffer;
+    uint32 write_pos;
+    uint32 read_pos;
+    uint32 available;
+}
+
+struct SoundServer {
+    uint32 master_volume; // 0 to 100 percent
+    bool is_master_muted;
+    AudioChannel[4] channels;
+    int16[64] mix_output;
+    int16 peak_level;
+    uint64 total_mixed_blocks;
+}
+
+// Saturating arithmetic clamping for 16-bit signed PCM
+fn int16 sound_clamp16(int32 val) {
+    if (val > 32767) {
+        return 32767 as int16;
+    }
+    if (val < -32768) {
+        return -32768 as int16;
+    }
+    return val as int16;
+}
+
+// Initialize Sound Server
+fn void sound_server_init(SoundServer* srv) {
+    srv->master_volume = 80 as uint32; // Default 80%
+    srv->is_master_muted = false;
+    srv->peak_level = 0 as int16;
+    srv->total_mixed_blocks = 0 as uint64;
+
+    int c = 0;
+    while (c < 4) {
+        AudioChannel* ch = &srv->channels[c];
+        ch->id = c as uint32;
+        ch->volume = 100 as uint32;
+        ch->is_muted = false;
+        ch->is_active = true;
+        ch->write_pos = 0 as uint32;
+        ch->read_pos = 0 as uint32;
+        ch->available = 0 as uint32;
+
+        int s = 0;
+        while (s < 64) {
+            ch->buffer[s] = 0 as int16;
+            s = s + 1;
+        }
+        c = c + 1;
+    }
+
+    int o = 0;
+    while (o < 64) {
+        srv->mix_output[o] = 0 as int16;
+        o = o + 1;
+    }
+}
+
+// Master volume controls
+fn void sound_server_set_master_volume(SoundServer* srv, uint32 vol) {
+    if (vol > (100 as uint32)) {
+        srv->master_volume = 100 as uint32;
+    } else {
+        srv->master_volume = vol;
+    }
+}
+
+fn uint32 sound_server_get_master_volume(SoundServer* srv) {
+    return srv->master_volume;
+}
+
+fn void sound_server_set_master_muted(SoundServer* srv, bool muted) {
+    srv->is_master_muted = muted;
+}
+
+fn bool sound_server_is_master_muted(SoundServer* srv) {
+    return srv->is_master_muted;
+}
+
+// Per-channel volume controls
+fn bool sound_server_set_channel_volume(SoundServer* srv, uint32 chan_id, uint32 vol) {
+    if (chan_id >= (4 as uint32)) {
+        return false;
+    }
+    if (vol > (100 as uint32)) {
+        srv->channels[chan_id as int].volume = 100 as uint32;
+    } else {
+        srv->channels[chan_id as int].volume = vol;
+    }
+    return true;
+}
+
+fn uint32 sound_server_get_channel_volume(SoundServer* srv, uint32 chan_id) {
+    if (chan_id >= (4 as uint32)) {
+        return 0 as uint32;
+    }
+    return srv->channels[chan_id as int].volume;
+}
+
+fn bool sound_server_set_channel_muted(SoundServer* srv, uint32 chan_id, bool muted) {
+    if (chan_id >= (4 as uint32)) {
+        return false;
+    }
+    srv->channels[chan_id as int].is_muted = muted;
+    return true;
+}
+
+// Feed PCM sample data into a channel's ring buffer
+fn uint32 sound_server_feed(SoundServer* srv, uint32 chan_id, int16* samples, uint32 count) {
+    if (chan_id >= (4 as uint32) || count == (0 as uint32)) {
+        return 0 as uint32;
+    }
+    AudioChannel* ch = &srv->channels[chan_id as int];
+    uint32 fed = 0 as uint32;
+
+    while (fed < count && ch->available < (64 as uint32)) {
+        ch->buffer[ch->write_pos as int] = samples[fed as int];
+        ch->write_pos = (ch->write_pos + (1 as uint32)) % (64 as uint32);
+        ch->available = ch->available + (1 as uint32);
+        fed = fed + (1 as uint32);
+    }
+    return fed;
+}
+
+// Mix block of samples across all unmuted channels with volume attenuation & saturation clamping
+fn uint32 sound_server_mix(SoundServer* srv, uint32 frame_count) {
+    if (frame_count > (64 as uint32)) {
+        frame_count = 64 as uint32;
+    }
+
+    int16 max_peak = 0 as int16;
+
+    // Zero out output block
+    uint32 f = 0 as uint32;
+    while (f < frame_count) {
+        int32 mixed_sample = 0;
+
+        if (!srv->is_master_muted && srv->master_volume > (0 as uint32)) {
+            int c = 0;
+            while (c < 4) {
+                AudioChannel* ch = &srv->channels[c];
+                if (!ch->is_muted && ch->volume > (0 as uint32) && ch->available > (0 as uint32)) {
+                    int32 sample_val = ch->buffer[ch->read_pos as int] as int32;
+                    // Apply channel attenuation and master volume attenuation:
+                    // (sample * chan_vol * master_vol) / 10000
+                    int32 attenuated = (sample_val * (ch->volume as int32) * (srv->master_volume as int32)) / 10000;
+                    mixed_sample = mixed_sample + attenuated;
+
+                    ch->read_pos = (ch->read_pos + (1 as uint32)) % (64 as uint32);
+                    ch->available = ch->available - (1 as uint32);
+                }
+                c = c + 1;
+            }
+        }
+
+        int16 clamped = sound_clamp16(mixed_sample);
+        srv->mix_output[f as int] = clamped;
+
+        // Track peak amplitude
+        int16 abs_sample = clamped;
+        if (abs_sample < (0 as int16)) {
+            abs_sample = (0 as int16) - abs_sample;
+        }
+        if (abs_sample > max_peak) {
+            max_peak = abs_sample;
+        }
+
+        f = f + (1 as uint32);
+    }
+
+    srv->peak_level = max_peak;
+    srv->total_mixed_blocks = srv->total_mixed_blocks + (1 as uint64);
+    return frame_count;
+}
